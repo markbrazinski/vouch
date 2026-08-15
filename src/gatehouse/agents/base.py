@@ -131,4 +131,40 @@ class GatehouseAgent:
         missing = [k for k in self.spec.output_keys if k not in parsed]
         if missing:
             raise ValueError(f"{self.spec.name}: output missing keys {missing}")
+        return self._coerce_enums(parsed)
+
+    def _coerce_enums(self, parsed: dict) -> dict:
+        """Constrain model output to the declared vocabulary, failing safe.
+
+        Observed on Nova Pro: a verifier returned the actor's verb ("REFUSE")
+        instead of a VerifierOutcome. An out-of-vocabulary value must never
+        crash the workflow or be silently coerced to a permissive one — the
+        safe reading of an unintelligible verdict is INSUFFICIENT_EVIDENCE,
+        which denies mutation and escalates to QA.
+        """
+        from ..state import Disposition, RecoveryAction, VerifierOutcome
+
+        vocab = {
+            "outcome": (VerifierOutcome, VerifierOutcome.INSUFFICIENT_EVIDENCE),
+            "disposition": (Disposition, Disposition.INSUFFICIENT_EVIDENCE),
+            "action": (RecoveryAction, RecoveryAction.ESCALATE),
+        }
+        for key, (enum_cls, fallback) in vocab.items():
+            if key not in parsed:
+                continue
+            value = str(parsed[key]).strip().upper()
+            try:
+                parsed[key] = enum_cls(value).value
+            except ValueError:
+                parsed[key] = fallback.value
+                note = (
+                    f"[gatehouse] {self.spec.name} returned out-of-vocabulary "
+                    f"{key}={value!r}; failing safe to {fallback.value}."
+                )
+                for field in ("rationale", "reason"):
+                    if field in parsed:
+                        parsed[field] = f"{note} {parsed[field]}"
+                        break
+                else:
+                    parsed["rationale"] = note
         return parsed

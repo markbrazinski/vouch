@@ -122,6 +122,20 @@ def invoke(payload: dict, context=None) -> dict:
                 "authority_record": _serialize_record(result["authority_record"]),
             }
 
+        if action == "add_qa_evidence":
+            # S7: QA supplies the missing correct-method evidence, then the same
+            # case is re-evaluated. Evidence entry is a human/QA action, not an
+            # agent capability — no agent can call this.
+            from gatehouse.fixtures import add_qa_evidence
+
+            evidence_id = add_qa_evidence(_STORE, payload["lot_id"])
+            return {
+                "ok": True,
+                "action": action,
+                "lot_id": payload["lot_id"],
+                "evidence_id": evidence_id,
+            }
+
         if action == "authority_ledger":
             return {
                 "ok": True,
