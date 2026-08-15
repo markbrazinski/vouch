@@ -106,3 +106,4 @@ agentcore/Gatehouse/
 
 # ---- provisioning manifest (account/environment targeting, local only) ----
 provisioning.json
+strip_results.json

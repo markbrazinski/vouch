@@ -130,7 +130,7 @@ class GatehouseAgent:
         )
 
         try:
-            result = agent.structured_output(self.spec.output_model, prompt)
+            result = agent(prompt, structured_output_model=self.spec.output_model).structured_output
         except Exception as exc:  # noqa: BLE001 - any SDK/validation failure is a schema failure
             raise SchemaFailure(self.spec.name, f"{type(exc).__name__}: {exc}") from exc
 

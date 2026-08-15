@@ -8,12 +8,30 @@ into a valid disposition.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
-class MaterialDispositionOutput(BaseModel):
+class _Base(BaseModel):
+    """Tolerates null-for-empty-list, which Nova Pro emits for empty collections.
+
+    This is a serialization nicety, NOT vocabulary leniency: the Literal fields
+    below still reject any value outside the declared enum, and a missing
+    required field is still a hard schema failure.
+    """
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _null_list_to_empty(cls, v: Any, info) -> Any:
+        if v is None:
+            ann = cls.model_fields[info.field_name].annotation
+            if ann is not None and "list" in str(ann):
+                return []
+        return v
+
+
+class MaterialDispositionOutput(_Base):
     """Material Disposition Agent (actor)."""
 
     disposition: Literal["RELEASE", "QUARANTINE", "INSUFFICIENT_EVIDENCE"] = Field(
@@ -35,22 +53,24 @@ class MaterialDispositionOutput(BaseModel):
     )
 
 
-class VerifierOutput(BaseModel):
-    """Specification Verifier. Read-only; never proposes an action."""
+class VerifierOutput(_Base):
+    """Specification Verifier. Read-only; never proposes an action.
+
+    Deliberately minimal. A wider schema measurably degraded field compliance on
+    Nova Pro (it filled evidence_refs/rationale and omitted the required
+    `outcome`), so the verdict schema carries only what the gate consumes.
+    """
 
     outcome: Literal["VERIFIED", "REJECTED", "INSUFFICIENT_EVIDENCE"] = Field(
         description=(
-            "VERIFIED if the proposal is defensible on the evidence. REJECTED if the "
-            "evidence contradicts it. INSUFFICIENT_EVIDENCE if the evidence cannot "
-            "establish the requirement. These are the only valid values — never an "
-            "action verb such as RELEASE or REFUSE."
+            "REQUIRED. Exactly one of VERIFIED, REJECTED, INSUFFICIENT_EVIDENCE. "
+            "Never an action verb such as RELEASE, QUARANTINE or REFUSE."
         )
     )
-    rationale: str = Field(description="Independent basis for the outcome.")
-    evidence_refs: list[str] = Field(default_factory=list)
+    rationale: str = Field(default="", description="Independent basis for the outcome.")
 
 
-class RecoveryJudgmentOutput(BaseModel):
+class RecoveryJudgmentOutput(_Base):
     """Recovery judgment — only where deterministic checks cannot decide.
 
     A3: feasibility, approval, quantity, and slot constraints are computed in
