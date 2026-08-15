@@ -1,0 +1,105 @@
+# ---- secrets / credentials -------------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+.aws/
+aws.json
+credentials
+*.pem
+*.key
+!**/public*.key
+secrets.*
+
+# ---- python ----------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+*.egg-info/
+.eggs/
+.python-version
+
+# ---- build / dist ----------------------------------------------------------
+build/
+dist/
+*.zip
+*.tar.gz
+node_modules/
+cdk.out/
+.cdk.staging/
+
+# ---- coverage / test outputs -----------------------------------------------
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+report.html
+
+# ---- IDE / OS --------------------------------------------------------------
+.idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---- logs / traces / local model output ------------------------------------
+*.log
+logs/
+traces/
+*.trace
+*.jsonl
+!fixtures/**/*.jsonl
+.model-output/
+tmp/
+.tmp/
+
+# ---- private working directories -------------------------------------------
+# Deliberately private. Do NOT globally ignore *.md — see allowlist below.
+/docs/
+/notes/
+/research/
+/scratch/
+/artifacts/
+/recordings/
+/private-fixtures/
+
+# ---- AgentCore / AWS local targeting ---------------------------------------
+# Account- and environment-specific config must stay local.
+.agentcore/
+agentcore/.local/
+agentcore/.env.local
+agentcore/.cli/*
+!agentcore/.cli/deployed-state.json
+agentcore/.cache/*
+agentcore/aws-targets.json
+agentcore/cdk/cdk.out/
+agentcore/cdk/node_modules/
+agentcore.local.json
+*.local.json
+.bedrock_agentcore.yaml
+outputs.json
+cdk.context.json
+
+# ---- tracked docs allowlist ------------------------------------------------
+# These must always remain in version control.
+!README.md
+!AGENTS.md
+!CLAUDE.md
+!LICENSE
+!LICENSE.*
+!SMOKE_TEST_REPORT.md
+!EVAL_PLAN.md
+agentcore/*.zip
+app/Gatehouse/src/
+agentcore/*/staging/
+agentcore/Gatehouse/
