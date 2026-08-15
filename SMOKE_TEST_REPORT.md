@@ -1,8 +1,9 @@
 # Gatehouse — Vertical Smoke Test Report
 
-**Date:** 2026-08-15
+**Date:** 2026-08-15 (full restart from zero)
+**Baseline model:** Amazon Nova Pro (`us.amazon.nova-pro-v1:0`)
 **Verdict:** **PASS WITH BLOCKERS**
-**Suite:** 26 passed, 3 skipped (`pytest tests/`)
+**Suite:** 27 passed, 3 skipped (`pytest tests/`)
 
 ---
 
@@ -14,15 +15,19 @@
 | Strands Agents | `strands-agents==1.52.0`, `GraphBuilder` API confirmed |
 | AgentCore SDK | `bedrock-agentcore==1.21.0` |
 | Python | 3.12.12 |
+| Region | `us-east-1` |
+| Required identity | IAM user `gatehouse-dev` via `AWS_PROFILE=gatehouse` |
+| Evidence bucket / state table | named in gitignored manifest; **unverified** (no valid credential) |
+| Runtime role | `GatehouseAgentCoreRuntimeRole` (service identity, not local dev) |
 | `agentcore validate` | **Valid** |
 | `agentcore package` | **Succeeds** — `Gatehouse.zip`, 40.18 MB |
 | `agentcore deploy --dry-run` | **Blocked** — `cloudformation:DescribeStacks` denied |
-| Bedrock model invocation | **Blocked** — `AccessDeniedException` on all credentials |
+| **N0 — Nova Pro invocation** | **BLOCKED** — no valid `gatehouse` credential |
 
 **Correction to the commission's premise:** the AgentCore CLI is distributed as
 `@aws/agentcore` on npm. The Python `bedrock-agentcore-starter-toolkit` also
 ships an `agentcore` binary but self-deprecates and redirects to the npm CLI.
-The npm CLI was used, and every flag in STEP 4 exists on it.
+The npm CLI was used, and every flag in the scaffold command exists on it.
 
 ---
 
@@ -30,6 +35,7 @@ The npm CLI was used, and every flag in STEP 4 exists on it.
 
 | Test | PASS/FAIL | Starting state | Decision | Verifier | Tool | Ending state | Trace |
 |---|---|---|---|---|---|---|---|
+| **N0** | **BLOCKED** | — | — | — | — | — | `InvalidClientTokenId` |
 | **S0** | **BLOCKED** | — | — | — | — | — | no runtime; IAM denied |
 | **S1** | **PASS** | `LOT-1001 RECEIVED`, usable 0 | `RELEASE` | `VERIFIED` | `release_lot` | `RELEASED`, usable +500 | local log |
 | **S2** | **PASS** | `LOT-1002 RECEIVED` | `QUARANTINE` | `VERIFIED` | `quarantine_lot` | `QUARANTINED`, not usable | local log |
@@ -44,6 +50,17 @@ The npm CLI was used, and every flag in STEP 4 exists on it.
 Traces read "local log" because no AgentCore Runtime is deployed. The entrypoint
 emits structured JSON logs (`bedrock_agentcore.app`) — the CloudWatch path — but
 runtime and trace identifiers cannot be recorded until S0 unblocks.
+
+### S9A–S9F
+
+| Sub-test | Result | Proof |
+|---|---|---|
+| **S9A** verifier cannot invoke mutation tools | **PASS** | construction with `MutationTools` raises `PermissionViolation` |
+| **S9B** unverified proposal cannot mutate | **PASS** | mutation without a gate token raises `AuthorityError` |
+| **S9C** disagreement produces no mutation | **PASS** | all four disagreement combinations deny + escalate to QA |
+| **S9D** replay cannot double-release inventory | **PASS** | idempotency key collapses replay; inventory unchanged |
+| **S9E** replay cannot re-move the schedule | **PASS** | second recovery leaves `C-418` slot unchanged |
+| **S9F** verifier cannot silently gain actor permissions | **PASS** | re-validation raises; smuggled tools still lack authority; a `VerifierOutcome` cannot be cast to a `Disposition` |
 
 ### S9 invariants proven
 
@@ -78,12 +95,24 @@ because the weakness is the kind S9 exists to catch.
 
 ## Blockers
 
-1. **Bedrock model invocation denied (blocks S0 and all live-model runs).**
-   `bedrock:ListFoundationModels` succeeds; `Converse` returns `AccessDenied` on
-   every model for both live identities. `default` and `brickweaver` sessions are
-   expired; `onagain` has an invalid token.
-   *Needs:* `bedrock:InvokeModel` on the inference-profile ARN, plus Anthropic
-   model access enabled in the account/region.
+1. **No valid `gatehouse` credential — blocks N0 and S0.**
+   The `gatehouse` profile's stored `aws_access_key_id` is a **12-character
+   account id, not a 20-character `AKIA...` access key** (`tally` and `onagain`
+   are both correctly 20/`AKIA`). Hence `InvalidClientTokenId`: there is no key
+   to repair, only one to create.
+
+   Self-service rotation was attempted and is impossible from this machine: the
+   only live identities (`tally-capture-dev`, `tally-gate5-deployer`) are denied
+   `iam:GetUser`, `iam:ListAccessKeys`, `iam:ListUsers`, and `sts:AssumeRole`
+   into `GatehouseAgentCoreRuntimeRole`.
+
+   *Needs:* an access key for `gatehouse-dev`, then `aws configure --profile gatehouse`.
+
+   Note: Nova Pro is denied on the foreign profiles too, but that finding is not
+   diagnostic — those identities are scoped to another project. Nova Pro
+   availability is genuinely **untested** until `gatehouse-dev` works.
+   `us.amazon.nova-pro-v1:0` is confirmed `ACTIVE` in the account.
+   Per the model policy, no Sonnet fallback was used.
 
 2. **Deploy IAM insufficient.** `agentcore deploy --dry-run` fails on
    `cloudformation:DescribeStacks`. Deploy also needs CDK/CFN, ECR, IAM

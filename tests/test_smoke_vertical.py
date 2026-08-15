@@ -360,6 +360,35 @@ def test_s9_state_machine_rejects_illegal_transition(gh: Gatehouse):
         gh.store.set_lot_status("LOT-1001", LotStatus.RELEASED)
 
 
+def test_s9f_verifier_cannot_silently_gain_actor_permissions(gh: Gatehouse):
+    """S9F: a verifier cannot acquire mutation capability after construction.
+
+    Covers the escalation path the other S9 tests miss: not "was it built
+    read-only" but "can it be *made* privileged later" — by reconfiguring its
+    toolset, or by having its output routed as if it were an actor proposal.
+    """
+    from gatehouse.agents.base import PermissionViolation, assert_readonly_toolset
+
+    # 1. Re-validating a verifier that was handed mutation tools must raise.
+    for verifier in (gh.spec_verifier, gh.recovery_check):
+        assert verifier.spec.role == "verifier"
+        object.__setattr__(verifier, "tools", MutationTools(gh.store))
+        with pytest.raises(PermissionViolation):
+            assert_readonly_toolset(verifier.spec.name, verifier.tools)
+
+    # 2. Even holding mutation tools, a verifier has no gate token, so the
+    #    mutation surface stays closed. Capability requires authority, not access.
+    smuggled = MutationTools(gh.store)
+    with pytest.raises(AuthorityError):
+        smuggled.release_lot("LOT-1001")
+    assert gh.read.get_lot("LOT-1001").status is LotStatus.RECEIVED
+
+    # 3. A verifier verdict cannot stand in for an actor proposal: the gate
+    #    requires a Disposition, and a VerifierOutcome is not one.
+    with pytest.raises(ValueError):
+        Disposition(VerifierOutcome.VERIFIED.value)
+
+
 def test_s9_llm_never_does_inventory_arithmetic(gh: Gatehouse):
     """Shortage math is pure Python and independent of any agent."""
     result = gh.eval.calculate_material_shortage("C-417")
