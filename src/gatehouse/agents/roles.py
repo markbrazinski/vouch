@@ -7,6 +7,11 @@ the same code decides any lot, which is what makes the smoke test meaningful.
 
 from __future__ import annotations
 
+from ..schemas import (
+    MaterialDispositionOutput,
+    RecoveryJudgmentOutput,
+    VerifierOutput,
+)
 from ..state import Disposition, RecoveryAction, VerifierOutcome
 from ..tools import ReadTools
 from .base import AgentSpec, GatehouseAgent
@@ -93,6 +98,7 @@ def material_disposition_agent(read_tools: ReadTools) -> GatehouseAgent:
             role="actor",
             system_prompt=MATERIAL_ACTOR_PROMPT,
             output_keys=("disposition", "rationale", "evidence_refs", "requirements_evaluated"),
+            output_model=MaterialDispositionOutput,
         ),
         read_tools,
         _material_actor_local,
@@ -150,6 +156,7 @@ def specification_verifier(read_tools: ReadTools) -> GatehouseAgent:
             role="verifier",
             system_prompt=SPEC_VERIFIER_PROMPT,
             output_keys=("outcome", "rationale", "evidence_refs"),
+            output_model=VerifierOutput,
         ),
         read_tools,
         _spec_verifier_local,
@@ -257,6 +264,7 @@ def recovery_agent(read_tools: ReadTools) -> GatehouseAgent:
             role="actor",
             system_prompt=RECOVERY_PROMPT,
             output_keys=("action", "target_order_id", "target_slot", "rationale"),
+            output_model=RecoveryJudgmentOutput,
         ),
         read_tools,
         _recovery_local,
@@ -336,6 +344,7 @@ def recovery_verifier(read_tools: ReadTools) -> GatehouseAgent:
             role="verifier",
             system_prompt=RECOVERY_VERIFIER_PROMPT,
             output_keys=("outcome", "rationale"),
+            output_model=VerifierOutput,
         ),
         read_tools,
         _recovery_verifier_local,

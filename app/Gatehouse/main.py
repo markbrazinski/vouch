@@ -30,10 +30,26 @@ from gatehouse.workflow import Gatehouse  # noqa: E402
 app = BedrockAgentCoreApp()
 log = app.logger
 
-# ponytail: one process-wide store. Swap for the DynamoDB-backed StateStore when
-# the provisioned table is available — the workflow only touches the interface.
-_STORE = build_store()
+def _make_store(namespace: str = "runtime"):
+    """A2: DynamoDB is authoritative. Falls back to in-memory only if the table
+    is unreachable, and says so loudly rather than pretending to persist."""
+    if os.environ.get("GATEHOUSE_STATE_BACKEND", "dynamodb").lower() == "memory":
+        return build_store(), "memory"
+    try:
+        from gatehouse.dynamo_store import DynamoStateStore
+
+        store = DynamoStateStore(namespace=namespace)
+        if store.get("lot", "LOT-1001") is None:  # seed once per namespace
+            store.seed_from(build_store())
+        return store, "dynamodb"
+    except Exception as exc:  # noqa: BLE001
+        log.error("DynamoDB state unavailable, falling back to memory: %s", exc)
+        return build_store(), f"memory (dynamodb failed: {type(exc).__name__})"
+
+
+_STORE, _BACKEND = _make_store()
 _GATEHOUSE = Gatehouse(_STORE)
+log.info("gatehouse state backend=%s", _BACKEND)
 
 
 def _serialize_record(record) -> dict:

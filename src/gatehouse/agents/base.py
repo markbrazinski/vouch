@@ -32,6 +32,7 @@ class AgentSpec:
     role: str  # "actor" | "verifier" | "evaluator"
     system_prompt: str
     output_keys: tuple[str, ...]
+    output_model: type | None = None  # Pydantic model enforced on the bedrock path
 
 
 def assert_readonly_toolset(agent_name: str, tools: Any) -> None:
@@ -110,61 +111,27 @@ class GatehouseAgent:
         return self._strands_agent
 
     def run(self, facts: dict) -> dict:
-        """Return typed structured output. Same contract in both modes."""
-        if mode() == "bedrock":
-            agent = self._build_strands_agent()
-            prompt = (
-                "Authoritative facts (JSON). Reason only from these. "
-                "Do not invent specifications, inventory, substitutions, or qualification.\n\n"
-                f"{json.dumps(facts, indent=2, default=str)}\n\n"
-                f"Respond with ONLY a JSON object containing keys: {list(self.spec.output_keys)}."
-            )
-            raw = str(agent(prompt))
-            return self._parse(raw)
-        return self.local_fn(facts)
+        """Return typed structured output. Same contract in both modes.
 
-    def _parse(self, raw: str) -> dict:
-        start, end = raw.find("{"), raw.rfind("}")
-        if start == -1 or end == -1:
-            raise ValueError(f"{self.spec.name}: no JSON object in model output: {raw[:200]}")
-        parsed = json.loads(raw[start : end + 1])
-        missing = [k for k in self.spec.output_keys if k not in parsed]
-        if missing:
-            raise ValueError(f"{self.spec.name}: output missing keys {missing}")
-        return self._coerce_enums(parsed)
-
-    def _coerce_enums(self, parsed: dict) -> dict:
-        """Constrain model output to the declared vocabulary, failing safe.
-
-        Observed on Nova Pro: a verifier returned the actor's verb ("REFUSE")
-        instead of a VerifierOutcome. An out-of-vocabulary value must never
-        crash the workflow or be silently coerced to a permissive one — the
-        safe reading of an unintelligible verdict is INSUFFICIENT_EVIDENCE,
-        which denies mutation and escalates to QA.
+        A1: on the bedrock path the vocabulary is enforced by Strands structured
+        output (Pydantic). A non-conforming response raises SchemaFailure — it is
+        never coerced into a valid disposition.
         """
-        from ..state import Disposition, RecoveryAction, VerifierOutcome
+        if mode() != "bedrock":
+            return self.local_fn(facts)
 
-        vocab = {
-            "outcome": (VerifierOutcome, VerifierOutcome.INSUFFICIENT_EVIDENCE),
-            "disposition": (Disposition, Disposition.INSUFFICIENT_EVIDENCE),
-            "action": (RecoveryAction, RecoveryAction.ESCALATE),
-        }
-        for key, (enum_cls, fallback) in vocab.items():
-            if key not in parsed:
-                continue
-            value = str(parsed[key]).strip().upper()
-            try:
-                parsed[key] = enum_cls(value).value
-            except ValueError:
-                parsed[key] = fallback.value
-                note = (
-                    f"[gatehouse] {self.spec.name} returned out-of-vocabulary "
-                    f"{key}={value!r}; failing safe to {fallback.value}."
-                )
-                for field in ("rationale", "reason"):
-                    if field in parsed:
-                        parsed[field] = f"{note} {parsed[field]}"
-                        break
-                else:
-                    parsed["rationale"] = note
-        return parsed
+        from ..schemas import SchemaFailure
+
+        agent = self._build_strands_agent()
+        prompt = (
+            "Authoritative facts (JSON). Reason ONLY from these. Do not invent "
+            "specifications, revisions, inventory, substitutions, or qualification.\n\n"
+            f"{json.dumps(facts, indent=2, default=str)}"
+        )
+
+        try:
+            result = agent.structured_output(self.spec.output_model, prompt)
+        except Exception as exc:  # noqa: BLE001 - any SDK/validation failure is a schema failure
+            raise SchemaFailure(self.spec.name, f"{type(exc).__name__}: {exc}") from exc
+
+        return result.model_dump()

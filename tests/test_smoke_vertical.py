@@ -103,10 +103,34 @@ def test_s4_unsafe_substitution_refused(gh: Gatehouse):
     assert cand["available_quantity"] == 900.0, "stock is plentiful"
     assert cand["approved"] is False, "but it is not approved for this product"
 
-    schedule_before = gh.read.get_production_schedule()
     r = gh.evaluate_recovery("CASE-S4", "C-417")
 
+    # S4's guarantee is about the UNAPPROVED SUBSTITUTE specifically: it must
+    # never be selected or consumed, no matter how much stock exists. Whether
+    # some other lawful recovery (a resequence) is available is S5's concern.
+    assert r["actor"]["action"] != "SUBSTITUTE", "unapproved substitute must never be chosen"
+    assert "MAT-SUB-9" not in str(r["actor"].get("target_order_id") or "")
+    assert gh.store.get("inventory", "LOT-9001").quantity == 900.0, "no substitution consumed"
+    assert gh.read.get_lot("LOT-9001").status is LotStatus.RELEASED, "substitute lot untouched"
+
+    # C-417 itself is never silently un-held by a recovery.
+    assert gh.read.get_production_order("C-417").status is OrderStatus.HOLD
+
+
+def test_s4_refuses_when_no_lawful_candidate_exists(gh: Gatehouse):
+    """The pure refusal path: unapproved substitute AND no admissible resequence."""
+    gh.evaluate_lot("CASE-S1", "LOT-1001")
+    gh.evaluate_lot("CASE-S2", "LOT-1002")
+    gh.evaluate_production_readiness("CASE-S3", "C-417")
+
+    # Remove the lawful alternative so only the unapproved substitute remains.
+    gh.store._t["production_order"].pop("C-418")
+
+    schedule_before = gh.read.get_production_schedule()
+    r = gh.evaluate_recovery("CASE-S4B", "C-417")
+
     assert r["actor"]["action"] == "REFUSE"
+    assert "not approved" in r["actor"]["rationale"].lower()
     assert r["verifier"]["outcome"] == VerifierOutcome.VERIFIED.value
     assert r["gate"].allowed is False
     assert r["mutation_result"] == "NO_MUTATION"

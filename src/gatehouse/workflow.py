@@ -49,21 +49,48 @@ class Gatehouse:
     # material disposition chain  (S1, S2, S6, S7)
     # ------------------------------------------------------------------
     def evaluate_lot(self, case_id: str, lot_id: str) -> dict:
+        from .schemas import SchemaFailure
+
         lot_before = self.read.get_lot(lot_id)
         state_before = lot_before.status.value if lot_before else "UNKNOWN"
 
         # 1. deterministic reconciliation — the agents reason about this
         facts = self.eval.evaluate_evidence_against_spec(lot_id)
 
+        # A1: a schema failure is never coerced into a disposition. It denies the
+        # mutation and escalates to QA, and is recorded as a schema failure.
+        schema_failures: list[str] = []
+
         # 2. actor proposes
-        proposal = self.material_actor.run(facts)
-        actor_disposition = Disposition(proposal["disposition"])
+        try:
+            proposal = self.material_actor.run(facts)
+            actor_disposition = Disposition(proposal["disposition"])
+        except SchemaFailure as exc:
+            schema_failures.append(str(exc))
+            proposal = {
+                "disposition": Disposition.INSUFFICIENT_EVIDENCE.value,
+                "rationale": f"SCHEMA_FAILURE: {exc}",
+                "evidence_refs": facts.get("evidence_refs", []),
+                "requirements_evaluated": [],
+                "schema_failure": True,
+            }
+            actor_disposition = Disposition.INSUFFICIENT_EVIDENCE
 
         # 3. verifier independently reviews
         verifier_facts = dict(facts)
         verifier_facts["proposed_disposition"] = actor_disposition.value
-        verdict = self.spec_verifier.run(verifier_facts)
-        verifier_outcome = VerifierOutcome(verdict["outcome"])
+        try:
+            verdict = self.spec_verifier.run(verifier_facts)
+            verifier_outcome = VerifierOutcome(verdict["outcome"])
+        except SchemaFailure as exc:
+            schema_failures.append(str(exc))
+            verdict = {
+                "outcome": VerifierOutcome.INSUFFICIENT_EVIDENCE.value,
+                "rationale": f"SCHEMA_FAILURE: {exc}",
+                "evidence_refs": facts.get("evidence_refs", []),
+                "schema_failure": True,
+            }
+            verifier_outcome = VerifierOutcome.INSUFFICIENT_EVIDENCE
 
         # 4. deterministic authority gate
         decision = material_authority_gate(case_id, lot_id, actor_disposition, verifier_outcome)
@@ -114,6 +141,7 @@ class Gatehouse:
             "state_before": state_before,
             "state_after": state_after,
             "authority_record": record,
+            "schema_failures": schema_failures,
         }
 
     # ------------------------------------------------------------------
@@ -230,42 +258,95 @@ class Gatehouse:
         }
 
     def evaluate_recovery(self, case_id: str, held_order_id: str) -> dict:
+        """Recovery is DETERMINISTIC (A3).
+
+        Substitution approval, quantity sufficiency, slot feasibility and
+        resource compatibility are crisp structured facts. An LLM adds variance
+        and no information, so it does not decide them. The agent is retained
+        only for genuinely ambiguous candidate selection, which the current
+        fixtures do not require — recorded honestly rather than preserved for
+        appearances.
+        """
         facts = self._build_recovery_facts(held_order_id)
 
-        proposal = self.recovery_actor.run(facts)
-        action = RecoveryAction(proposal["action"])
+        # 1. Explicitly unapproved substitution -> deterministic REFUSE.
+        unapproved = [c for c in facts.get("substitution_candidates", []) if not c.get("approved")]
 
-        verifier_facts = dict(facts)
-        verifier_facts.update(
-            {
-                "proposed_action": action.value,
-                "proposed_target_order_id": proposal.get("target_order_id"),
-                "proposed_target_slot": proposal.get("target_slot"),
-            }
-        )
-        verdict = self.recovery_check.run(verifier_facts)
-        verifier_outcome = VerifierOutcome(verdict["outcome"])
+        # 2. Admissible resequence candidates: every hard constraint satisfied.
+        admissible = [
+            c
+            for c in facts.get("resequence_candidates", [])
+            if c.get("slot_available")
+            and c.get("materials_released")
+            and c.get("resource_compatible")
+        ]
 
-        target_order_id = proposal.get("target_order_id")
-        target_slot = proposal.get("target_slot")
+        if admissible:
+            chosen = min(admissible, key=lambda c: c["order_id"])
+            action = RecoveryAction.RESEQUENCE
+            target_order_id = chosen["order_id"]
+            target_slot = chosen["target_slot"]
+            rationale = (
+                f"deterministic: {target_order_id} satisfies all hard constraints "
+                f"(material released, resource {chosen.get('resource')} compatible, "
+                f"slot {target_slot} free)"
+            )
+        else:
+            action = RecoveryAction.REFUSE
+            target_order_id = held_order_id
+            target_slot = None
+            if unapproved:
+                names = ", ".join(c["substitute_material_id"] for c in unapproved)
+                rationale = (
+                    f"deterministic: candidate substitute(s) {names} are NOT approved for "
+                    f"{facts.get('product')}; available quantity does not confer authority"
+                )
+            else:
+                rationale = "deterministic: no candidate satisfies all hard constraints"
 
-        # deterministic re-check: a verified proposal on false arithmetic still fails
+        proposal = {
+            "action": action.value,
+            "target_order_id": target_order_id,
+            "target_slot": target_slot,
+            "rationale": rationale,
+            "decided_by": "deterministic_recovery_evaluator",
+        }
+
+        # 3. Independent deterministic re-check (defence in depth): recompute the
+        #    admissibility of the chosen candidate from live state.
         facts_ok = False
         state_before = "UNCHANGED"
-        if action is RecoveryAction.RESEQUENCE and target_order_id:
-            cand = next(
-                (c for c in facts.get("resequence_candidates", []) if c["order_id"] == target_order_id),
-                None,
-            )
-            facts_ok = bool(
-                cand
-                and cand["slot_available"]
-                and cand["materials_released"]
-                and cand["resource_compatible"]
-                and cand["target_slot"] == target_slot
-            )
+        if action is RecoveryAction.RESEQUENCE:
+            slot_check = self.eval.check_schedule_slot(target_order_id, target_slot)
+            shortage = self.eval.calculate_material_shortage(target_order_id)
             target = self.read.get_production_order(target_order_id)
+            held = self.read.get_production_order(held_order_id)
+            facts_ok = bool(
+                slot_check["available"]
+                and not shortage["has_shortage"]
+                and target
+                and held
+                and target.resource == held.resource
+            )
             state_before = target.planned_slot if target else "UNKNOWN"
+            verdict = {
+                "outcome": (
+                    VerifierOutcome.VERIFIED.value if facts_ok else VerifierOutcome.REJECTED.value
+                ),
+                "rationale": (
+                    f"independent recomputation: slot_available={slot_check['available']}, "
+                    f"materials_released={not shortage['has_shortage']}, "
+                    f"resource_compatible={bool(target and held and target.resource == held.resource)}"
+                ),
+                "decided_by": "deterministic_recovery_recheck",
+            }
+        else:
+            verdict = {
+                "outcome": VerifierOutcome.VERIFIED.value,
+                "rationale": f"refusal confirmed deterministically: {rationale}",
+                "decided_by": "deterministic_recovery_recheck",
+            }
+        verifier_outcome = VerifierOutcome(verdict["outcome"])
 
         decision = recovery_authority_gate(
             case_id, target_order_id or held_order_id, action, verifier_outcome, facts_ok, target_slot
