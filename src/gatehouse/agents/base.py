@@ -47,13 +47,15 @@ def assert_readonly_toolset(agent_name: str, tools: Any) -> None:
 
 
 def mode() -> str:
+    # Read env directly so tests can flip modes without a cache reset.
     return os.environ.get("GATEHOUSE_MODE", "local").lower()
 
 
-def model_id() -> str:
-    return os.environ.get(
-        "GATEHOUSE_BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-    )
+def model_id(role: str = "actor") -> str:
+    """Baseline is Nova Pro; per-role overrides exist for eval comparisons."""
+    from ..config import load
+
+    return os.environ.get("GATEHOUSE_BEDROCK_MODEL_ID") or load().model_for(role)
 
 
 class GatehouseAgent:
@@ -88,8 +90,19 @@ class GatehouseAgent:
         from strands import Agent
         from strands.models import BedrockModel
 
+        from ..config import load
+
+        # ponytail: streaming off by default. Gatehouse consumes one typed JSON
+        # object per call, so streaming buys nothing, and InvokeModelWithResponseStream
+        # is a separate IAM action that some runtime roles are not granted.
+        streaming = os.environ.get("GATEHOUSE_BEDROCK_STREAMING", "false").lower() == "true"
+
         self._strands_agent = Agent(
-            model=BedrockModel(model_id=model_id(), region_name=os.environ.get("AWS_REGION", "us-east-1")),
+            model=BedrockModel(
+                model_id=model_id(self.spec.role),
+                region_name=load().region,
+                streaming=streaming,
+            ),
             system_prompt=self.spec.system_prompt,
             name=self.spec.name,
             tools=[],  # facts are passed in; no mutation surface, by design

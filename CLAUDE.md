@@ -81,6 +81,32 @@ incoming lot
 memory.** An agent's context is an input to a proposal, never the record of what
 is true. If the state store and an agent disagree, the state store wins.
 
+### Model policy
+
+- **Baseline runtime model: Amazon Nova Pro** (`us.amazon.nova-pro-v1:0`),
+  via Bedrock in `us-east-1`. This is the smoke-test baseline for both actor and
+  verifier roles.
+- **Do not silently substitute Claude Sonnet or any other model.** If Nova Pro
+  fails or is unavailable, that is a BLOCKER to report, not a reason to swap.
+  A model change is a decision the product lead makes, never a workaround.
+- Model configuration must not be hard-coded through application logic. It is
+  read from `provisioning.json` / environment via `gatehouse.config`, and each
+  role's model must stay independently overridable so evals can compare:
+  Nova Pro actor + Nova Pro verifier; Nova Pro actor + alternate verifier;
+  deterministic baseline.
+- Future model choice is earned through evaluation evidence, not preference.
+
+### Authority modes
+
+Every consequential decision resolves to exactly one of:
+
+- **ACT** — the evidence supports a state change.
+- **REFUSE** — the evidence affirmatively does not support it.
+- **ABSTAIN / INSUFFICIENT_EVIDENCE** — the evidence cannot establish an answer.
+
+Never force an autonomous answer when the evidence cannot establish one.
+Abstention is a first-class outcome, not a failure.
+
 One AgentCore Runtime hosts the Gatehouse Strands workflow used by the smoke
 test. The deployed runtime must be the same code path the tests exercise.
 
@@ -282,8 +308,31 @@ verifier, tool, ending state, trace. Conclude **GO**, **PASS WITH BLOCKERS**
 
 ## 13. AWS safety constraints
 
+### Identity policy (binding)
+
+- **All Gatehouse AWS development uses `AWS_PROFILE=gatehouse`**, which must
+  authenticate as IAM user `gatehouse-dev` in the Gatehouse account. The account
+  id is account-specific targeting information: it lives in the gitignored
+  `provisioning.json`, never in tracked files.
+- **Region is `us-east-1`** (`AWS_REGION` and `AWS_DEFAULT_REGION`).
+- **Never use `tally`, `gate5-deployer`, `default`, `brickweaver`, `onagain`, or
+  any other project's profile for Gatehouse work.** They belong to other
+  projects; borrowing them produces misleading capability results. A bootstrap
+  identity may repair Gatehouse IAM, never run Gatehouse.
+- **`GatehouseAgentCoreRuntimeRole` is the service/runtime identity, not the
+  local developer identity.** Do not configure it as a local profile, and do not
+  create a second Gatehouse runtime role.
+- Verify identity before any smoke run:
+  `aws sts get-caller-identity --profile gatehouse --region us-east-1`
+  must return exactly `.../user/gatehouse-dev`. Anything else is a hard stop.
+
+### Credential handling
+
 - Never commit AWS credentials, account IDs, or environment-specific targeting
   files.
+- **Credentials never live in `.env` or any repository file.** They live in
+  `~/.aws/credentials` under the `gatehouse` profile.
+- Never print a secret access key to a terminal, log, or chat.
 - Credentials come from the ambient AWS session or instance role. The repo
   stores none.
 - Do not create duplicate cloud resources. Consume the values produced by the

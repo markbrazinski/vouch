@@ -103,3 +103,6 @@ agentcore/*.zip
 app/Gatehouse/src/
 agentcore/*/staging/
 agentcore/Gatehouse/
+
+# ---- provisioning manifest (account/environment targeting, local only) ----
+provisioning.json
