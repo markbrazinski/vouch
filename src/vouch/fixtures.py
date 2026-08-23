@@ -29,7 +29,7 @@ from .state import (
     Usability,
 )
 
-BUCKET = "s3://gatehouse-evidence"
+BUCKET = "s3://vouch-evidence"
 
 
 def build_store() -> StateStore:

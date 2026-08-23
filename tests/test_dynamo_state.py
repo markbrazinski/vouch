@@ -15,7 +15,7 @@ def _ddb_available() -> tuple[bool, str]:
     try:
         import boto3
 
-        from gatehouse.config import load
+        from vouch.config import load
 
         cfg = load()
         if not cfg.state_table:
@@ -32,8 +32,8 @@ requires_ddb = pytest.mark.skipif(not AVAILABLE, reason=f"DynamoDB unavailable â
 
 @pytest.fixture
 def store():
-    from gatehouse.dynamo_store import DynamoStateStore
-    from gatehouse.fixtures import build_store
+    from vouch.dynamo_store import DynamoStateStore
+    from vouch.fixtures import build_store
 
     ns = f"test-{uuid.uuid4().hex[:8]}"
     s = DynamoStateStore(namespace=ns)
@@ -45,11 +45,11 @@ def store():
 @requires_ddb
 def test_state_survives_a_separate_session(store):
     """The core A2 requirement: a new store object sees committed truth."""
-    from gatehouse.dynamo_store import DynamoStateStore
-    from gatehouse.state import LotStatus, Usability
-    from gatehouse.workflow import Gatehouse
+    from vouch.dynamo_store import DynamoStateStore
+    from vouch.state import LotStatus, Usability
+    from vouch.workflow import Vouch
 
-    Gatehouse(store).evaluate_lot("PERSIST", "LOT-1001")
+    Vouch(store).evaluate_lot("PERSIST", "LOT-1001")
 
     fresh = DynamoStateStore(namespace=store.namespace)  # separate "invocation"
     assert fresh.get("lot", "LOT-1001").status is LotStatus.RELEASED
@@ -60,14 +60,14 @@ def test_state_survives_a_separate_session(store):
 @requires_ddb
 def test_replay_is_idempotent_across_sessions(store):
     """Replay in a NEW session must not double-release inventory."""
-    from gatehouse.dynamo_store import DynamoStateStore
-    from gatehouse.workflow import Gatehouse
+    from vouch.dynamo_store import DynamoStateStore
+    from vouch.workflow import Vouch
 
-    first = Gatehouse(store)
+    first = Vouch(store)
     first.evaluate_lot("REPLAY", "LOT-1001")
     usable = first.read.get_usable_inventory("MAT-ALLOY-7")
 
-    second = Gatehouse(DynamoStateStore(namespace=store.namespace))
+    second = Vouch(DynamoStateStore(namespace=store.namespace))
     second.evaluate_lot("REPLAY", "LOT-1001")
 
     assert second.read.get_usable_inventory("MAT-ALLOY-7") == usable
@@ -76,11 +76,11 @@ def test_replay_is_idempotent_across_sessions(store):
 @requires_ddb
 def test_full_chain_on_dynamodb(store):
     """S1-S7 end to end against authoritative DynamoDB state."""
-    from gatehouse.fixtures import add_qa_evidence
-    from gatehouse.state import LotStatus, OrderStatus
-    from gatehouse.workflow import Gatehouse
+    from vouch.fixtures import add_qa_evidence
+    from vouch.state import LotStatus, OrderStatus
+    from vouch.workflow import Vouch
 
-    gh = Gatehouse(store)
+    gh = Vouch(store)
 
     assert gh.evaluate_lot("D1", "LOT-1001")["actor"]["disposition"] == "RELEASE"
     assert gh.evaluate_lot("D2", "LOT-1002")["actor"]["disposition"] == "QUARANTINE"

@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from ..config import env_var
 from ..tools import MutationTools, ReadTools
 
 
@@ -49,17 +50,17 @@ def assert_readonly_toolset(agent_name: str, tools: Any) -> None:
 
 def mode() -> str:
     # Read env directly so tests can flip modes without a cache reset.
-    return os.environ.get("GATEHOUSE_MODE", "local").lower()
+    return (env_var("MODE") or "local").lower()
 
 
 def model_id(role: str = "actor") -> str:
     """Baseline is Nova Pro; per-role overrides exist for eval comparisons."""
     from ..config import load
 
-    return os.environ.get("GATEHOUSE_BEDROCK_MODEL_ID") or load().model_for(role)
+    return env_var("BEDROCK_MODEL_ID") or load().model_for(role)
 
 
-class GatehouseAgent:
+class VouchAgent:
     """One Strands agent node.
 
     In `bedrock` mode this wraps a real strands.Agent with a BedrockModel and
@@ -93,10 +94,10 @@ class GatehouseAgent:
 
         from ..config import load
 
-        # ponytail: streaming off by default. Gatehouse consumes one typed JSON
+        # ponytail: streaming off by default. Vouch consumes one typed JSON
         # object per call, so streaming buys nothing, and InvokeModelWithResponseStream
         # is a separate IAM action that some runtime roles are not granted.
-        streaming = os.environ.get("GATEHOUSE_BEDROCK_STREAMING", "false").lower() == "true"
+        streaming = (env_var("BEDROCK_STREAMING") or "false").lower() == "true"
 
         self._strands_agent = Agent(
             model=BedrockModel(

@@ -1,4 +1,4 @@
-"""S1-S9 vertical smoke test: the canonical Gatehouse chain.
+"""S1-S9 vertical smoke test: the canonical Vouch chain.
 
 S0 (real AgentCore invoke) lives in tests/test_s0_agentcore.py because it needs
 live AWS. Everything here runs the same workflow code S0 deploys.
@@ -8,28 +8,28 @@ from __future__ import annotations
 
 import pytest
 
-from gatehouse.fixtures import add_qa_evidence, build_store
-from gatehouse.gates import material_authority_gate
-from gatehouse.state import (
+from vouch.fixtures import add_qa_evidence, build_store
+from vouch.gates import material_authority_gate
+from vouch.state import (
     Disposition,
     LotStatus,
     OrderStatus,
     Usability,
     VerifierOutcome,
 )
-from gatehouse.tools import AuthorityError, AuthorityToken, MutationTools, ReadTools
-from gatehouse.workflow import Gatehouse
+from vouch.tools import AuthorityError, AuthorityToken, MutationTools, ReadTools
+from vouch.workflow import Vouch
 
 
 @pytest.fixture
-def gh() -> Gatehouse:
-    return Gatehouse(build_store())
+def gh() -> Vouch:
+    return Vouch(build_store())
 
 
 # ==========================================================================
 # S1 — clean lot autonomously releases
 # ==========================================================================
-def test_s1_clean_lot_releases(gh: Gatehouse):
+def test_s1_clean_lot_releases(gh: Vouch):
     before = gh.read.get_usable_inventory("MAT-ALLOY-7")
     assert gh.read.get_lot("LOT-1001").status is LotStatus.RECEIVED
 
@@ -49,7 +49,7 @@ def test_s1_clean_lot_releases(gh: Gatehouse):
 # ==========================================================================
 # S2 — hero lot quarantines (defensible vs supplier's cited spec, not vs governing)
 # ==========================================================================
-def test_s2_hero_lot_quarantines(gh: Gatehouse):
+def test_s2_hero_lot_quarantines(gh: Vouch):
     facts = gh.eval.evaluate_evidence_against_spec("LOT-1002")
     tensile = next(f for f in facts["findings"] if f["characteristic"] == "tensile_strength")
     # The supplier value would pass an older/looser revision; against governing rev C it does not.
@@ -69,7 +69,7 @@ def test_s2_hero_lot_quarantines(gh: Gatehouse):
 # ==========================================================================
 # S3 — quarantine breaks production readiness
 # ==========================================================================
-def test_s3_quarantine_holds_production(gh: Gatehouse):
+def test_s3_quarantine_holds_production(gh: Vouch):
     gh.evaluate_lot("CASE-S1", "LOT-1001")  # +500 usable
     gh.evaluate_lot("CASE-S2", "LOT-1002")  # quarantined, stays unusable
 
@@ -93,7 +93,7 @@ def test_s3_quarantine_holds_production(gh: Gatehouse):
 # ==========================================================================
 # S4 — unsafe recovery is refused
 # ==========================================================================
-def test_s4_unsafe_substitution_refused(gh: Gatehouse):
+def test_s4_unsafe_substitution_refused(gh: Vouch):
     gh.evaluate_lot("CASE-S1", "LOT-1001")
     gh.evaluate_lot("CASE-S2", "LOT-1002")
     gh.evaluate_production_readiness("CASE-S3", "C-417")
@@ -117,7 +117,7 @@ def test_s4_unsafe_substitution_refused(gh: Gatehouse):
     assert gh.read.get_production_order("C-417").status is OrderStatus.HOLD
 
 
-def test_s4_refuses_when_no_lawful_candidate_exists(gh: Gatehouse):
+def test_s4_refuses_when_no_lawful_candidate_exists(gh: Vouch):
     """The pure refusal path: unapproved substitute AND no admissible resequence."""
     gh.evaluate_lot("CASE-S1", "LOT-1001")
     gh.evaluate_lot("CASE-S2", "LOT-1002")
@@ -141,7 +141,7 @@ def test_s4_refuses_when_no_lawful_candidate_exists(gh: Gatehouse):
 # ==========================================================================
 # S5 — safe recovery executes
 # ==========================================================================
-def test_s5_safe_resequence_executes(gh: Gatehouse):
+def test_s5_safe_resequence_executes(gh: Vouch):
     gh.evaluate_lot("CASE-S1", "LOT-1001")
     gh.evaluate_lot("CASE-S2", "LOT-1002")
     gh.evaluate_production_readiness("CASE-S3", "C-417")
@@ -168,7 +168,7 @@ def test_s5_safe_resequence_executes(gh: Gatehouse):
 # ==========================================================================
 # S6 — ambiguous evidence abstains
 # ==========================================================================
-def test_s6_ambiguous_evidence_abstains(gh: Gatehouse):
+def test_s6_ambiguous_evidence_abstains(gh: Vouch):
     facts = gh.eval.evaluate_evidence_against_spec("LOT-1003")
     finding = facts["findings"][0]
     assert finding["status"] == "METHOD_MISMATCH"
@@ -193,7 +193,7 @@ def test_s6_ambiguous_evidence_abstains(gh: Gatehouse):
 # ==========================================================================
 # S7 — human evidence resumes the case
 # ==========================================================================
-def test_s7_qa_evidence_resumes_case(gh: Gatehouse):
+def test_s7_qa_evidence_resumes_case(gh: Vouch):
     first = gh.evaluate_lot("CASE-S7", "LOT-1003")
     assert first["actor"]["disposition"] == Disposition.INSUFFICIENT_EVIDENCE.value
     assert gh.read.get_lot("LOT-1003").status is LotStatus.PENDING_QA
@@ -217,7 +217,7 @@ def test_s7_qa_evidence_resumes_case(gh: Gatehouse):
 # ==========================================================================
 # S8 — authority ledger
 # ==========================================================================
-def test_s8_authority_ledger_is_complete(gh: Gatehouse):
+def test_s8_authority_ledger_is_complete(gh: Vouch):
     gh.evaluate_lot("CASE-A", "LOT-1001")
     gh.evaluate_lot("CASE-B", "LOT-1002")
     gh.evaluate_production_readiness("CASE-C", "C-417")
@@ -246,8 +246,8 @@ def test_s8_authority_ledger_is_complete(gh: Gatehouse):
 # ==========================================================================
 # S9 — permission / fail-safe invariants
 # ==========================================================================
-def test_s9_verifier_cannot_receive_mutation_tools(gh: Gatehouse):
-    from gatehouse.agents.base import PermissionViolation, assert_readonly_toolset
+def test_s9_verifier_cannot_receive_mutation_tools(gh: Vouch):
+    from vouch.agents.base import PermissionViolation, assert_readonly_toolset
 
     with pytest.raises(PermissionViolation):
         assert_readonly_toolset("specification_verifier", MutationTools(gh.store))
@@ -258,13 +258,13 @@ def test_s9_verifier_cannot_receive_mutation_tools(gh: Gatehouse):
         assert not hasattr(verifier.tools, "release_lot")
 
 
-def test_s9_no_agent_holds_mutation_tools(gh: Gatehouse):
+def test_s9_no_agent_holds_mutation_tools(gh: Vouch):
     for agent in (gh.material_actor, gh.spec_verifier, gh.readiness,
                   gh.recovery_actor, gh.recovery_check):
         assert not isinstance(agent.tools, MutationTools)
 
 
-def test_s9_unverified_proposal_cannot_mutate(gh: Gatehouse):
+def test_s9_unverified_proposal_cannot_mutate(gh: Vouch):
     """A direct mutation call with no gate token must raise."""
     mt = MutationTools(gh.store)
     with pytest.raises(AuthorityError):
@@ -274,7 +274,7 @@ def test_s9_unverified_proposal_cannot_mutate(gh: Gatehouse):
     assert gh.read.get_lot("LOT-1001").status is LotStatus.RECEIVED
 
 
-def test_s9_token_cannot_be_reused_for_another_mutation(gh: Gatehouse):
+def test_s9_token_cannot_be_reused_for_another_mutation(gh: Vouch):
     """A token minted for one tool/target must not authorize another."""
     decision = material_authority_gate(
         "CASE-X", "LOT-1001", Disposition.RELEASE, VerifierOutcome.VERIFIED
@@ -286,7 +286,7 @@ def test_s9_token_cannot_be_reused_for_another_mutation(gh: Gatehouse):
         mt.release_lot("LOT-1002", decision.token)  # wrong target
 
 
-def test_s9_forged_token_is_still_bound(gh: Gatehouse):
+def test_s9_forged_token_is_still_bound(gh: Vouch):
     """Even a hand-made token only works for its declared tool/target."""
     forged = AuthorityToken("CASE-Y", "release_lot", "LOT-1001", "k", "forged")
     mt = MutationTools(gh.store)
@@ -294,7 +294,7 @@ def test_s9_forged_token_is_still_bound(gh: Gatehouse):
         mt.release_lot("LOT-1002", forged)
 
 
-def test_s9_disagreement_fails_safe(gh: Gatehouse):
+def test_s9_disagreement_fails_safe(gh: Vouch):
     """Denial must be caused by the verifier, and cite it.
 
     Asserting only `allowed is False` is too weak: a gate that ignored the
@@ -320,7 +320,7 @@ def test_s9_disagreement_fails_safe(gh: Gatehouse):
     assert gh.read.get_lot("LOT-1001").status is LotStatus.RECEIVED
 
 
-def test_s9_verifier_rejection_blocks_mutation_end_to_end(gh: Gatehouse):
+def test_s9_verifier_rejection_blocks_mutation_end_to_end(gh: Vouch):
     """Drive the real workflow with a verifier forced to REJECT.
 
     Exercises the actual evaluate_lot path rather than the gate alone, so a gate
@@ -343,7 +343,7 @@ def test_s9_verifier_rejection_blocks_mutation_end_to_end(gh: Gatehouse):
     assert "DENIED" in r["authority_record"].authority_result
 
 
-def test_s9_retries_are_idempotent(gh: Gatehouse):
+def test_s9_retries_are_idempotent(gh: Vouch):
     first = gh.evaluate_lot("CASE-IDEM", "LOT-1001")
     inventory_after_first = gh.read.get_usable_inventory("MAT-ALLOY-7")
 
@@ -359,7 +359,7 @@ def test_s9_retries_are_idempotent(gh: Gatehouse):
     assert gh.read.get_lot("LOT-1001").status is LotStatus.RELEASED
 
 
-def test_s9_replay_cannot_double_change_schedule(gh: Gatehouse):
+def test_s9_replay_cannot_double_change_schedule(gh: Vouch):
     gh.evaluate_lot("CASE-S1", "LOT-1001")
     gh.evaluate_lot("CASE-S2", "LOT-1002")
     gh.evaluate_production_readiness("CASE-S3", "C-417")
@@ -375,8 +375,8 @@ def test_s9_replay_cannot_double_change_schedule(gh: Gatehouse):
     assert replay["mutation_result"] in ("NO_MUTATION", first["mutation_result"])
 
 
-def test_s9_state_machine_rejects_illegal_transition(gh: Gatehouse):
-    from gatehouse.state import TransitionError
+def test_s9_state_machine_rejects_illegal_transition(gh: Vouch):
+    from vouch.state import TransitionError
 
     gh.evaluate_lot("CASE-S1", "LOT-1001")
     assert gh.read.get_lot("LOT-1001").status is LotStatus.RELEASED
@@ -384,14 +384,14 @@ def test_s9_state_machine_rejects_illegal_transition(gh: Gatehouse):
         gh.store.set_lot_status("LOT-1001", LotStatus.RELEASED)
 
 
-def test_s9f_verifier_cannot_silently_gain_actor_permissions(gh: Gatehouse):
+def test_s9f_verifier_cannot_silently_gain_actor_permissions(gh: Vouch):
     """S9F: a verifier cannot acquire mutation capability after construction.
 
     Covers the escalation path the other S9 tests miss: not "was it built
     read-only" but "can it be *made* privileged later" — by reconfiguring its
     toolset, or by having its output routed as if it were an actor proposal.
     """
-    from gatehouse.agents.base import PermissionViolation, assert_readonly_toolset
+    from vouch.agents.base import PermissionViolation, assert_readonly_toolset
 
     # 1. Re-validating a verifier that was handed mutation tools must raise.
     for verifier in (gh.spec_verifier, gh.recovery_check):
@@ -413,7 +413,7 @@ def test_s9f_verifier_cannot_silently_gain_actor_permissions(gh: Gatehouse):
         Disposition(VerifierOutcome.VERIFIED.value)
 
 
-def test_s9_llm_never_does_inventory_arithmetic(gh: Gatehouse):
+def test_s9_llm_never_does_inventory_arithmetic(gh: Vouch):
     """Shortage math is pure Python and independent of any agent."""
     result = gh.eval.calculate_material_shortage("C-417")
     assert result["shortages"][0]["short_by"] == 800.0  # nothing released yet

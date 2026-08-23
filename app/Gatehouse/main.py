@@ -1,4 +1,4 @@
-"""Gatehouse AgentCore Runtime entrypoint.
+"""Vouch AgentCore Runtime entrypoint.
 
 Hosts the real Strands authority workflow — the same code path the S1-S9 tests
 exercise. This is deliberately NOT a chat interface: the payload is a typed
@@ -17,15 +17,16 @@ import os
 import sys
 from pathlib import Path
 
-# The runtime ships src/gatehouse alongside this entrypoint.
+# The runtime ships src/vouch alongside this entrypoint.
 _SRC = Path(__file__).resolve().parent / "src"
 if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 
-from gatehouse.fixtures import build_store  # noqa: E402
-from gatehouse.workflow import Gatehouse  # noqa: E402
+from vouch.config import env_var  # noqa: E402
+from vouch.fixtures import build_store  # noqa: E402
+from vouch.workflow import Vouch  # noqa: E402
 
 app = BedrockAgentCoreApp()
 log = app.logger
@@ -33,10 +34,10 @@ log = app.logger
 def _make_store(namespace: str = "runtime"):
     """A2: DynamoDB is authoritative. Falls back to in-memory only if the table
     is unreachable, and says so loudly rather than pretending to persist."""
-    if os.environ.get("GATEHOUSE_STATE_BACKEND", "dynamodb").lower() == "memory":
+    if (env_var("STATE_BACKEND") or "dynamodb").lower() == "memory":
         return build_store(), "memory"
     try:
-        from gatehouse.dynamo_store import DynamoStateStore
+        from vouch.dynamo_store import DynamoStateStore
 
         store = DynamoStateStore(namespace=namespace)
         if store.get("lot", "LOT-1001") is None:  # seed once per namespace
@@ -48,8 +49,8 @@ def _make_store(namespace: str = "runtime"):
 
 
 _STORE, _BACKEND = _make_store()
-_GATEHOUSE = Gatehouse(_STORE)
-log.info("gatehouse state backend=%s", _BACKEND)
+_VOUCH = Vouch(_STORE)
+log.info("vouch state backend=%s", _BACKEND)
 
 
 def _serialize_record(record) -> dict:
@@ -77,11 +78,11 @@ def invoke(payload: dict, context=None) -> dict:
         return {"ok": False, "error": "payload must be a JSON object"}
 
     action = payload.get("action")
-    log.info("gatehouse action=%s", action)
+    log.info("vouch action=%s", action)
 
     try:
         if action == "evaluate_lot":
-            result = _GATEHOUSE.evaluate_lot(payload["case_id"], payload["lot_id"])
+            result = _VOUCH.evaluate_lot(payload["case_id"], payload["lot_id"])
             return {
                 "ok": True,
                 "action": action,
@@ -103,7 +104,7 @@ def invoke(payload: dict, context=None) -> dict:
             }
 
         if action == "evaluate_readiness":
-            result = _GATEHOUSE.evaluate_production_readiness(
+            result = _VOUCH.evaluate_production_readiness(
                 payload["case_id"], payload["order_id"]
             )
             return {
@@ -119,7 +120,7 @@ def invoke(payload: dict, context=None) -> dict:
             }
 
         if action == "evaluate_recovery":
-            result = _GATEHOUSE.evaluate_recovery(payload["case_id"], payload["order_id"])
+            result = _VOUCH.evaluate_recovery(payload["case_id"], payload["order_id"])
             return {
                 "ok": True,
                 "action": action,
@@ -142,7 +143,7 @@ def invoke(payload: dict, context=None) -> dict:
             # S7: QA supplies the missing correct-method evidence, then the same
             # case is re-evaluated. Evidence entry is a human/QA action, not an
             # agent capability — no agent can call this.
-            from gatehouse.fixtures import add_qa_evidence
+            from vouch.fixtures import add_qa_evidence
 
             evidence_id = add_qa_evidence(_STORE, payload["lot_id"])
             return {
@@ -164,7 +165,7 @@ def invoke(payload: dict, context=None) -> dict:
     except KeyError as exc:
         return {"ok": False, "error": f"missing required field: {exc}"}
     except Exception as exc:  # noqa: BLE001
-        log.exception("gatehouse action failed")
+        log.exception("vouch action failed")
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 

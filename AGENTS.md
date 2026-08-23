@@ -1,4 +1,6 @@
-# Gatehouse — Agent Operating Contract
+# Vouch — Agent Operating Contract
+
+**Product: Vouch** (formerly Gatehouse)
 
 > **CANONICAL FILE.** `AGENTS.md` is the source of truth. `CLAUDE.md` MUST be a
 > byte-for-byte copy. They are deliberately NOT symlinked. Any change to one MUST
@@ -17,7 +19,7 @@
 Factories run on a plan. One incoming material, missing test, or supplier
 exception can make that plan wrong in minutes.
 
-**Gatehouse decides what can safely enter production, blocks what cannot, and
+**Vouch decides what can safely enter production, blocks what cannot, and
 repairs the day when reality changes.**
 
 Product promise:
@@ -25,7 +27,7 @@ Product promise:
 **Make every material prove it belongs in production — then keep the factory
 moving when one doesn't.**
 
-Gatehouse is a manufacturing **authority control plane**. Its output is not
+Vouch is a manufacturing **authority control plane**. Its output is not
 advice. Its output is an authorized state change, a refusal, or an escalation —
 each backed by an auditable record.
 
@@ -90,7 +92,7 @@ is true. If the state store and an agent disagree, the state store wins.
   fails or is unavailable, that is a BLOCKER to report, not a reason to swap.
   A model change is a decision the product lead makes, never a workaround.
 - Model configuration must not be hard-coded through application logic. It is
-  read from `provisioning.json` / environment via `gatehouse.config`, and each
+  read from `provisioning.json` / environment via `vouch.config`, and each
   role's model must stay independently overridable so evals can compare:
   Nova Pro actor + Nova Pro verifier; Nova Pro actor + alternate verifier;
   deterministic baseline.
@@ -107,7 +109,7 @@ Every consequential decision resolves to exactly one of:
 Never force an autonomous answer when the evidence cannot establish one.
 Abstention is a first-class outcome, not a failure.
 
-One AgentCore Runtime hosts the Gatehouse Strands workflow used by the smoke
+One AgentCore Runtime hosts the Vouch Strands workflow used by the smoke
 test. The deployed runtime must be the same code path the tests exercise.
 
 ---
@@ -272,7 +274,7 @@ verifier, tool, ending state, trace. Conclude **GO**, **PASS WITH BLOCKERS**
 
 ## 11. MUST NOT DO
 
-- Do not build frontend UI.
+- Do not build frontend UI **until Vouch passes the adversarial Test A gate**.
 - Do not create a chat interface.
 - Do not let an LLM perform deterministic inventory arithmetic.
 - Do not let agents invent approved substitutions, specifications, supplier
@@ -300,7 +302,7 @@ verifier, tool, ending state, trace. Conclude **GO**, **PASS WITH BLOCKERS**
   evidence.
 - Idempotent state mutations.
 - Actor / verifier separation.
-- One AgentCore Runtime containing the Gatehouse Strands workflow.
+- One AgentCore Runtime containing the Vouch Strands workflow.
 - Tests before abstraction.
 - Small fixture sets that can later become adversarial eval cases.
 
@@ -308,20 +310,41 @@ verifier, tool, ending state, trace. Conclude **GO**, **PASS WITH BLOCKERS**
 
 ## 13. AWS safety constraints
 
+### Infrastructure compatibility note
+
+> Existing development AWS resources may retain the legacy `Gatehouse` prefix
+> until Vouch passes the adversarial product gate. Do not rename/delete/recreate
+> them solely for cosmetic consistency.
+
+Legacy identifiers still in use (centralized in `vouch.config`, never scattered
+through business logic):
+
+| Logical name | Current value (legacy) |
+|---|---|
+| AWS profile | `gatehouse` |
+| IAM user | `gatehouse-dev` |
+| `VOUCH_RUNTIME_ROLE_ARN` | `GatehouseAgentCoreRuntimeRole` |
+| `VOUCH_STATE_TABLE` | `gatehouse-dev-state` |
+| `VOUCH_EVIDENCE_BUCKET` | `gatehouse-dev-evidence-*` |
+| AgentCore Runtime | `Gatehouse-*` |
+
+`VOUCH_*` environment variables fall back to their pre-rename `GATEHOUSE_*`
+equivalents, so the already-deployed runtime keeps working until redeployed.
+
 ### Identity policy (binding)
 
-- **All Gatehouse AWS development uses `AWS_PROFILE=gatehouse`**, which must
-  authenticate as IAM user `gatehouse-dev` in the Gatehouse account. The account
+- **All Vouch AWS development uses `AWS_PROFILE=gatehouse`**, which must
+  authenticate as IAM user `gatehouse-dev` in the Vouch account. The account
   id is account-specific targeting information: it lives in the gitignored
   `provisioning.json`, never in tracked files.
 - **Region is `us-east-1`** (`AWS_REGION` and `AWS_DEFAULT_REGION`).
 - **Never use `tally`, `gate5-deployer`, `default`, `brickweaver`, `onagain`, or
-  any other project's profile for Gatehouse work.** They belong to other
+  any other project's profile for Vouch work.** They belong to other
   projects; borrowing them produces misleading capability results. A bootstrap
-  identity may repair Gatehouse IAM, never run Gatehouse.
+  identity may repair Vouch IAM, never run Vouch.
 - **`GatehouseAgentCoreRuntimeRole` is the service/runtime identity, not the
   local developer identity.** Do not configure it as a local profile, and do not
-  create a second Gatehouse runtime role.
+  create a second Vouch runtime role.
 - Verify identity before any smoke run:
   `aws sts get-caller-identity --profile gatehouse --region us-east-1`
   must return exactly `.../user/gatehouse-dev`. Anything else is a hard stop.

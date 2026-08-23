@@ -1,4 +1,4 @@
-"""Gatehouse tools: read, deterministic evaluation, and gated mutation.
+"""Vouch tools: read, deterministic evaluation, and gated mutation.
 
 Three rules enforced here rather than by prompt:
   1. Read tools never mutate.

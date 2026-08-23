@@ -1,4 +1,4 @@
-"""The six Gatehouse agent roles.
+"""The six Vouch agent roles.
 
 Local reasoners derive their answer from the deterministic findings supplied in
 `facts`. They contain no lot ids, no fixture names, and no expected outcomes —
@@ -14,7 +14,7 @@ from ..schemas import (
 )
 from ..state import Disposition, RecoveryAction, VerifierOutcome
 from ..tools import ReadTools
-from .base import AgentSpec, GatehouseAgent
+from .base import AgentSpec, VouchAgent
 
 # --------------------------------------------------------------------------
 # shared derivation: what do the deterministic findings actually support?
@@ -58,7 +58,7 @@ def _classify(findings: list[dict]) -> tuple[str, list[str]]:
 # Material Disposition Agent  (actor)
 # --------------------------------------------------------------------------
 
-MATERIAL_ACTOR_PROMPT = """You are the Gatehouse Material Disposition Agent.
+MATERIAL_ACTOR_PROMPT = """You are the Vouch Material Disposition Agent.
 
 You decide whether an incoming lot can be defended for production use, using ONLY
 the authoritative facts provided. You never invent specifications, limits,
@@ -91,8 +91,8 @@ def _material_actor_local(facts: dict) -> dict:
     }
 
 
-def material_disposition_agent(read_tools: ReadTools) -> GatehouseAgent:
-    return GatehouseAgent(
+def material_disposition_agent(read_tools: ReadTools) -> VouchAgent:
+    return VouchAgent(
         AgentSpec(
             name="material_disposition_agent",
             role="actor",
@@ -109,7 +109,7 @@ def material_disposition_agent(read_tools: ReadTools) -> GatehouseAgent:
 # Specification Verifier  (verifier, read-only)
 # --------------------------------------------------------------------------
 
-SPEC_VERIFIER_PROMPT = """You are the Gatehouse Specification Verifier.
+SPEC_VERIFIER_PROMPT = """You are the Vouch Specification Verifier.
 
 You independently re-examine the source evidence and the proposed disposition.
 You are NOT a rubber stamp: derive your own position from the evidence first,
@@ -149,8 +149,8 @@ def _spec_verifier_local(facts: dict) -> dict:
     }
 
 
-def specification_verifier(read_tools: ReadTools) -> GatehouseAgent:
-    return GatehouseAgent(
+def specification_verifier(read_tools: ReadTools) -> VouchAgent:
+    return VouchAgent(
         AgentSpec(
             name="specification_verifier",
             role="verifier",
@@ -167,7 +167,7 @@ def specification_verifier(read_tools: ReadTools) -> GatehouseAgent:
 # Production Readiness Agent
 # --------------------------------------------------------------------------
 
-READINESS_PROMPT = """You are the Gatehouse Production Readiness Agent.
+READINESS_PROMPT = """You are the Vouch Production Readiness Agent.
 
 You receive DETERMINISTIC availability facts. You never compute inventory
 arithmetic yourself. Decide whether the order can remain READY.
@@ -187,8 +187,8 @@ def _readiness_local(facts: dict) -> dict:
     return {"authority_status": "READY", "rationale": "all required materials available"}
 
 
-def production_readiness_agent(read_tools: ReadTools) -> GatehouseAgent:
-    return GatehouseAgent(
+def production_readiness_agent(read_tools: ReadTools) -> VouchAgent:
+    return VouchAgent(
         AgentSpec(
             name="production_readiness_agent",
             role="evaluator",
@@ -204,7 +204,7 @@ def production_readiness_agent(read_tools: ReadTools) -> GatehouseAgent:
 # Recovery Agent  (actor)
 # --------------------------------------------------------------------------
 
-RECOVERY_PROMPT = """You are the Gatehouse Recovery Agent.
+RECOVERY_PROMPT = """You are the Vouch Recovery Agent.
 
 A production order is on HOLD. You evaluate ONLY the authoritative recovery
 candidates supplied to you. You never invent an approved substitution, and you
@@ -257,8 +257,8 @@ def _recovery_local(facts: dict) -> dict:
     }
 
 
-def recovery_agent(read_tools: ReadTools) -> GatehouseAgent:
-    return GatehouseAgent(
+def recovery_agent(read_tools: ReadTools) -> VouchAgent:
+    return VouchAgent(
         AgentSpec(
             name="recovery_agent",
             role="actor",
@@ -275,7 +275,7 @@ def recovery_agent(read_tools: ReadTools) -> GatehouseAgent:
 # Recovery Verifier  (verifier, read-only)
 # --------------------------------------------------------------------------
 
-RECOVERY_VERIFIER_PROMPT = """You are the Gatehouse Recovery Verifier.
+RECOVERY_VERIFIER_PROMPT = """You are the Vouch Recovery Verifier.
 
 Independently check the proposed recovery against deterministic facts. Confirm a
 REFUSE when refusing is correct — a refusal is a valid, verifiable outcome.
@@ -337,8 +337,8 @@ def _recovery_verifier_local(facts: dict) -> dict:
     return {"outcome": "INSUFFICIENT_EVIDENCE", "rationale": f"cannot verify action {action}"}
 
 
-def recovery_verifier(read_tools: ReadTools) -> GatehouseAgent:
-    return GatehouseAgent(
+def recovery_verifier(read_tools: ReadTools) -> VouchAgent:
+    return VouchAgent(
         AgentSpec(
             name="recovery_verifier",
             role="verifier",

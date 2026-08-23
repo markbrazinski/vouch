@@ -1,11 +1,11 @@
-# Gatehouse
+# Vouch
 
 Manufacturing authority control plane on Strands Agents + Amazon Bedrock AgentCore.
 
 **Make every material prove it belongs in production — then keep the factory
 moving when one doesn't.**
 
-Gatehouse decides what can safely enter production, blocks what cannot, and
+Vouch decides what can safely enter production, blocks what cannot, and
 repairs the day when reality changes. Its output is not advice: it is an
 authorized state change, a refusal, or an escalation — each with an audit record.
 
@@ -56,12 +56,12 @@ print(main.invoke({'action':'evaluate_lot','case_id':'DEMO','lot_id':'LOT-1002'}
 | Path | Purpose |
 |---|---|
 | `AGENTS.md` / `CLAUDE.md` | Operating contract. Byte-identical, sync-enforced. |
-| `src/gatehouse/state.py` | Entities, state machines, authoritative store |
-| `src/gatehouse/tools.py` | Read / deterministic-eval / gated-mutation tools |
-| `src/gatehouse/gates.py` | Deterministic authority gates (no LLM) |
-| `src/gatehouse/agents/` | Actor and verifier roles, permission enforcement |
-| `src/gatehouse/workflow.py` | The canonical chain |
-| `src/gatehouse/fixtures.py` | Smoke-test world |
+| `src/vouch/state.py` | Entities, state machines, authoritative store |
+| `src/vouch/tools.py` | Read / deterministic-eval / gated-mutation tools |
+| `src/vouch/gates.py` | Deterministic authority gates (no LLM) |
+| `src/vouch/agents/` | Actor and verifier roles, permission enforcement |
+| `src/vouch/workflow.py` | The canonical chain |
+| `src/vouch/fixtures.py` | Smoke-test world |
 | `app/Gatehouse/main.py` | AgentCore Runtime entrypoint (typed, not chat) |
 | `agentcore/` | CLI config + CDK |
 | `SMOKE_TEST_REPORT.md` | S0–S9 results and blockers |
@@ -78,7 +78,7 @@ yet justified by the existing fixtures. See `SMOKE_TEST_REPORT.md`.
 ## Deploy
 
 ```bash
-python scripts/stage_runtime.py     # stage src/gatehouse into the bundle
+python scripts/stage_runtime.py     # stage src/vouch into the bundle
 agentcore validate
 agentcore deploy --dry-run
 agentcore deploy

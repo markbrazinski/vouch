@@ -109,7 +109,7 @@ class DynamoStateStore:
         from .config import load
 
         cfg = load()
-        self.table_name = table_name or cfg.state_table or os.environ["GATEHOUSE_STATE_TABLE"]
+        self.table_name = table_name or cfg.state_table or os.environ["VOUCH_STATE_TABLE"]
         self.namespace = namespace
         self._ddb = boto3.resource("dynamodb", region_name=cfg.region)
         self._t = self._ddb.Table(self.table_name)

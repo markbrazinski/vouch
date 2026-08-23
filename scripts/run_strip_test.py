@@ -21,15 +21,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from gatehouse import baseline, baseline_raw  # noqa: E402
-from gatehouse.adversarial import CASES, Case  # noqa: E402
-from gatehouse.schemas import (  # noqa: E402
+from vouch import baseline, baseline_raw  # noqa: E402
+from vouch.adversarial import CASES, Case  # noqa: E402
+from vouch.schemas import (  # noqa: E402
     MaterialDispositionOutput,
     SchemaFailure,
     VerifierOutput,
 )
 
-ACTOR_PROMPT = """You are the Gatehouse Material Disposition Agent in a manufacturing plant.
+ACTOR_PROMPT = """You are the Vouch Material Disposition Agent in a manufacturing plant.
 
 Decide whether an incoming material lot can be defended for production use.
 
@@ -48,7 +48,7 @@ Key judgment rules:
 - Never invent an alias, equivalence, qualification, deviation, or policy that is
   not present in the evidence."""
 
-VERIFIER_PROMPT = """You are the Gatehouse Specification Verifier.
+VERIFIER_PROMPT = """You are the Vouch Specification Verifier.
 
 ALWAYS set the `outcome` field. It is required.
 
@@ -73,12 +73,12 @@ def _agent(system_prompt: str, role: str):
     from strands import Agent
     from strands.models import BedrockModel
 
-    from gatehouse.config import load
+    from vouch.config import load
 
     cfg = load()
     return Agent(
         model=BedrockModel(
-            model_id=os.environ.get(f"GATEHOUSE_MODEL_{role.upper()}") or cfg.bedrock_model_id,
+            model_id=os.environ.get(f"VOUCH_MODEL_{role.upper()}") or cfg.bedrock_model_id,
             region_name=cfg.region,
             streaming=False,
             temperature=0,
@@ -162,7 +162,7 @@ def main() -> None:
     ap.add_argument("--out", default="strip_results.json")
     args = ap.parse_args()
 
-    os.environ.setdefault("GATEHOUSE_MODE", "bedrock")
+    os.environ.setdefault("VOUCH_MODE", "bedrock")
 
     results = {
         "A_prestructured": baseline.run_all(CASES),

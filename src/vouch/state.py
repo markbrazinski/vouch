@@ -1,4 +1,4 @@
-"""Gatehouse authoritative state model.
+"""Vouch authoritative state model.
 
 Manufacturing truth lives here, never in agent memory. Agents propose; only the
 authority gate mutates, and only through the idempotent mutators in tools.py.

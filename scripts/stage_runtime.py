@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Stage src/gatehouse into the AgentCore runtime bundle before packaging.
+"""Stage src/vouch into the AgentCore runtime bundle before packaging.
 
-`agentcore package` zips app/Gatehouse/, so the workflow package has to live
+`agentcore package` zips app/Gatehouse/ (legacy dir name, bound to agentcore.json
+codeLocation), so the workflow package has to live
 there at build time. Keeping the source of truth in src/ and staging on demand
 avoids a second copy drifting out of sync.
 
@@ -15,8 +16,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "src" / "gatehouse"
-STAGED = ROOT / "app" / "Gatehouse" / "src" / "gatehouse"
+SOURCE = ROOT / "src" / "vouch"
+STAGED = ROOT / "app" / "Gatehouse" / "src" / "vouch"
 
 
 def clean() -> None:

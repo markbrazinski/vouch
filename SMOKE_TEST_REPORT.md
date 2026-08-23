@@ -1,4 +1,4 @@
-# Gatehouse — Vertical Smoke Test Report
+# Vouch — Vertical Smoke Test Report
 
 **Date:** 2026-08-15 (full restart from zero)
 **Baseline model:** Amazon Nova Pro (`us.amazon.nova-pro-v1:0`)

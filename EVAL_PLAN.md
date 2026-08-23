@@ -1,4 +1,4 @@
-# Gatehouse — Next-Stage Evaluation Plan
+# Vouch — Next-Stage Evaluation Plan
 
 **Status: PLAN ONLY. Do not provision evaluation infrastructure until the core
 vertical passes S0 on a live runtime.**
@@ -69,7 +69,7 @@ outcome, expected mutation, expected end state.
 ```
 dataset case
   -> deterministic baseline (rules)      -> baseline decision
-  -> Gatehouse workflow (agents + gates) -> agent decision + authority record
+  -> Vouch workflow (agents + gates) -> agent decision + authority record
   -> compare both against ground truth
   -> score; diff where they disagree
 ```

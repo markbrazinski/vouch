@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "Gatehouse"
+name = "vouch-runtime"
 version = "0.1.0"
 description = "AgentCore Runtime Application using Strands SDK"
 readme = "README.md"

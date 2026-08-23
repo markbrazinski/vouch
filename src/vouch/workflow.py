@@ -1,4 +1,4 @@
-"""The Gatehouse workflow: the canonical demo chain, executed.
+"""The Vouch workflow: the canonical demo chain, executed.
 
 Every consequential step follows the same shape:
 
@@ -32,7 +32,7 @@ from .state import (
 from .tools import AuthorityToken, EvalTools, MutationTools, ReadTools, make_idempotency_key
 
 
-class Gatehouse:
+class Vouch:
     def __init__(self, store: StateStore) -> None:
         self.store = store
         self.read = ReadTools(store)

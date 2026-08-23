@@ -3,7 +3,7 @@
 invoke -> AgentCore Runtime -> Strands workflow -> response, with usable
 logs/traces. Requires live AWS; skips (never silently passes) without it.
 
-Run:  GATEHOUSE_MODE=bedrock AWS_PROFILE=<profile> pytest tests/test_s0_agentcore.py -v
+Run:  VOUCH_MODE=bedrock AWS_PROFILE=<profile> pytest tests/test_s0_agentcore.py -v
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ def _bedrock_available() -> tuple[bool, str]:
         import boto3
 
         client = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
-        model = os.environ.get("GATEHOUSE_BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        model = os.environ.get("VOUCH_BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
         client.converse(
             modelId=model,
             messages=[{"role": "user", "content": [{"text": "ok"}]}],
@@ -51,10 +51,10 @@ def test_s0_local_runtime_entrypoint_runs_real_workflow():
 @requires_bedrock
 def test_s0_bedrock_model_returns_typed_structured_output():
     """A real model call must yield the typed contract the gate consumes."""
-    os.environ["GATEHOUSE_MODE"] = "bedrock"
-    from gatehouse.agents.roles import material_disposition_agent
-    from gatehouse.fixtures import build_store
-    from gatehouse.tools import EvalTools, ReadTools
+    os.environ["VOUCH_MODE"] = "bedrock"
+    from vouch.agents.roles import material_disposition_agent
+    from vouch.fixtures import build_store
+    from vouch.tools import EvalTools, ReadTools
 
     store = build_store()
     facts = EvalTools(store).evaluate_evidence_against_spec("LOT-1002")
@@ -68,8 +68,8 @@ def test_s0_bedrock_model_returns_typed_structured_output():
 
 
 @pytest.mark.skipif(
-    not os.environ.get("GATEHOUSE_RUNTIME_ARN"),
-    reason="no deployed AgentCore runtime (set GATEHOUSE_RUNTIME_ARN after `agentcore deploy`)",
+    not os.environ.get("VOUCH_RUNTIME_ARN"),
+    reason="no deployed AgentCore runtime (set VOUCH_RUNTIME_ARN after `agentcore deploy`)",
 )
 def test_s0_deployed_runtime_invoke_returns_trace():
     """Full S0: invoke the deployed runtime and capture runtime + trace ids."""
@@ -78,7 +78,7 @@ def test_s0_deployed_runtime_invoke_returns_trace():
     client = boto3.client(
         "bedrock-agentcore", region_name=os.environ.get("AWS_REGION", "us-east-1")
     )
-    runtime_arn = os.environ["GATEHOUSE_RUNTIME_ARN"]
+    runtime_arn = os.environ["VOUCH_RUNTIME_ARN"]
 
     response = client.invoke_agent_runtime(
         agentRuntimeArn=runtime_arn,
