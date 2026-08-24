@@ -127,6 +127,7 @@ strip_results.json
 # Records of specific runs / not-yet-frozen specs. Not source.
 SMOKE_TEST_REPORT.md
 evals/
+contracts/
 
 # ---- local agent / editor tooling state ------------------------------------
 .claude/settings.local.json
@@ -140,3 +141,8 @@ evals/
 *_report.json
 eval-out/
 graphify-out/
+
+# ---- frontend build output --------------------------------------------------
+frontend/dist/
+frontend/dist-harness-check/
+*.tsbuildinfo

@@ -1,0 +1,46 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #CFC9BD;
+  font-family: 'Public Sans', system-ui, sans-serif;
+  color: #211F1B;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: #3F3A32; text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: #211F1B; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.16);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.vh { scrollbar-width: thin; }
+
+@keyframes vp { 0%,100% { opacity:.35 } 50% { opacity:1 } }
+@keyframes vFade { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:none } }
+@keyframes vSlide { from { opacity:0; transform:translateX(64px) } to { opacity:1; transform:none } }
+@keyframes vDraw { from { transform:translateX(100%) } to { transform:none } }
+@keyframes vPop {
+  0% { box-shadow: 0 0 0 0 rgba(142,43,36,.42) }
+  100% { box-shadow: 0 3px 12px rgba(142,43,36,.14) }
+}
+
+.nz:hover { background: #EFEBE2 !important; border-color: rgba(0,0,0,.2) !important; }
+.tr:hover { background: #F1EDE5 !important; }
+
+/* Focus is never removed — clickable rows must show where you are. */
+.nz:focus-visible, .tr:focus-visible, button:focus-visible {
+  outline: 2px solid #45508C;
+  outline-offset: 2px;
+}
+
+/* Motion communicates real state change; every state is understandable without it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
