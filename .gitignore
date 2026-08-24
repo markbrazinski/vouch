@@ -10,6 +10,10 @@ credentials
 *.key
 !**/public*.key
 secrets.*
+*.p12
+*.pfx
+.netrc
+.pypirc
 
 # ---- python ----------------------------------------------------------------
 .venv/
@@ -25,6 +29,9 @@ __pycache__/
 *.egg-info/
 .eggs/
 .python-version
+pip-wheel-metadata/
+uv.lock
+.Python
 
 # ---- build / dist ----------------------------------------------------------
 build/
@@ -34,6 +41,9 @@ dist/
 node_modules/
 cdk.out/
 .cdk.staging/
+*.tgz
+*.whl
+**/staging/
 
 # ---- coverage / test outputs -----------------------------------------------
 .coverage
@@ -51,6 +61,12 @@ report.html
 *.swo
 .DS_Store
 Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+desktop.ini
+*~
 
 # ---- logs / traces / local model output ------------------------------------
 *.log
@@ -97,7 +113,6 @@ cdk.context.json
 !CLAUDE.md
 !LICENSE
 !LICENSE.*
-!SMOKE_TEST_REPORT.md
 !EVAL_PLAN.md
 agentcore/*.zip
 app/Gatehouse/src/
@@ -107,3 +122,21 @@ agentcore/Gatehouse/
 # ---- provisioning manifest (account/environment targeting, local only) ----
 provisioning.json
 strip_results.json
+
+# ---- local-only docs -------------------------------------------------------
+# Records of specific runs / not-yet-frozen specs. Not source.
+SMOKE_TEST_REPORT.md
+evals/
+
+# ---- local agent / editor tooling state ------------------------------------
+.claude/settings.local.json
+.claude/projects/
+.aider*
+.cursorignore
+
+# ---- local eval / smoke run output ------------------------------------------
+# Run artifacts are regenerated; they are not source.
+*_results.json
+*_report.json
+eval-out/
+graphify-out/
