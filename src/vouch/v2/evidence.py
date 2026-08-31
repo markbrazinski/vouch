@@ -167,7 +167,7 @@ def _safe_decode(raw: bytes) -> str:
 
 
 # ==========================================================================
-# S1 — immutable original
+# S1 — the stored original
 # ==========================================================================
 
 
@@ -175,9 +175,10 @@ class EvidenceStore(Protocol):
     """S1 storage.
 
     `put_original` returns (storage_ref, sha256_hex, object_version). The
-    production implementation is S3 with versioning + Object Lock
-    (`vouch.v2.aws.S3EvidenceStore`); `LocalEvidenceStore` is a LOCAL
-    SIMULATION of the same interface for tests.
+    production implementation is S3 with versioning
+    (`vouch.v2.aws.S3EvidenceStore`); Object Lock is supported by that adapter
+    but is NOT enabled on the current bucket (see AWS_STATUS.md).
+    `LocalEvidenceStore` is a LOCAL SIMULATION of the same interface for tests.
     """
 
     def put_original(self, key: str, raw: bytes) -> tuple[str, str, str]: ...
@@ -232,7 +233,7 @@ def ingest(
     received_at: str | None = None,
     trust_label: TrustLabel = TrustLabel.UNTRUSTED_SUPPLIER,
 ) -> ExternalEvidenceArtifact:
-    """S1 + S2. Store the immutable original, inspect it, bind its source.
+    """S1 + S2. Store the original, inspect it, and bind its identity.
 
     The `lot_id`/`material_id`/`supplier_id`/`supplier_site` arguments are the
     REQUESTED TARGET — what the caller says this evidence is for. They are NOT

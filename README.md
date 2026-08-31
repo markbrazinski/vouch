@@ -23,7 +23,7 @@ capability issuance, mutation, consequences, recovery.
 
 ```
 supplier evidence (assume hostile)
-  → security boundary → immutable original → parse → canonical claims
+  → security boundary → stored original (versioned) → parse → canonical claims
   → provenance + trust labels → frozen snapshot
       ├─→ Applicability Investigator   [model, scoped read-only tools]
       └─→ Independent Verifier          [model, no brief, no precedent]
@@ -121,10 +121,15 @@ frontend redesign.
 
 Two further limits, stated plainly:
 
-- **Local-first.** S3 Object Lock, Bedrock Guardrails, DynamoDB conditional
-  writes and AgentCore deployment are built against real interfaces and proven
-  by local equivalents. That is not evidence the AWS controls behave as
-  specified. Live qualification is required before any Milestone 1 claim.
+- **AWS coverage is partial and itemized.** DynamoDB transactional capability
+  consumption, S3 versioned evidence storage and DecisionRecord/event
+  persistence are implemented AND live-verified in this account. S3 Object
+  Lock, Bedrock Guardrails, malware scanning, AgentCore Runtime, Gateway tool
+  scoping and observability are NOT live-verified — Object Lock is not enabled
+  on the bucket and no guardrail is provisioned. Per-component status, with
+  what each claim does and does not cover, is in
+  [docs/architecture/v2/AWS_STATUS.md](docs/architecture/v2/AWS_STATUS.md).
+  Evidence originals are **versioned, not WORM**.
 - **The evaluation corpus is unreviewed.** It was authored alongside the code it
   measures, and case design materially determines the outcome.
 

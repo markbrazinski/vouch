@@ -83,7 +83,7 @@ def content_hash(payload: Any) -> str:
 
 
 # ==========================================================================
-# S1 — immutable original
+# S1 — the stored original
 # ==========================================================================
 
 
@@ -173,11 +173,15 @@ class ArtifactStatus(str, Enum):
 
 
 class ExternalEvidenceArtifact(BaseModel):
-    """The immutable original supplier document.
+    """The stored original supplier document.
 
-    Original bytes never mutate. Everything downstream references this by
-    `content_hash`, so a claim can always be traced back to the exact bytes it
-    came from.
+    Original bytes are never rewritten in place, and everything downstream
+    references this by `content_hash`, so a claim can always be traced back to
+    the exact bytes it came from.
+
+    NOT described as "immutable": in production these are S3 objects with
+    versioning, which prevents overwrite-in-place but is not Object Lock. See
+    docs/architecture/v2/AWS_STATUS.md for what is and is not enabled.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -192,7 +196,7 @@ class ExternalEvidenceArtifact(BaseModel):
     document_identity: str
     storage_ref: str  # s3://bucket/key
     content_hash: str  # SHA-256 of the original bytes
-    object_version: str = ""  # S3 version id — WORM/versioned original
+    object_version: str = ""  # S3 VersionId (versioning, not Object Lock)
     security_inspection: SecurityInspection = Field(default_factory=SecurityInspection)
     status: ArtifactStatus = ArtifactStatus.RECEIVED
     #: Trust label the claims from this artifact inherit (S6).

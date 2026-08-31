@@ -119,7 +119,7 @@ class S3EvidenceStore:
         return f"{self.prefix}/{key}" if self.prefix else key
 
     def put_original(self, key: str, raw: bytes) -> tuple[str, str, str]:
-        """Write the immutable original. Returns (uri, sha256, version_id).
+        """Write the original. Returns (uri, sha256, version_id).
 
         The SHA-256 is computed locally AND handed to S3 as a checksum, so a
         corrupted upload is rejected by the service rather than silently stored.
