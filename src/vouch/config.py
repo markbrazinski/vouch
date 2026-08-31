@@ -131,10 +131,13 @@ def load() -> Config:
         evidence_bucket=env_var("EVIDENCE_BUCKET") or m.get("evidence_bucket", ""),
         state_table=env_var("STATE_TABLE") or m.get("state_table", ""),
         runtime_role_arn=env_var("RUNTIME_ROLE_ARN") or m.get("runtime_role_arn", ""),
+        # No silent substitution (AGENTS.md model policy, arbitration D18).
+        # V1 fell back to Sonnet here whenever the manifest lacked the key, so an
+        # auditor could not tell which model made a decision. The baseline is now
+        # explicit; overriding it is a deliberate act that the DecisionRecord
+        # records.
         bedrock_model_id=(
-            env_var("BEDROCK_MODEL_ID")
-            or m.get("bedrock_model_id")
-            or "us.anthropic.claude-sonnet-4-6"
+            env_var("BEDROCK_MODEL_ID") or m.get("bedrock_model_id") or NOVA_PRO
         ),
         aws_profile=env("AWS_PROFILE") or m.get("aws_profile", ""),
         mode=(env_var("MODE") or "local").lower(),

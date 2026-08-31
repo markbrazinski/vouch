@@ -364,3 +364,43 @@ def test_no_silent_model_substitution():
 
     assert model_id_for("investigator") == "us.amazon.nova-pro-v1:0"
     assert model_id_for("verifier") == "us.amazon.nova-pro-v1:0"
+
+
+# -- Strands tool registration --------------------------------------------
+def test_strands_tool_registration_produces_real_tools(vouch):
+    """Regression guard for a silent, dangerous failure.
+
+    Passing bound methods to strands.Agent(tools=...) is rejected as an
+    "unrecognized tool specification" — and the agent then runs with NO tools
+    while reporting success. Observed live: Nova invented a specification
+    ("SPEC-ALLOY-7 REV-A") that does not exist in the corpus. That is V1's
+    tools=[] failure returning through the back door, so it gets a test.
+    """
+    from strands.tools.decorator import DecoratedFunctionTool
+
+    corpus, _ = vouch
+    tools = CorpusTools(
+        corpus, agent_name="investigator", lot_id="LOT-1001",
+        material_id="MAT-ALLOY-7", snapshot_claims=[],
+    )
+    registered = tools.strands_tools(CorpusTools.INVESTIGATOR_TOOLS)
+
+    assert len(registered) == len(CorpusTools.INVESTIGATOR_TOOLS)
+    for entry in registered:
+        assert isinstance(entry, DecoratedFunctionTool), (
+            f"{entry} is not a Strands tool; the agent would silently run tool-less"
+        )
+
+
+def test_registered_tools_are_bound_to_the_decision_context(vouch):
+    """A tool cannot be pointed at another lot by the model."""
+    corpus, _ = vouch
+    tools = CorpusTools(
+        corpus, agent_name="investigator", lot_id="LOT-1001",
+        material_id="MAT-ALLOY-7", snapshot_claims=[],
+    )
+    registered = {t.tool_name: t for t in tools.strands_tools(CorpusTools.INVESTIGATOR_TOOLS)}
+    # get_supplier_qualification takes no lot argument at all.
+    assert "get_supplier_qualification" in registered
+    result = tools.get_supplier_qualification()
+    assert result["qualification_id"] == "QUAL-1"

@@ -85,6 +85,12 @@ Rules that are not negotiable:
   authoritative equivalence, that test is NOT covered. Absence of proof is not
   proof of a defect; it is insufficiency.
 
+`sufficiency` means ONE thing only: is every required test covered by applicable
+evidence? Set SUFFICIENT when they are, even if a value fails its limit — a
+failing number is covered evidence, and deterministic code decides what it
+means. Supplier qualification, approval status and state legality are policy
+questions decided elsewhere; they never make evidence insufficient.
+
 Return the EvidenceApplicabilityBrief structure exactly."""
 
 
@@ -112,6 +118,12 @@ Rules that are not negotiable:
   this exact method/characteristic/condition/site/PO/date.
 - Where the basis or applicability cannot be established, return
   sufficiency=INSUFFICIENT_EVIDENCE with the missing items named.
+
+`sufficiency` means ONE thing only: is every required test covered by applicable
+evidence? Set SUFFICIENT when they are, even if a value fails its limit — a
+failing number is covered evidence, and deterministic code decides what it
+means. Supplier qualification, approval status and state legality are policy
+questions decided elsewhere; they never make evidence insufficient.
 
 Return the EvidenceApplicabilityBrief structure exactly."""
 
@@ -290,7 +302,7 @@ class BriefProducer:
             ),
             system_prompt=self.prompt,
             name=self.role,
-            tools=tools.callables(self.tool_names),
+            tools=tools.strands_tools(self.tool_names),
         )
 
         # The lot context is data, not instruction. No supplier text is placed
