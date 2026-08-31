@@ -21,10 +21,11 @@ of the structured fields — which is precisely the claim under test.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Callable
 
-from .agents import ApplicabilityInvestigator, IndependentVerifier
+from .agents import TEMPERATURE, ApplicabilityInvestigator, IndependentVerifier
 from .contracts import Sufficiency, TrustLabel
 from .corpus import (
     ApprovedDeviation,
@@ -332,8 +333,20 @@ def _brief_to_result(brief, corpus: Corpus, case: EvalCase, claims: list) -> dic
 
 
 def run_agent_config(
-    case: EvalCase, *, with_verifier: bool, investigator=None, verifier=None
+    case: EvalCase,
+    *,
+    with_verifier: bool,
+    investigator=None,
+    verifier=None,
+    capture: dict | None = None,
 ) -> dict:
+    """Run one agent configuration over one case.
+
+    P1-10: `capture` collects the full evidence trail — both complete briefs,
+    every tool call, per-requirement applicability, reconciliation differences
+    with actual values, typed failures, latency and retry counts — WITHOUT
+    changing what is scored. Scoring reads the same fields it always did.
+    """
     corpus, claims = build_case_world(case)
     events = EventLog()
     context = {
@@ -349,18 +362,40 @@ def run_agent_config(
     agent = investigator or ApplicabilityInvestigator(
         corpus, local_fn=investigator_reasoner
     )
+    started = time.perf_counter()
     run = agent.run(
         context=context, claims=claims, events=events, decision_record_id=case.case_id
     )
+    investigator_ms = (time.perf_counter() - started) * 1000
     result = _brief_to_result(run.brief, corpus, case, claims)
+
+    if capture is not None:
+        capture.update(
+            investigator=_agent_capture(run, investigator_ms),
+            claim_count=len(claims),
+            claims=[
+                {
+                    "claim_id": c.claim_id,
+                    "characteristic": c.characteristic,
+                    "value": c.value,
+                    "method": c.method,
+                    "condition": c.condition,
+                    "trust_label": c.trust_label.value,
+                    "source_locator": c.source_locator,
+                }
+                for c in claims
+            ],
+        )
 
     if not with_verifier:
         return result
 
     checker = verifier or IndependentVerifier(corpus, local_fn=verifier_reasoner)
+    started = time.perf_counter()
     verification = checker.run(
         context=context, claims=claims, events=events, decision_record_id=case.case_id
     )
+    verifier_ms = (time.perf_counter() - started) * 1000
     outcome = reconcile(run.brief, verification.brief, events, case.case_id)
 
     result["reconciliation"] = outcome.outcome.value
@@ -368,7 +403,81 @@ def run_agent_config(
         # Disagreement abstains — but the BASIS the investigator proposed is
         # still recorded, so basis accuracy is measurable independently.
         result["disposition"] = "ABSTAIN"
+
+    if capture is not None:
+        capture.update(
+            verifier=_agent_capture(verification, verifier_ms),
+            reconciliation={
+                "outcome": outcome.outcome.value,
+                "differing_fields": list(outcome.differing_fields),
+                "detail": outcome.detail,
+                # P1-9/P1-10: the ACTUAL differing values, per agent.
+                "investigator_values": _fingerprint_subset(
+                    run.brief, outcome.differing_fields
+                ),
+                "verifier_values": _fingerprint_subset(
+                    verification.brief, outcome.differing_fields
+                ),
+            },
+            verifier_result=_brief_to_result(verification.brief, corpus, case, claims),
+            events=events.as_dicts(),
+        )
     return result
+
+
+def _agent_capture(run, elapsed_ms: float) -> dict:
+    """Everything an independent auditor needs about one agent invocation.
+
+    P1-9: for every run, the complete brief, the selected basis, the applicable
+    evidence and the tool trail — recorded rather than summarized, and never
+    chain-of-thought.
+    """
+    return {
+        "model_id": run.model_id,
+        "prompt_version": run.prompt_version,
+        "prompt_hash": run.prompt_hash,
+        "temperature": TEMPERATURE,
+        "schema_valid": run.schema_valid,
+        "attempts": run.attempts,
+        "failure": run.failure,
+        "failure_category": (
+            run.failure_category.value if run.failure_category else ""
+        ),
+        "latency_ms": round(elapsed_ms, 2),
+        "brief": run.brief.model_dump(mode="json") if run.brief else None,
+        "brief_hash": run.brief.brief_hash() if run.brief else "",
+        "basis": (
+            f"{run.brief.governing_basis.spec_id}:{run.brief.governing_basis.revision}"
+            if run.brief else ""
+        ),
+        "tool_calls": list(run.tool_events),
+        "tool_call_count": len(run.tool_events),
+    }
+
+
+def _fingerprint_subset(brief, fields: list[str]) -> dict:
+    if brief is None:
+        return {}
+    fingerprint = brief.material_fingerprint()
+    return {field: fingerprint.get(field) for field in fields}
+
+
+def per_requirement_applicability(case: EvalCase, result: dict) -> list[dict]:
+    """P1-10: per-test applicability, not only a whole-case boolean.
+
+    A case with four requirements where three resolved correctly is materially
+    different from one where none did, and a single boolean hides that.
+    """
+    predicted = result.get("applicability", {})
+    return [
+        {
+            "requirement": test,
+            "expected": expected,
+            "predicted": predicted.get(test),
+            "correct": predicted.get(test) == expected,
+        }
+        for test, expected in case.gold_applicability.items()
+    ]
 
 
 # ==========================================================================
@@ -500,8 +609,99 @@ def gate_verdict(summary: dict) -> tuple[bool, str]:
     return passed, detail
 
 
+def derived_metrics(scores: list[CaseScore], captures: list[dict] | None = None) -> dict:
+    """P1-10 metrics, derived from the SAME scores the gate reads.
+
+    These add nothing to and subtract nothing from the verdict — they describe
+    it. `gate_verdict` is untouched and remains the only thing that decides
+    PASS/FAIL.
+    """
+    captures = captures or []
+
+    def rate(subset, attribute):
+        return (
+            round(sum(getattr(s, attribute) for s in subset) / len(subset), 4)
+            if subset else None
+        )
+
+    metrics: dict = {"governing_basis_accuracy": {}, "correct_abstention": {}}
+
+    for config in ("A", "B", "C"):
+        by_config = [s for s in scores if s.config == config]
+        if not by_config:
+            continue
+        metrics["governing_basis_accuracy"][config] = {
+            "overall": rate(by_config, "basis_correct"),
+            **{
+                segment: rate(
+                    [s for s in by_config if s.segment == segment], "basis_correct"
+                )
+                for segment in ("RULE_SOLVABLE", "AGENT_VALUABLE", "HUMAN_ONLY")
+            },
+        }
+        # HUMAN_ONLY cases must abstain; correct abstention is measured there.
+        human_only = [s for s in by_config if s.segment == "HUMAN_ONLY"]
+        metrics["correct_abstention"][config] = rate(human_only, "disposition_correct")
+
+    # -- applicability accuracy BY REQUIREMENT, not by whole case ---------
+    per_requirement: dict[str, dict] = {}
+    for capture in captures:
+        config = capture.get("config", "?")
+        bucket = per_requirement.setdefault(config, {"correct": 0, "total": 0})
+        for row in capture.get("per_requirement", []):
+            bucket["total"] += 1
+            bucket["correct"] += 1 if row["correct"] else 0
+    metrics["applicability_accuracy_by_requirement"] = {
+        config: {
+            **bucket,
+            "rate": round(bucket["correct"] / bucket["total"], 4) if bucket["total"] else None,
+        }
+        for config, bucket in per_requirement.items()
+    }
+
+    # -- verifier catch rate vs false-disagreement rate -------------------
+    # A disagreement is a CATCH when the investigator's basis was wrong, and a
+    # FALSE disagreement when it was right. Distinguishing them is the whole
+    # point of measuring the verifier (contract D5).
+    by_case: dict[str, CaseScore] = {s.case_id: s for s in scores if s.config == "B"}
+    caught = missed = false_alarm = agreed_correct = 0
+    for score_c in [s for s in scores if s.config == "C"]:
+        investigator_right = by_case.get(score_c.case_id)
+        if investigator_right is None:
+            continue
+        disagreed = score_c.reconciliation == "MATERIAL_DISAGREEMENT"
+        if investigator_right.basis_correct:
+            false_alarm += 1 if disagreed else 0
+            agreed_correct += 0 if disagreed else 1
+        else:
+            caught += 1 if disagreed else 0
+            missed += 0 if disagreed else 1
+
+    metrics["verifier"] = {
+        "wrong_basis_caught": caught,
+        "wrong_basis_missed": missed,
+        "catch_rate": round(caught / (caught + missed), 4) if (caught + missed) else None,
+        "false_disagreements": false_alarm,
+        "correct_agreements": agreed_correct,
+        "false_disagreement_rate": (
+            round(false_alarm / (false_alarm + agreed_correct), 4)
+            if (false_alarm + agreed_correct) else None
+        ),
+    }
+
+    # -- unsafe autonomous action: must be 0 (contract D21) ---------------
+    metrics["unsafe_release_count"] = sum(
+        1
+        for s in scores
+        if s.predicted_disposition == "RELEASE" and not s.disposition_correct
+    )
+    return metrics
+
+
 __all__ = [
     "CaseScore",
+    "derived_metrics",
+    "per_requirement_applicability",
     "build_case_world",
     "deterministic_basis_selector",
     "gate_verdict",
