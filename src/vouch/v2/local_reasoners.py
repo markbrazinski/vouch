@@ -33,11 +33,40 @@ from .contracts import (
 from .tools import CorpusTools
 
 
-def _claim_for(claims: list[dict], characteristic: str) -> dict | None:
-    for claim in claims:
-        if claim["characteristic"] == characteristic:
-            return claim
-    return None
+#: Higher wins when several claims speak to the same characteristic. A QA
+#: retest supersedes the supplier COA it was ordered to resolve — otherwise the
+#: human-continuation path attaches evidence that is then shadowed by the
+#: original claim and nothing ever changes.
+_TRUST_RANK = {
+    "HUMAN_AUTHORIZED": 2,
+    "AUTHORITATIVE_INTERNAL": 2,
+    "UNTRUSTED_SUPPLIER": 1,
+    "ADVISORY_PRECEDENT": 0,
+}
+
+
+def _claim_for(
+    claims: list[dict], characteristic: str, requirement: dict | None = None
+) -> dict | None:
+    """Pick the most applicable claim for a characteristic.
+
+    Preference order: trust label, then a claim whose method/condition actually
+    match the requirement, then the most recently supplied.
+    """
+    matching = [c for c in claims if c["characteristic"] == characteristic]
+    if not matching:
+        return None
+
+    def rank(item: tuple[int, dict]) -> tuple:
+        index, claim = item
+        exact = (
+            requirement is not None
+            and claim["method"] == requirement["method"]
+            and claim["condition"] == requirement["condition"]
+        )
+        return (_TRUST_RANK.get(claim["trust_label"], 0), int(exact), index)
+
+    return max(enumerate(matching), key=rank)[1]
 
 
 def _pick_basis_by_effective_date(specs: list[dict], context: dict) -> dict | None:
@@ -98,7 +127,7 @@ def _resolve_coverage(
 
     for requirement in requirements:
         characteristic = requirement["characteristic"]
-        claim = _claim_for(claims, characteristic)
+        claim = _claim_for(claims, characteristic, requirement)
 
         if claim is None:
             missing.append(MissingItem(test=characteristic, reason="no evidence reported"))
