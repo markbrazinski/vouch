@@ -26,7 +26,46 @@ from .contracts import (
 from .corpus import Corpus
 from .lifecycle import EventLog, EventType
 
-POLICY_VERSION = "vouch-policy-2.0"
+POLICY_VERSION = "vouch-policy-2.1"
+
+
+class BasisDateUndetermined(ValueError):
+    """The basis date required by policy is not on the lot's record."""
+
+
+def basis_date_for(revision, lot) -> str:
+    """Which date decides whether this revision governs (P1-4).
+
+    The revision states its own rule in `effective_basis`. There is deliberately
+    NO truthy fallback: `lot.received_at or lot.manufactured_at` silently
+    answers a policy question with whichever field happened to be populated,
+    which means two lots with the same dates can be judged on different bases.
+
+    Where a revision states no basis, the plant default applies and is recorded
+    explicitly rather than inferred. Where the required date is ABSENT from the
+    lot record, this raises — an undeterminable basis is a case for abstention,
+    not for guessing.
+    """
+    basis = getattr(revision, "effective_basis", None) or DEFAULT_EFFECTIVE_BASIS
+
+    if basis == "date_of_manufacture":
+        when = lot.manufactured_at
+    elif basis == "date_of_receipt":
+        when = lot.received_at
+    else:
+        raise BasisDateUndetermined(f"unknown effective_basis {basis!r}")
+
+    if not when:
+        raise BasisDateUndetermined(
+            f"{getattr(revision, 'key', '?')} keys on {basis}, which this lot "
+            f"does not record; the governing basis cannot be established"
+        )
+    return when
+
+
+#: Plant policy where a revision does not state its own basis. Explicit and
+#: versioned, so a change is a visible policy decision rather than a code edit.
+DEFAULT_EFFECTIVE_BASIS = "date_of_receipt"
 
 
 @dataclass
@@ -107,8 +146,6 @@ def run_basis_checks(
     if lot is None:
         return BasisCheckResult(False, [f"lot {lot_id} does not exist"])
 
-    when = lot.received_at or lot.manufactured_at
-
     # -- basis existence, currency, scope --------------------------------
     revision = corpus.spec_revision(
         brief.governing_basis.spec_id, brief.governing_basis.revision
@@ -120,18 +157,35 @@ def run_basis_checks(
         )
         return BasisCheckResult(False, failures)
 
-    if revision.status == "SUPERSEDED" or revision.superseded_by:
-        failures.append(
-            f"{revision.key} is superseded by {revision.superseded_by} and cannot govern"
-        )
+    # P1-4. The basis DATE comes from the revision's own stated rule, not from
+    # whichever of the lot's date fields happens to be populated.
+    try:
+        when = basis_date_for(revision, lot)
+    except BasisDateUndetermined as exc:
+        return BasisCheckResult(False, [str(exc)])
+
     if revision.status in ("DRAFT", "WITHDRAWN"):
         failures.append(f"{revision.key} has status {revision.status} and cannot govern")
+    elif not revision.governed_on(when):
+        # P1-4. Being superseded TODAY is not disqualifying; not having governed
+        # ON THE BASIS DATE is. These are different questions and the audit
+        # found only the first being asked.
+        end = revision.ended_at
+        if when < revision.effective_date:
+            failures.append(
+                f"{revision.key} was not yet effective on {when} "
+                f"(effective {revision.effective_date})"
+            )
+        elif end is not None and when >= end:
+            failures.append(
+                f"{revision.key} ceased to govern on {end}; it cannot govern a lot "
+                f"with basis date {when}"
+            )
+        else:
+            failures.append(f"{revision.key} did not govern on {when}")
+
     if not revision.covers_material(lot.material_id):
         failures.append(f"{revision.key} does not cover material {lot.material_id}")
-    if when and when < revision.effective_date:
-        failures.append(
-            f"{revision.key} is not yet effective for this lot ({when} < {revision.effective_date})"
-        )
 
     # -- the requirement set comes from the CORPUS, not the brief ---------
     resolved = list(revision.requirements)
@@ -142,13 +196,29 @@ def run_basis_checks(
         else:
             resolved.extend(other.requirements)
 
+    # P1-5. The omission check must NOT be skipped when the brief declares no
+    # required tests at all. An empty required_tests against a non-empty
+    # authoritative set was the bypass: it silently satisfied the comparison and
+    # let a brief that acknowledged no requirements proceed.
     briefed = {t.name for t in brief.required_tests}
     actual = {r.characteristic for r in resolved}
-    if briefed and briefed != actual:
-        omitted = actual - briefed
+
+    if actual and not briefed:
+        failures.append(
+            f"brief declares no required tests, but {revision.key} requires "
+            f"{sorted(actual)}; the brief does not reflect the authoritative "
+            f"requirement set"
+        )
+    elif briefed != actual:
+        omitted = sorted(actual - briefed)
+        invented = sorted(briefed - actual)
         if omitted:
             failures.append(
-                f"brief omits required tests present in {revision.key}: {sorted(omitted)}"
+                f"brief omits required tests present in {revision.key}: {omitted}"
+            )
+        if invented:
+            failures.append(
+                f"brief asserts tests not in {revision.key}: {invented}"
             )
 
     # -- cited equivalences ----------------------------------------------

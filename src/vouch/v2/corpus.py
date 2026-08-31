@@ -114,6 +114,11 @@ class SpecificationRevision:
     requirements: tuple[Requirement, ...] = ()
     superseded_by: str | None = None  # revision label
     effective_basis: str | None = None  # "date_of_manufacture" | "date_of_receipt" | None
+    #: P1-4. When this revision STOPPED governing. A revision superseded today
+    #: still legitimately governed lots whose basis date falls before this.
+    #: None means it has not been superseded.
+    effective_to: str | None = None
+    superseded_at: str | None = None
     material_scope: tuple[str, ...] = ()  # empty = all materials governed by spec_id
     #: Incorporation by reference — other authoritative docs that ADD requirements.
     incorporates: tuple[str, ...] = ()
@@ -125,6 +130,28 @@ class SpecificationRevision:
     @property
     def is_current(self) -> bool:
         return self.status == "ACTIVE" and self.superseded_by is None
+
+    @property
+    def ended_at(self) -> str | None:
+        """When this revision ceased to govern, whichever field records it."""
+        return self.effective_to or self.superseded_at
+
+    def governed_on(self, when: str) -> bool:
+        """Did this revision govern on the given basis date? (P1-4)
+
+        The question is historical, not "is it current". A revision superseded
+        today may legitimately have governed a lot manufactured while it was in
+        force, and a lot whose basis date falls after supersession may not use
+        it. Half-open [effective_date, ended_at).
+        """
+        if self.status in ("DRAFT", "WITHDRAWN"):
+            return False
+        if not when:
+            return False
+        if when < self.effective_date:
+            return False  # not yet effective
+        end = self.ended_at
+        return end is None or when < end
 
     def covers_material(self, material_id: str) -> bool:
         return not self.material_scope or material_id in self.material_scope

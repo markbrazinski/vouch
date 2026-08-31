@@ -89,6 +89,11 @@ def build_corpus() -> Corpus:
         SpecificationRevision(
             spec_id="SPEC-A7", revision="B", status="SUPERSEDED",
             effective_date="2024-01-01", superseded_by="C",
+            # P1-4: WHEN it stopped governing. Rev C took effect 2026-01-01, so
+            # B governed lots with a basis date before that and no others.
+            # Without this date "superseded" and "never governed" collapse into
+            # the same thing, which is the defect the audit found.
+            effective_to="2026-01-01", superseded_at="2026-01-01",
             effective_basis="date_of_receipt",
             material_scope=("MAT-ALLOY-7",),
             requirements=(

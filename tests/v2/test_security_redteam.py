@@ -199,7 +199,10 @@ def test_superseded_revision_fails_even_if_both_models_agree(vouch):
     )
     result = run_basis_checks(brief, corpus, lot_id="LOT-1002", claims_by_id={})
     assert not result.passed
-    assert any("superseded" in f for f in result.failures)
+    # LOT-1002 was received 2026-03-02; rev B ceased to govern 2026-01-01.
+    # The refusal must be about the BASIS DATE, not merely about the revision
+    # carrying a SUPERSEDED label today (P1-4).
+    assert any("ceased to govern" in f for f in result.failures)
 
 
 # -- 8. fabricated evidence reference --------------------------------------
