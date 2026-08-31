@@ -96,6 +96,9 @@ class AgentSegment:
     schema_valid: bool = False
     precedent_consulted: list[str] = field(default_factory=list)
     failure: str = ""
+    #: P1-3: the ACTUAL category, not a blanket schema failure.
+    failure_category: str = ""
+    attempts: int = 1
 
 
 @dataclass

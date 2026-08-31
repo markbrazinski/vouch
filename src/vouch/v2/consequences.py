@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .contracts import VouchFailure
 from .corpus import Corpus
 from .lifecycle import EventLog, EventType
 
@@ -109,12 +110,29 @@ def recalculate_consequences(
     lot_id: str,
     inventory_delta: float,
     events: EventLog,
+    policy=None,
+    capabilities=None,
 ) -> dict:
-    """Recompute coverage and readiness for every order touching this material,
-    and record the causal links."""
+    """Recompute coverage and readiness, and PERSIST readiness changes (P1-6).
+
+    The audit found readiness computed and returned but never written: the
+    order's status and state_version never moved, so "production HOLD" was a
+    view, not a fact. A recomputation that changes readiness now performs a
+    real authorized state transition through the capability path like any other
+    mutation — deterministic decision, policy authorization, atomic consume,
+    ledger entry.
+
+    `policy`/`capabilities` are optional so the pure calculation remains
+    callable on its own; when they are absent the readiness change is reported
+    but explicitly NOT persisted, and `persisted` says so rather than implying
+    a write happened.
+    """
     lot = corpus.lot(lot_id)
     if lot is None:
-        return {"coverage_changes": [], "readiness_changes": [], "caused_by": []}
+        return {
+            "coverage_changes": [], "readiness_changes": [], "caused_by": [],
+            "persisted": False,
+        }
 
     affected = [
         order
@@ -132,27 +150,39 @@ def recalculate_consequences(
             {"order_id": order.order_id, "coverage": [c.as_dict() for c in result.coverage]}
         )
         if result.readiness.value != order.status:
-            readiness_changes.append(
-                {
-                    "order_id": order.order_id,
-                    "from": order.status,
-                    "to": result.readiness.value,
-                    "reason": result.reason,
-                }
+            causal = {
+                "cause": "lot_disposition",
+                "lot_id": lot_id,
+                "inventory_delta": inventory_delta,
+                "material_id": lot.material_id,
+                "effect": "order_readiness",
+                "order_id": order.order_id,
+                "from": order.status,
+                "to": result.readiness.value,
+                "decision_record_id": decision_record_id,
+            }
+            change = {
+                "order_id": order.order_id,
+                "from": order.status,
+                "to": result.readiness.value,
+                "reason": result.reason,
+                "persisted": False,
+                "state_version": order.state_version,
+            }
+
+            persisted = _persist_readiness(
+                corpus, order, result, decision_record_id, events, policy,
+                capabilities, causal,
             )
-            caused_by.append(
-                {
-                    "cause": "lot_disposition",
-                    "lot_id": lot_id,
-                    "inventory_delta": inventory_delta,
-                    "material_id": lot.material_id,
-                    "effect": "order_readiness",
-                    "order_id": order.order_id,
-                    "from": order.status,
-                    "to": result.readiness.value,
-                    "decision_record_id": decision_record_id,
-                }
-            )
+            if persisted is not None:
+                change["persisted"] = True
+                change["state_version"] = persisted["after_version"]
+                change["ledger_sequence"] = persisted["sequence"]
+                causal["ledger_sequence"] = persisted["sequence"]
+
+            readiness_changes.append(change)
+            caused_by.append(causal)
+
         events.emit(
             EventType.CONSEQUENCE_RECALCULATED, decision_record_id,
             order_id=order.order_id, order_readiness=result.readiness.value,
@@ -163,7 +193,52 @@ def recalculate_consequences(
         "coverage_changes": coverage_changes,
         "readiness_changes": readiness_changes,
         "caused_by": caused_by,
+        "persisted": all(c["persisted"] for c in readiness_changes) if readiness_changes else True,
     }
+
+
+def _persist_readiness(
+    corpus: Corpus, order, result, decision_record_id: str, events: EventLog,
+    policy, capabilities, causal: dict,
+) -> dict | None:
+    """Authorize and apply one readiness transition. Returns the ledger entry.
+
+    Deliberately routed through the SAME policy + capability + atomic consume
+    path as every other mutation. There is no side door for readiness just
+    because it is computed deterministically — a deterministic decision still
+    needs authority to change state.
+    """
+    if policy is None or capabilities is None:
+        return None
+
+    from .authority import Action, execute
+
+    decision = policy.authorize_order_action(
+        decision_record_id=decision_record_id,
+        order_id=order.order_id,
+        action=Action.SET_ORDER_READINESS,
+        observed_state_version=order.state_version,
+        events=events,
+    )
+    if not decision.allowed or decision.capability is None:
+        return None
+
+    try:
+        entry = execute(
+            decision.capability, corpus, capabilities, events,
+            params={"readiness": result.readiness.value, "caused_by": causal},
+        )
+    except VouchFailure:
+        # A concurrent change moved the order; the recomputation is stale and
+        # will be redone. Never force the write.
+        return None
+
+    events.emit(
+        EventType.READINESS_TRANSITIONED, decision_record_id,
+        order_id=order.order_id, **{"from": causal["from"]}, to=causal["to"],
+        ledger_seq=entry["sequence"], caused_by_lot=causal["lot_id"],
+    )
+    return entry
 
 
 # ==========================================================================

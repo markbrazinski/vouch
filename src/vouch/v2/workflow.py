@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 from .agents import ApplicabilityInvestigator, IndependentVerifier
 from .authority import Action, CapabilityStore, PolicyEngine, execute
-from .consequences import recalculate_consequences
+from .consequences import Verdict, enumerate_recovery, recalculate_consequences
 from .contracts import (
     ArtifactStatus,
     CanonicalEvidenceClaim,
@@ -349,9 +349,12 @@ class VouchV2:
         record.investigator = self._agent_segment(investigation, snapshot)
 
         if investigation.brief is None:
+            # P1-3: report what ACTUALLY failed. A Bedrock outage is not a
+            # schema failure, and an auditor must be able to tell them apart.
             return self._quality_decision(
                 record, events, lot_id,
-                FailureCategory.INVESTIGATOR_SCHEMA_FAILURE,
+                investigation.failure_category
+                or FailureCategory.INVESTIGATOR_SCHEMA_FAILURE,
                 f"investigator failed: {investigation.failure}",
             )
 
@@ -361,10 +364,12 @@ class VouchV2:
         record.verifier = self._agent_segment(verification, snapshot)
 
         if verification.brief is None:
-            # Verification unavailable fails CLOSED to abstain (contract D5).
+            # Verification unavailable fails CLOSED to abstain (contract D5),
+            # under its actual category (P1-3).
             return self._quality_decision(
                 record, events, lot_id,
-                FailureCategory.VERIFIER_SCHEMA_FAILURE,
+                verification.failure_category
+                or FailureCategory.VERIFIER_SCHEMA_FAILURE,
                 f"verification unavailable: {verification.failure}",
             )
 
@@ -453,16 +458,28 @@ class VouchV2:
         record.mutation.result = entry["result"]
 
         # -- 9. consequences -----------------------------------------------
+        # P1-6: readiness changes are PERSISTED through policy + capability,
+        # not merely computed and returned.
         consequences = recalculate_consequences(
             self.corpus,
             decision_record_id=record_id,
             lot_id=lot_id,
             inventory_delta=entry["inventory_delta"],
             events=events,
+            policy=self.policy,
+            capabilities=self.capabilities,
         )
         record.consequences.coverage_changes = consequences["coverage_changes"]
         record.consequences.readiness_changes = consequences["readiness_changes"]
         record.consequences.caused_by = consequences["caused_by"]
+
+        # P1-7: where an order was blocked, evaluate and EXECUTE safe recovery.
+        for change in consequences["readiness_changes"]:
+            if change["to"] == "BLOCKED":
+                record.consequences.recovery = self.recover_order(
+                    change["order_id"], decision_record_id=record_id, events=events,
+                )
+                break
 
         if result.disposition is Disposition.INSUFFICIENT_EVIDENCE:
             record.human.review_id = f"QA-{record_id}"
@@ -487,6 +504,101 @@ class VouchV2:
             record=record,
             events=events.as_dicts(),
         )
+
+    # ------------------------------------------------------------------
+    # recovery (contract D15, P1-7)
+    # ------------------------------------------------------------------
+    def recover_order(
+        self,
+        order_id: str,
+        *,
+        decision_record_id: str,
+        events: EventLog | None = None,
+    ) -> dict:
+        """Enumerate lawful recovery options and EXECUTE the selected one.
+
+        The audit found recovery being selected but never executed: the plan
+        never changed. Execution now runs through the same authority path as
+        every other mutation — deterministic selection, policy authorization,
+        capability bound to {order, current version, from slot, target slot,
+        action, decision record, expiry}, atomic consume that re-verifies the
+        slot, ledger entry.
+
+        Every candidate is returned with its verdict, so REFUSED (could, but not
+        permitted) stays visibly distinct from NOT_FEASIBLE.
+        """
+        events = events or EventLog()
+        blocked = self.corpus.order(order_id)
+        options, selected = enumerate_recovery(self.corpus, order_id)
+
+        result: dict = {
+            "blocked_order_id": order_id,
+            "candidates": [o.as_dict() for o in options],
+            "selected": selected.as_dict() if selected else None,
+            "executed": False,
+            "mutation": {},
+            "reason": "",
+        }
+
+        events.emit(
+            EventType.RECOVERY_EVALUATED, decision_record_id,
+            blocked_order_id=order_id,
+            candidate_count=len(options),
+            eligible_count=sum(1 for o in options if o.verdict is Verdict.ELIGIBLE),
+            refused_count=sum(1 for o in options if o.verdict is Verdict.REFUSED),
+            selected=selected.candidate_id if selected else "",
+        )
+
+        if selected is None or selected.kind != "RESEQUENCE" or blocked is None:
+            # The system never invents an option. No lawful resequence means
+            # escalation, not improvisation.
+            result["reason"] = (
+                "no lawful recovery option" if selected is None
+                else f"selected option {selected.kind} is not autonomously executable"
+            )
+            return result
+
+        candidate = self.corpus.order(selected.candidate_id)
+        if candidate is None:
+            result["reason"] = "selected order disappeared"
+            return result
+
+        decision = self.policy.authorize_order_action(
+            decision_record_id=decision_record_id,
+            order_id=candidate.order_id,
+            action=Action.RESEQUENCE_PRODUCTION_ORDER,
+            observed_state_version=candidate.state_version,
+            events=events,
+        )
+        if not decision.allowed or decision.capability is None:
+            result["reason"] = decision.reason
+            return result
+
+        try:
+            entry = execute(
+                decision.capability, self.corpus, self.capabilities, events,
+                params={"target_slot": blocked.planned_slot},
+            )
+        except VouchFailure as failure:
+            # The slot was taken between enumeration and execution, or the
+            # order moved. Refuse rather than overwrite.
+            result["reason"] = failure.detail
+            result["failure_category"] = failure.category.value
+            return result
+
+        result["executed"] = True
+        result["mutation"] = entry
+        result["caused_by"] = {
+            "cause": "order_blocked",
+            "blocked_order_id": order_id,
+            "effect": "resequence",
+            "order_id": candidate.order_id,
+            "from_slot": entry.get("from_slot", ""),
+            "to_slot": entry.get("target_slot", ""),
+            "decision_record_id": decision_record_id,
+            "ledger_sequence": entry["sequence"],
+        }
+        return result
 
     # ------------------------------------------------------------------
     # human continuation (contract §18)
@@ -558,15 +670,24 @@ class VouchV2:
     # helpers
     # ------------------------------------------------------------------
     def _run_with_retry(self, agent, context, claims, events, record_id):
-        """Retry within budget for retryable technical failures only."""
+        """Retry within budget, and ONLY for categories a retry could clear.
+
+        P1-3: not every failure is retried identically. A schema failure may
+        clear on a re-ask; a throttle deserves the attempt; an AccessDenied or a
+        validation error will produce the identical result every time, so
+        retrying it just burns budget and delays the escalation.
+        """
         run = None
-        for _ in range(MAX_MODEL_ATTEMPTS):
+        for attempt in range(1, MAX_MODEL_ATTEMPTS + 1):
             run = agent.run(
                 context=context, claims=claims, events=events,
                 decision_record_id=record_id,
             )
+            run.attempts = attempt
             if run.brief is not None:
                 return run
+            if not run.retryable:
+                break
         return run
 
     @staticmethod
@@ -584,6 +705,10 @@ class VouchV2:
             schema_valid=run.schema_valid,
             precedent_consulted=list(run.brief.precedent_consulted) if run.brief else [],
             failure=run.failure,
+            failure_category=(
+                run.failure_category.value if run.failure_category else ""
+            ),
+            attempts=run.attempts,
         )
 
     def _quality_decision(

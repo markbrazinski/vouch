@@ -206,28 +206,50 @@ def test_disagreement_blocks_mutation(vouch):
 
 # -- consequences ----------------------------------------------------------
 def test_quarantine_removes_usable_inventory_and_blocks_the_order(vouch):
+    """Readiness is PERSISTED, not merely computed (P1-6).
+
+    Releasing LOT-1001 is already not enough to cover C-417, so the order
+    transitions READY -> BLOCKED on that decision and the transition is written.
+    Quarantining LOT-1002 then adds no usable inventory, so C-417 stays BLOCKED
+    — the same state, already persisted, and therefore no second transition.
+    """
     corpus, v = vouch
-    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
-    assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
+    first = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+
+    # The transition happened AND was written through the capability path.
+    change = next(
+        c for c in first.consequences["readiness_changes"] if c["order_id"] == "C-417"
+    )
+    assert change == {
+        **change, "from": "READY", "to": "BLOCKED", "persisted": True,
+    }
+    assert corpus.order("C-417").status == "BLOCKED"
+    assert corpus.order("C-417").state_version == 2
+    assert first.consequences["caused_by"]
 
     outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     assert corpus.usable_inventory("MAT-ALLOY-7") == 500.0
     assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
-    assert outcome.consequences["caused_by"]
+    # Already BLOCKED and persisted: no spurious re-transition, no version churn.
+    assert outcome.consequences["readiness_changes"] == []
+    assert corpus.order("C-417").state_version == 2
 
 
 def test_causal_chain_is_reconstructable(vouch):
+    """The causal link belongs to the decision that CAUSED the transition."""
     corpus, v = vouch
-    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
-    outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
 
     links = outcome.record.consequences.caused_by
     assert links
-    link = links[0]
+    link = next(link for link in links if link["order_id"] == "C-417")
     assert link["cause"] == "lot_disposition"
-    assert link["lot_id"] == "LOT-1002"
+    assert link["lot_id"] == "LOT-1001"
     assert link["effect"] == "order_readiness"
-    assert link["order_id"] == "C-417"
+    assert link["from"] == "READY"
+    assert link["to"] == "BLOCKED"
+    # P1-6: the link points at the ledger entry that actually wrote the change.
+    assert link["ledger_sequence"]
 
 
 def test_release_restores_availability(vouch):
@@ -271,16 +293,19 @@ def test_recovery_priority_is_explicit_not_alphabetical(vouch):
     from dataclasses import replace
 
     corpus, v = vouch
-    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
-    v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
 
     # Add a candidate that sorts LATER alphabetically but is customer-committed
-    # and needed sooner — the correct answer under business policy.
+    # and needed sooner — the correct answer under business policy. It is added
+    # BEFORE the pipeline runs, because recovery now actually executes (P1-7)
+    # and enumerating afterwards would be scoring an already-recovered plan.
     c418 = corpus.order("C-418")
     corpus.put(
         "production_order", "C-999",
-        replace(c418, order_id="C-999", customer_committed=True, need_by="2026-08-16"),
+        replace(c418, order_id="C-999", customer_committed=True, need_by="2026-08-16",
+                planned_slot="2026-08-15T16:00"),
     )
+    corpus.bump("production_order", "C-417", status="BLOCKED")
+
     options, selected = enumerate_recovery(corpus, "C-417")
     assert selected.candidate_id == "C-999"  # not the alphabetically-first C-418
 

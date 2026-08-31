@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .contracts import (
+    RETRYABLE,
     EvidenceApplicabilityBrief,
     FailureCategory,
     VouchFailure,
@@ -156,7 +157,13 @@ def model_id_for(role: str) -> str:
 
 @dataclass
 class AgentRun:
-    """One agent invocation's recorded outcome."""
+    """One agent invocation's recorded outcome.
+
+    `failure_category` is the ACTUAL category (P1-3). The audit found every
+    missing brief being translated to SCHEMA_FAILURE, which made a Bedrock
+    outage indistinguishable from a malformed model response and meant the
+    retry policy could not differ between them.
+    """
 
     brief: EvidenceApplicabilityBrief | None
     model_id: str
@@ -165,6 +172,12 @@ class AgentRun:
     tool_events: list[dict]
     schema_valid: bool
     failure: str = ""
+    failure_category: FailureCategory | None = None
+    attempts: int = 1
+
+    @property
+    def retryable(self) -> bool:
+        return self.failure_category in RETRYABLE if self.failure_category else False
 
 
 class BriefProducer:
@@ -244,15 +257,19 @@ class BriefProducer:
                     )
                 brief = self._local_fn(tools, context)
         except VouchFailure as failure:
+            # The typed category travels with the failure; it is NOT rewritten
+            # to this agent's schema-failure category (P1-3).
             return AgentRun(
                 None, model, self.prompt_version, prompt_hash,
                 [e.as_dict() for e in tools.tool_events], False, failure.detail,
+                failure_category=failure.category,
             )
-        except Exception as exc:  # noqa: BLE001 — any other failure is technical
+        except Exception as exc:  # noqa: BLE001
             return AgentRun(
                 None, model, self.prompt_version, prompt_hash,
                 [e.as_dict() for e in tools.tool_events], False,
                 f"{type(exc).__name__}: {exc}",
+                failure_category=_classify_exception(exc, self.schema_failure_category),
             )
 
         completed_event = (
@@ -321,20 +338,51 @@ class BriefProducer:
         try:
             result = agent(task, structured_output_model=EvidenceApplicabilityBrief)
         except Exception as exc:  # noqa: BLE001
-            name = type(exc).__name__
-            if "Throttl" in name or "Timeout" in name:
-                raise VouchFailure(FailureCategory.MODEL_TIMEOUT, f"{name}: {exc}") from exc
             raise VouchFailure(
-                self.schema_failure_category, f"{name}: {exc}"
+                _classify_exception(exc, self.schema_failure_category),
+                f"{type(exc).__name__}: {exc}",
             ) from exc
 
         brief = getattr(result, "structured_output", None)
         if not isinstance(brief, EvidenceApplicabilityBrief):
+            # This one genuinely IS a schema failure: the call succeeded and the
+            # output did not conform.
             raise VouchFailure(
                 self.schema_failure_category,
                 f"{self.role} returned no conforming brief",
             )
         return brief
+
+
+def _classify_exception(exc: Exception, schema_category: FailureCategory) -> FailureCategory:
+    """Map a raised exception to its ACTUAL failure category (P1-3).
+
+    Retry policy depends on this: a throttle should back off and retry, a
+    validation error should not be retried identically, and a tool fault is
+    neither. Collapsing them all to SCHEMA_FAILURE — the audit's finding — made
+    every failure look the same to the retry loop and to the ledger.
+    """
+    name = type(exc).__name__
+    text = f"{name}: {exc}"
+
+    if "Throttl" in name or "TooManyRequests" in name or "Timeout" in name:
+        return FailureCategory.MODEL_TIMEOUT
+    if any(
+        marker in text
+        for marker in (
+            "AccessDenied", "UnrecognizedClient", "ValidationException",
+            "ResourceNotFound", "ServiceUnavailable", "EndpointConnection",
+            "ModelNotReady", "ExpiredToken",
+        )
+    ):
+        return FailureCategory.MODEL_UNAVAILABLE
+    if "ValidationError" in name or "Pydantic" in name:
+        return schema_category
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return FailureCategory.MODEL_TIMEOUT
+    if isinstance(exc, PermissionError):
+        return FailureCategory.TOOL_FAILURE
+    return schema_category
 
 
 def _bedrock_enabled() -> bool:
