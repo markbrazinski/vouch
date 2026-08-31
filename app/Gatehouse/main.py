@@ -42,13 +42,46 @@ from vouch.v2.workflow import VouchV2  # noqa: E402
 app = BedrockAgentCoreApp()
 log = app.logger
 
-# ponytail: in-memory corpus, explicitly labeled as such in every response.
-# The DynamoDB adapter is not yet written for V2 capability semantics; until it
-# is, this runtime is a demonstration surface and says so rather than implying
-# durable authority.
+# The corpus itself is still the in-memory fixture world, and every response
+# says so. What IS durable now is the audit trail: DecisionRecords and lifecycle
+# events go to DynamoDB when a state table is configured, so a decision made by
+# this runtime survives it.
+#
+# ponytail: fixture corpus, not an ERP integration. Swapping it is a data-source
+# change, not an architecture change — the pipeline reads through Corpus either
+# way.
 _CORPUS = build_corpus()
-_VOUCH = VouchV2(_CORPUS)
-_BACKEND = "memory"
+
+
+def _record_store():
+    """Durable record store where configured; explicit in-memory otherwise.
+
+    Never silently degrades: the backend actually in use is reported in every
+    response, so a caller can tell whether the audit trail persisted.
+    """
+    from vouch.config import load
+
+    if not load().state_table:
+        from vouch.v2.persistence import InMemoryRecordStore
+
+        return InMemoryRecordStore(), "memory"
+    try:
+        from vouch.v2.persistence import DynamoRecordStore
+
+        store = DynamoRecordStore()
+        return store, f"dynamodb:{store.table}"
+    except Exception as exc:  # noqa: BLE001
+        log.warning("record store unavailable, using memory: %s", exc)
+        from vouch.v2.persistence import InMemoryRecordStore
+
+        return InMemoryRecordStore(), "memory"
+
+
+_STORE, _RECORD_BACKEND = _record_store()
+_VOUCH = VouchV2(_CORPUS, record_store=_STORE)
+#: The CORPUS is in-memory; the audit trail may be durable. Reported separately
+#: so neither claim is inflated by the other.
+_BACKEND = f"corpus=memory record_store={_RECORD_BACKEND}"
 log.info("vouch v2 runtime backend=%s", _BACKEND)
 
 
