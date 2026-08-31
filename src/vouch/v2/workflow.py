@@ -41,6 +41,7 @@ from .corpus import Corpus
 from .decision_record import DecisionRecord
 from .disposition import compute_disposition
 from .evidence import (
+    LOW_CONFIDENCE,
     LocalEvidenceStore,
     canonicalize,
     extract,
@@ -87,6 +88,7 @@ class VouchV2:
         verifier=None,
         detector=None,
         model_fallback=None,
+        scanner=None,
     ) -> None:
         self.corpus = corpus
         self.evidence_store = evidence_store or LocalEvidenceStore()
@@ -94,6 +96,7 @@ class VouchV2:
         self.policy = PolicyEngine(corpus, self.capabilities)
         self.detector = detector
         self.model_fallback = model_fallback
+        self.scanner = scanner
 
         # Local reasoners are the default so the architecture is testable
         # without model access; bedrock mode swaps them at the agent layer.
@@ -124,9 +127,12 @@ class VouchV2:
     ) -> tuple[list[CanonicalEvidenceClaim], dict]:
         """S1-S6 for one artifact. Returns (claims, security_summary).
 
-        A security-quarantined artifact yields NO claims: hostile content never
-        reaches a decision model, and the artifact is preserved for human review
-        rather than dropped.
+        `lot_id` is the REQUESTED TARGET. The document's own claimed identity is
+        parsed from its bytes and validated against the authoritative receiving
+        record (P0-4); a contradiction yields no claims and no autonomous
+        disposition. A security-quarantined artifact likewise yields nothing:
+        hostile content never reaches a decision model, and the artifact is
+        preserved for human review rather than dropped.
         """
         lot = self.corpus.lot(lot_id)
         artifact = ingest(
@@ -142,18 +148,28 @@ class VouchV2:
             events=events,
             decision_record_id=decision_record_id,
             detector=self.detector,
+            scanner=self.scanner,
+            trust_label=trust_label,
         )
 
+        inspection = artifact.security_inspection
         summary = {
             "artifact_id": artifact.artifact_id,
             "content_hash": artifact.content_hash,
+            "object_version": artifact.object_version,
+            "storage_ref": artifact.storage_ref,
             "document_identity": artifact.document_identity,
             "received_at": artifact.received_at,
-            "inspection": artifact.security_inspection,
+            "inspection": inspection,
             "status": artifact.status,
+            "claimed_identity": inspection.claimed_identity,
+            "binding_mismatches": list(inspection.binding_mismatches),
+            "identity_stated": artifact.identity_stated,
         }
 
-        if artifact.status is ArtifactStatus.QUARANTINED_SECURITY:
+        if artifact.status is not ArtifactStatus.RECEIVED:
+            # Binding mismatch or security quarantine: no claims are produced,
+            # and nothing is rebound to the requested lot.
             return [], summary
 
         text = raw.decode("utf-8", errors="replace")
@@ -162,6 +178,7 @@ class VouchV2:
         )
         summary["extraction_method"] = method.value
         summary["extraction_confidence"] = confidence
+        summary["low_confidence"] = confidence < LOW_CONFIDENCE
 
         claims = canonicalize(candidates, artifact, method, trust_label)
         return claims, summary
@@ -211,11 +228,26 @@ class VouchV2:
             record.evidence.source_artifact_hashes.append(summary["content_hash"])
             record.evidence.document_identities.append(summary["document_identity"])
             record.evidence.receipt_timestamps.append(summary["received_at"])
+            record.evidence.storage_refs.append(summary["storage_ref"])
+            record.evidence.object_versions.append(summary["object_version"])
+            record.evidence.claimed_identities.append(summary["claimed_identity"])
             record.security.inspection_performed = True
             record.security.config_version = inspection.config_version
             record.security.detector = inspection.detector
+            record.security.guardrail_outcome = inspection.guardrail_outcome.value
+            record.security.guardrail_id = inspection.guardrail_id
+            record.security.guardrail_version = inspection.guardrail_version
+            record.security.malware_scan = inspection.malware_scan.value
+            record.security.inspected_at = inspection.inspected_at
             record.security.prompt_attack_detected |= inspection.prompt_attack_detected
             record.security.malware_found |= inspection.malware_found
+
+            if summary["status"] is ArtifactStatus.EVIDENCE_BINDING_MISMATCH:
+                # P0-4. The artifact is preserved and reported; it is NOT
+                # rebound to the requested lot and produces no claims.
+                record.security.binding_mismatches.extend(summary["binding_mismatches"])
+                record.security.rejected_artifact_ids.append(summary["artifact_id"])
+                continue
 
             if summary["status"] is ArtifactStatus.QUARANTINED_SECURITY:
                 record.security.blocked = True
@@ -227,12 +259,37 @@ class VouchV2:
                     "method": claim.extraction_method.value,
                     "version": claim.extraction_version,
                     "confidence": claim.extraction_confidence,
+                    "locator": claim.source_locator,
+                    "source_hash": claim.source_hash,
+                    "trust_label": claim.trust_label.value,
                 }
             if summary.get("extraction_method") == "MODEL_FALLBACK":
                 record.extraction.model_fallback_used = True
+            if summary.get("low_confidence"):
+                # P0-8: truthful, and it actually routes.
+                record.extraction.low_confidence_routed_to_human = True
             claims.extend(new_claims)
 
         self.claims[record_id] = claims
+
+        # P0-4. Evidence that belongs to another lot/material/supplier/site is
+        # a distinct outcome from insufficiency AND from a security quarantine:
+        # nothing is wrong with the document, it is simply not about this lot.
+        if record.security.binding_mismatches and not claims:
+            return self._quality_decision(
+                record, events, lot_id,
+                FailureCategory.EVIDENCE_BINDING_MISMATCH,
+                "; ".join(record.security.binding_mismatches),
+            )
+
+        # Extraction confidence too low to stand alone routes to a human rather
+        # than to an autonomous disposition (P0-8).
+        if record.extraction.low_confidence_routed_to_human and not claims:
+            return self._quality_decision(
+                record, events, lot_id,
+                FailureCategory.EXTRACTION_LOW_CONFIDENCE,
+                "extraction confidence below threshold; human review required",
+            )
 
         # A security block with no usable evidence is a SECURITY_QUARANTINE,
         # not insufficiency: the difference matters to whoever triages it.

@@ -37,6 +37,12 @@ class EvidenceSegment:
     source_artifact_hashes: list[str] = field(default_factory=list)
     document_identities: list[str] = field(default_factory=list)
     receipt_timestamps: list[str] = field(default_factory=list)
+    #: P0-5 / P1-1: durable storage refs and object versions, so the exact
+    #: bytes behind a decision can be fetched again.
+    storage_refs: list[str] = field(default_factory=list)
+    object_versions: list[str] = field(default_factory=list)
+    #: P0-4: what each artifact claimed about itself.
+    claimed_identities: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -44,10 +50,20 @@ class SecuritySegment:
     inspection_performed: bool = False
     config_version: str = ""
     detector: str = ""
+    #: P0-6: Guardrails provenance — which guardrail ran, at which version.
+    guardrail_outcome: str = "NOT_RUN"
+    guardrail_id: str = ""
+    guardrail_version: str = ""
+    inspected_at: str = ""
+    #: P0-7: the truthful AV outcome, including NOT_RUN.
+    malware_scan: str = "NOT_RUN"
     prompt_attack_detected: bool = False
     malware_found: bool = False
     blocked: bool = False
     quarantined_artifact_ids: list[str] = field(default_factory=list)
+    #: P0-4: contradictions between document identity and requested target.
+    binding_mismatches: list[str] = field(default_factory=list)
+    rejected_artifact_ids: list[str] = field(default_factory=list)
 
 
 @dataclass

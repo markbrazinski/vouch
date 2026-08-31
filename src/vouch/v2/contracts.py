@@ -87,6 +87,30 @@ def content_hash(payload: Any) -> str:
 # ==========================================================================
 
 
+class ScanStatus(str, Enum):
+    """Truthful malware-scan outcome (P0-7).
+
+    The audit found the backend recording `malware_scanned = true` with no AV
+    engine anywhere in the process. Recording NOT_RUN is not a weaker security
+    posture than lying about it; it is the only honest one, and it lets an
+    operator see that this deployment has no scanner wired.
+    """
+
+    NOT_RUN = "NOT_RUN"
+    PASSED = "PASSED"
+    FLAGGED = "FLAGGED"
+    FAILED = "FAILED"
+
+
+class GuardrailOutcome(str, Enum):
+    """Whether prompt-attack detection actually ran, and what it found."""
+
+    NOT_RUN = "NOT_RUN"
+    CLEAN = "CLEAN"
+    DETECTED = "DETECTED"
+    ERROR = "ERROR"
+
+
 class SecurityInspection(BaseModel):
     """Outcome of the S2 hostile-content inspection. Persisted so an auditor can
     answer 'did detection actually run, and with what config' (contract S10)."""
@@ -97,11 +121,31 @@ class SecurityInspection(BaseModel):
     config_version: str = ""
     file_type_ok: bool = False
     size_ok: bool = False
-    malware_scanned: bool = False
-    malware_found: bool = False
+    #: P0-7: the actual scan outcome. NOT_RUN when no AV engine is configured —
+    #: never asserted as clean merely because nothing looked.
+    malware_scan: ScanStatus = ScanStatus.NOT_RUN
+    malware_detail: str = ""
+    #: P0-6: Guardrails provenance. Which guardrail, which version, when, and
+    #: whether detection genuinely executed.
+    guardrail_outcome: GuardrailOutcome = GuardrailOutcome.NOT_RUN
+    guardrail_id: str = ""
+    guardrail_version: str = ""
+    inspected_at: str = ""
     prompt_attack_detected: bool = False
     detector: str = ""  # e.g. "bedrock-guardrails:<id>:<version>"
     detail: str = ""
+    #: P0-4: what the artifact claimed about itself, and whether that survived
+    #: validation against the authoritative receiving record.
+    claimed_identity: dict = Field(default_factory=dict)
+    binding_mismatches: list[str] = Field(default_factory=list)
+
+    @property
+    def malware_found(self) -> bool:
+        return self.malware_scan in (ScanStatus.FLAGGED, ScanStatus.FAILED)
+
+    @property
+    def binding_ok(self) -> bool:
+        return not self.binding_mismatches
 
     @property
     def blocked(self) -> bool:
@@ -110,14 +154,20 @@ class SecurityInspection(BaseModel):
         Detection is NOT the trust boundary (D7) — it is one layer. The
         structural controls still hold if this returns False wrongly.
         """
-        return self.malware_found or self.prompt_attack_detected or not (
-            self.file_type_ok and self.size_ok
+        return (
+            self.malware_found
+            or self.prompt_attack_detected
+            or bool(self.binding_mismatches)
+            or not (self.file_type_ok and self.size_ok)
         )
 
 
 class ArtifactStatus(str, Enum):
     RECEIVED = "RECEIVED"
     QUARANTINED_SECURITY = "QUARANTINED_SECURITY"
+    #: P0-4. Distinct from a security quarantine: the artifact may be perfectly
+    #: benign and simply belong to a different lot.
+    EVIDENCE_BINDING_MISMATCH = "EVIDENCE_BINDING_MISMATCH"
     EXTRACTED = "EXTRACTED"
     REJECTED = "REJECTED"
 
@@ -145,6 +195,11 @@ class ExternalEvidenceArtifact(BaseModel):
     object_version: str = ""  # S3 version id — WORM/versioned original
     security_inspection: SecurityInspection = Field(default_factory=SecurityInspection)
     status: ArtifactStatus = ArtifactStatus.RECEIVED
+    #: Trust label the claims from this artifact inherit (S6).
+    trust_label: TrustLabel = TrustLabel.UNTRUSTED_SUPPLIER
+    #: P0-4: did the document state its own identity at all? A document that
+    #: states nothing is a different case from one that states a contradiction.
+    identity_stated: bool = False
 
 
 # ==========================================================================
@@ -395,6 +450,10 @@ class FailureCategory(str, Enum):
     MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
     TOOL_FAILURE = "TOOL_FAILURE"
     SECURITY_QUARANTINE = "SECURITY_QUARANTINE"
+    #: P0-4. The artifact contradicts the target it was submitted for.
+    EVIDENCE_BINDING_MISMATCH = "EVIDENCE_BINDING_MISMATCH"
+    #: P0-8. Extraction was too uncertain to support an autonomous decision.
+    EXTRACTION_LOW_CONFIDENCE = "EXTRACTION_LOW_CONFIDENCE"
     PERSISTENCE_FAILURE = "PERSISTENCE_FAILURE"
     STATE_CONFLICT = "STATE_CONFLICT"
     POLICY_REFUSAL = "POLICY_REFUSAL"
@@ -442,12 +501,14 @@ __all__ = [
     "ExternalEvidenceArtifact",
     "ExtractionMethod",
     "FailureCategory",
+    "GuardrailOutcome",
     "GoverningBasis",
     "MissingItem",
     "PRECEDENT_PREFIX",
     "ProvenanceError",
     "ReconciliationOutcome",
     "RequiredTest",
+    "ScanStatus",
     "SecurityInspection",
     "Sufficiency",
     "TrustLabel",

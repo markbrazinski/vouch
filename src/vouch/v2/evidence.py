@@ -32,6 +32,8 @@ from typing import Callable, Protocol
 
 from .contracts import (
     ArtifactStatus,
+    GuardrailOutcome,
+    ScanStatus,
     CanonicalEvidenceClaim,
     EvidenceSnapshot,
     ExternalEvidenceArtifact,
@@ -91,30 +93,72 @@ def heuristic_detector(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+class MalwareScanner(Protocol):
+    """An AV engine. Returns (status, detail).
+
+    There is no default implementation, and that is the point (P0-7): with no
+    scanner configured the recorded result is NOT_RUN, never a fabricated pass.
+    """
+
+    def __call__(self, raw: bytes) -> tuple[ScanStatus, str]: ...
+
+
 def inspect(
     raw: bytes,
     content_type: str,
     text_for_detection: str = "",
     detector: PromptAttackDetector | None = None,
+    *,
+    scanner: MalwareScanner | None = None,
+    claimed_identity: "DocumentIdentity | None" = None,
+    binding_mismatches: list[str] | None = None,
 ) -> SecurityInspection:
-    """S2. Deterministic validation + prompt-attack detection.
+    """S2. Deterministic validation + prompt-attack detection + AV.
 
     Never executes the artifact; it is only ever hashed, stored and parsed.
+
+    Everything recorded here is what actually happened. If no scanner is wired,
+    `malware_scan` is NOT_RUN. If detection raises, the outcome is ERROR — not
+    silently clean.
     """
     detector = detector or heuristic_detector
-    detected, detail = detector(text_for_detection or _safe_decode(raw))
+    detector_name = getattr(detector, "__name__", detector.__class__.__name__)
+    guardrail_id = getattr(detector, "guardrail_id", "")
+    guardrail_version = getattr(detector, "guardrail_version", "")
+
+    try:
+        detected, detail = detector(text_for_detection or _safe_decode(raw))
+        outcome = GuardrailOutcome.DETECTED if detected else GuardrailOutcome.CLEAN
+    except Exception as exc:  # noqa: BLE001 — detection failure must be visible
+        # Fail closed: an inspection that errored is treated as a positive
+        # signal, because we cannot claim the artifact was cleared.
+        detected, detail = True, f"detector error: {type(exc).__name__}: {exc}"
+        outcome = GuardrailOutcome.ERROR
+
+    if scanner is None:
+        scan_status, scan_detail = ScanStatus.NOT_RUN, "no AV engine configured"
+    else:
+        try:
+            scan_status, scan_detail = scanner(raw)
+        except Exception as exc:  # noqa: BLE001
+            scan_status, scan_detail = ScanStatus.FAILED, f"scanner error: {exc}"
+
     return SecurityInspection(
         performed=True,
         config_version=SECURITY_CONFIG_VERSION,
         file_type_ok=content_type in ALLOWED_TYPES,
         size_ok=0 < len(raw) <= MAX_ARTIFACT_BYTES,
-        malware_scanned=True,
-        # ponytail: no AV binary in this environment. The hook is here and the
-        # result is recorded; wire ClamAV/GuardDuty at deploy.
-        malware_found=False,
+        malware_scan=scan_status,
+        malware_detail=scan_detail,
+        guardrail_outcome=outcome,
+        guardrail_id=guardrail_id,
+        guardrail_version=guardrail_version,
+        inspected_at=utcnow(),
         prompt_attack_detected=detected,
-        detector=getattr(detector, "__name__", "detector"),
+        detector=detector_name,
         detail=detail,
+        claimed_identity=(claimed_identity.as_dict() if claimed_identity else {}),
+        binding_mismatches=list(binding_mismatches or []),
     )
 
 
@@ -128,25 +172,43 @@ def _safe_decode(raw: bytes) -> str:
 
 
 class EvidenceStore(Protocol):
-    """S1 storage. The production implementation is S3 with Object Lock (WORM)
-    + versioning; `LocalEvidenceStore` is the same interface for tests."""
+    """S1 storage.
 
-    def put_original(self, key: str, raw: bytes) -> tuple[str, str]: ...
+    `put_original` returns (storage_ref, sha256_hex, object_version). The
+    production implementation is S3 with versioning + Object Lock
+    (`vouch.v2.aws.S3EvidenceStore`); `LocalEvidenceStore` is a LOCAL
+    SIMULATION of the same interface for tests.
+    """
+
+    def put_original(self, key: str, raw: bytes) -> tuple[str, str, str]: ...
     def get_original(self, key: str) -> bytes: ...
 
 
 class LocalEvidenceStore:
-    """Write-once local store. A second write to the same key raises, which is
-    the property S3 Object Lock provides in production."""
+    """LOCAL SIMULATION of write-once evidence storage.
+
+    This is an in-memory dict. It is NOT immutable storage and NOT WORM — it
+    models the write-once property (a second write to the same key raises) so
+    tests exercise the same contract, and it is labeled a simulation everywhere
+    it appears. Production durability is `vouch.v2.aws.S3EvidenceStore`.
+    """
+
+    #: Honest self-description, surfaced in the DecisionRecord.
+    kind = "LOCAL_SIMULATION"
 
     def __init__(self) -> None:
         self._objects: dict[str, bytes] = {}
+        self._versions: dict[str, int] = {}
 
-    def put_original(self, key: str, raw: bytes) -> tuple[str, str]:
+    def put_original(self, key: str, raw: bytes) -> tuple[str, str, str]:
         if key in self._objects:
-            raise PermissionError(f"WORM violation: {key} already exists and is immutable")
+            raise PermissionError(
+                f"write-once violation: {key} already exists (local simulation)"
+            )
         self._objects[key] = raw
-        return f"local://evidence/{key}", hashlib.sha256(raw).hexdigest()
+        self._versions[key] = self._versions.get(key, 0) + 1
+        digest = hashlib.sha256(raw).hexdigest()
+        return f"local://evidence/{key}", digest, f"sim-v{self._versions[key]}"
 
     def get_original(self, key: str) -> bytes:
         return self._objects[key]
@@ -166,33 +228,70 @@ def ingest(
     events: EventLog,
     decision_record_id: str,
     detector: PromptAttackDetector | None = None,
+    scanner: MalwareScanner | None = None,
     received_at: str | None = None,
+    trust_label: TrustLabel = TrustLabel.UNTRUSTED_SUPPLIER,
 ) -> ExternalEvidenceArtifact:
     """S1 + S2. Store the immutable original, inspect it, bind its source.
 
-    A blocked artifact is QUARANTINED for human review, never silently dropped:
+    The `lot_id`/`material_id`/`supplier_id`/`supplier_site` arguments are the
+    REQUESTED TARGET — what the caller says this evidence is for. They are NOT
+    the document's identity, and they never overwrite it.
+
+    The artifact's own claimed identity is parsed from its bytes (P0-4) and
+    validated against the requested target. On contradiction the artifact is
+    stored, recorded as EVIDENCE_BINDING_MISMATCH, and yields no claims. It is
+    never silently rewritten, remapped, or normalized onto the requested lot.
+
+    A blocked artifact is quarantined for human review, never silently dropped:
     dropping hides the attack and loses the evidence.
     """
     artifact_id = f"ART-{uuid.uuid4().hex[:12]}"
-    storage_ref, digest = store.put_original(f"{lot_id}/{artifact_id}", raw)
-    inspection = inspect(raw, content_type, _safe_decode(raw), detector)
+    storage_ref, digest, object_version = store.put_original(f"{lot_id}/{artifact_id}", raw)
+
+    text = _safe_decode(raw)
+    # Identity is derived from the ARTIFACT, before the requested target is
+    # consulted. HUMAN_AUTHORIZED evidence is still checked: a QA retest for the
+    # wrong lot is still the wrong lot.
+    claimed = extract_document_identity(text)
+    mismatches = validate_binding(
+        claimed,
+        target_lot_id=lot_id,
+        target_material_id=material_id,
+        target_supplier_id=supplier_id,
+        target_supplier_site=supplier_site,
+    )
+
+    inspection = inspect(
+        raw, content_type, text, detector,
+        scanner=scanner, claimed_identity=claimed, binding_mismatches=mismatches,
+    )
+
+    if mismatches:
+        status = ArtifactStatus.EVIDENCE_BINDING_MISMATCH
+    elif inspection.blocked:
+        status = ArtifactStatus.QUARANTINED_SECURITY
+    else:
+        status = ArtifactStatus.RECEIVED
 
     artifact = ExternalEvidenceArtifact(
         artifact_id=artifact_id,
         source=source,
-        supplier_id=supplier_id,
-        supplier_site=supplier_site,
-        lot_id=lot_id,
-        material_id=material_id,
+        # The artifact records what the DOCUMENT claimed where it claimed
+        # anything, so an auditor can see the two identities side by side.
+        supplier_id=claimed.supplier_id or supplier_id,
+        supplier_site=claimed.supplier_site or supplier_site,
+        lot_id=claimed.lot_id or lot_id,
+        material_id=claimed.material_id or material_id,
         received_at=received_at or utcnow(),
         document_identity=document_identity,
         storage_ref=storage_ref,
         content_hash=digest,
-        object_version=digest[:16],
+        object_version=object_version,
         security_inspection=inspection,
-        status=(
-            ArtifactStatus.QUARANTINED_SECURITY if inspection.blocked else ArtifactStatus.RECEIVED
-        ),
+        status=status,
+        trust_label=trust_label,
+        identity_stated=claimed.states_any,
     )
 
     events.emit(
@@ -200,11 +299,24 @@ def ingest(
         decision_record_id,
         artifact_id=artifact_id,
         detection_ran=inspection.performed,
-        result="BLOCKED" if inspection.blocked else "CLEAN",
+        result=status.value,
+        guardrail_outcome=inspection.guardrail_outcome.value,
+        malware_scan=inspection.malware_scan.value,
         prompt_attack_detected=inspection.prompt_attack_detected,
         quarantined=inspection.blocked,
+        binding_mismatches=list(mismatches),
+        claimed_identity=claimed.as_dict(),
         version=SECURITY_CONFIG_VERSION,
     )
+    if mismatches:
+        events.emit(
+            EventType.EVIDENCE_BINDING_MISMATCH,
+            decision_record_id,
+            artifact_id=artifact_id,
+            requested_lot=lot_id,
+            claimed_identity=claimed.as_dict(),
+            mismatches=list(mismatches),
+        )
     return artifact
 
 
@@ -240,6 +352,116 @@ _SPEC_CITED = re.compile(
     r"spec(?:ification)?\s+(?P<spec>[A-Z0-9-]+)\s+rev(?:ision)?\s+(?P<rev>[A-Z0-9]+)",
     re.IGNORECASE,
 )
+
+
+# ==========================================================================
+# document identity — the wrong-lot attack surface (P0-4)
+# ==========================================================================
+
+#: What the DOCUMENT says about itself. These are claims by the external party,
+#: never facts about the requested target, and they are parsed from the artifact
+#: BEFORE anything about the requested workflow target is in scope.
+_CLAIMED_LOT = re.compile(r"\blot[:\s#-]+(?P<lot>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE)
+_CLAIMED_MATERIAL = re.compile(
+    r"\bmaterial[:\s#-]+(?P<material>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
+)
+_CLAIMED_SUPPLIER = re.compile(
+    r"\bsupplier[:\s#-]+(?P<supplier>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
+)
+_CLAIMED_SITE = re.compile(r"\bsite[:\s#-]+(?P<site>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class DocumentIdentity:
+    """Identity the artifact asserts about ITSELF.
+
+    Deliberately separate from the requested workflow target. The audit proved
+    that populating these from the request — the V1/b8f54b0 behavior — lets a
+    document that says LOT-9999 be silently accepted as evidence for LOT-1001.
+    A field left empty means the document did not state it, which is a distinct
+    outcome from stating something that disagrees.
+    """
+
+    lot_id: str = ""
+    material_id: str = ""
+    supplier_id: str = ""
+    supplier_site: str = ""
+
+    @property
+    def states_any(self) -> bool:
+        return any(
+            (self.lot_id, self.material_id, self.supplier_id, self.supplier_site)
+        )
+
+    def as_dict(self) -> dict:
+        return {
+            "claimed_lot": self.lot_id,
+            "claimed_material": self.material_id,
+            "claimed_supplier": self.supplier_id,
+            "claimed_supplier_site": self.supplier_site,
+        }
+
+
+def extract_document_identity(text: str) -> DocumentIdentity:
+    """Parse the identity the document claims for itself. Deterministic.
+
+    No workflow context reaches this function by design — it cannot echo back a
+    requested target even by accident.
+    """
+
+    def first(pattern: re.Pattern, group: str) -> str:
+        match = pattern.search(text)
+        return match.group(group).upper() if match else ""
+
+    return DocumentIdentity(
+        lot_id=first(_CLAIMED_LOT, "lot"),
+        material_id=first(_CLAIMED_MATERIAL, "material"),
+        supplier_id=first(_CLAIMED_SUPPLIER, "supplier"),
+        supplier_site=first(_CLAIMED_SITE, "site"),
+    )
+
+
+class EvidenceBindingMismatch(ValueError):
+    """The artifact's own identity contradicts the target it was submitted for.
+
+    Raised instead of rebinding. The artifact is preserved and quarantined; it
+    is never normalized onto the requested lot.
+    """
+
+    def __init__(self, mismatches: list[str], identity: "DocumentIdentity") -> None:
+        self.mismatches = mismatches
+        self.identity = identity
+        super().__init__("; ".join(mismatches))
+
+
+def validate_binding(
+    identity: DocumentIdentity,
+    *,
+    target_lot_id: str,
+    target_material_id: str,
+    target_supplier_id: str,
+    target_supplier_site: str,
+) -> list[str]:
+    """Compare claimed identity against the authoritative receiving record.
+
+    Returns the list of contradictions. A field the document did not state is
+    NOT a contradiction — that is the missing-identity case, which routes to
+    human review rather than rejection.
+    """
+    mismatches: list[str] = []
+    for label, claimed, expected in (
+        ("lot", identity.lot_id, target_lot_id),
+        ("material", identity.material_id, target_material_id),
+        ("supplier", identity.supplier_id, target_supplier_id),
+        ("supplier_site", identity.supplier_site, target_supplier_site),
+    ):
+        if claimed and expected and claimed.upper() != expected.upper():
+            mismatches.append(
+                f"document claims {label} {claimed}, but this evidence was "
+                f"submitted for {expected}"
+            )
+    return mismatches
+
 
 
 def parse_deterministic(text: str) -> tuple[list[CandidateClaim], float]:
