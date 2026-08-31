@@ -1,19 +1,29 @@
-"""Vouch AgentCore Runtime entrypoint.
+"""Vouch V2 AgentCore Runtime entrypoint.
 
-Hosts the real Strands authority workflow — the same code path the S1-S9 tests
-exercise. This is deliberately NOT a chat interface: the payload is a typed
-action, and the response is a typed authority outcome.
+Hosts the same V2 pipeline the tests exercise. Deliberately NOT a chat
+interface: the payload is a typed action and the response is a typed outcome.
 
 Actions:
-  {"action": "evaluate_lot",        "case_id": ..., "lot_id": ...}
-  {"action": "evaluate_readiness",  "case_id": ..., "order_id": ...}
-  {"action": "evaluate_recovery",   "case_id": ..., "order_id": ...}
-  {"action": "authority_ledger"}
+  {"action": "evaluate_lot",     "lot_id": ..., "document": "<coa text>"}
+  {"action": "supply_evidence",  "decision_record_id": ..., "lot_id": ...,
+                                 "document": ..., "authority_source": ...}
+  {"action": "readiness",        "order_id": ...}
+  {"action": "recovery",         "order_id": ...}
+  {"action": "ledger"}
+
+Two things this entrypoint deliberately does NOT do:
+
+  * It does not silently fall back to in-memory state and call it authoritative.
+    V1 did, logging an error and continuing — which means a runtime with an
+    unreachable table would report successful "authorized" mutations against
+    state that evaporates. Persistence failure is now a typed refusal.
+  * It exposes no fixture-specific evidence writer. V1 shipped `add_qa_evidence`
+    as a runtime action; the human-continuation path takes caller-supplied
+    content through the real ingestion boundary instead.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -24,140 +34,151 @@ if _SRC.exists() and str(_SRC) not in sys.path:
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 
-from vouch.config import env_var  # noqa: E402
-from vouch.fixtures import build_store  # noqa: E402
-from vouch.workflow import Vouch  # noqa: E402
+from vouch.v2.consequences import compute_readiness, enumerate_recovery  # noqa: E402
+from vouch.v2.fixtures import build_corpus  # noqa: E402
+from vouch.v2.lifecycle import EventLog  # noqa: E402
+from vouch.v2.workflow import VouchV2  # noqa: E402
 
 app = BedrockAgentCoreApp()
 log = app.logger
 
-def _make_store(namespace: str = "runtime"):
-    """A2: DynamoDB is authoritative. Falls back to in-memory only if the table
-    is unreachable, and says so loudly rather than pretending to persist."""
-    if (env_var("STATE_BACKEND") or "dynamodb").lower() == "memory":
-        return build_store(), "memory"
-    try:
-        from vouch.dynamo_store import DynamoStateStore
-
-        store = DynamoStateStore(namespace=namespace)
-        if store.get("lot", "LOT-1001") is None:  # seed once per namespace
-            store.seed_from(build_store())
-        return store, "dynamodb"
-    except Exception as exc:  # noqa: BLE001
-        log.error("DynamoDB state unavailable, falling back to memory: %s", exc)
-        return build_store(), f"memory (dynamodb failed: {type(exc).__name__})"
+# ponytail: in-memory corpus, explicitly labeled as such in every response.
+# The DynamoDB adapter is not yet written for V2 capability semantics; until it
+# is, this runtime is a demonstration surface and says so rather than implying
+# durable authority.
+_CORPUS = build_corpus()
+_VOUCH = VouchV2(_CORPUS)
+_BACKEND = "memory"
+log.info("vouch v2 runtime backend=%s", _BACKEND)
 
 
-_STORE, _BACKEND = _make_store()
-_VOUCH = Vouch(_STORE)
-log.info("vouch state backend=%s", _BACKEND)
-
-
-def _serialize_record(record) -> dict:
+def _record_summary(record) -> dict:
+    """Structured audit facts. No chain-of-thought, no rationale text."""
+    if record is None:
+        return {}
     return {
-        "case_id": record.case_id,
-        "evidence_refs": list(record.evidence_refs),
-        "actor_disposition": record.actor_disposition,
-        "actor_rationale": record.actor_rationale,
-        "verifier_outcome": record.verifier_outcome,
-        "verifier_rationale": record.verifier_rationale,
-        "authority_source": record.authority_source,
-        "authority_result": record.authority_result,
-        "requested_tool": record.requested_tool,
-        "mutation_result": record.mutation_result,
-        "state_before": record.state_before,
-        "state_after": record.state_after,
-        "timestamp": record.timestamp,
-        "idempotency_key": record.idempotency_key,
+        "record_id": record.identity.record_id,
+        "lot_id": record.identity.lot_id,
+        "run_count": record.run_count,
+        "security": {
+            "inspection_performed": record.security.inspection_performed,
+            "prompt_attack_detected": record.security.prompt_attack_detected,
+            "blocked": record.security.blocked,
+        },
+        "snapshot_hash": record.snapshot.claim_set_hash,
+        "investigator": {
+            "model_id": record.investigator.model_id,
+            "prompt_version": record.investigator.prompt_version,
+            "brief_hash": record.investigator.brief_hash,
+            "tool_calls": len(record.investigator.tool_events),
+        },
+        "verifier": {
+            "model_id": record.verifier.model_id,
+            "prompt_version": record.verifier.prompt_version,
+            "brief_hash": record.verifier.brief_hash,
+            "tool_calls": len(record.verifier.tool_events),
+        },
+        "reconciliation": record.reconciliation.outcome,
+        "basis": {"spec_id": record.basis.spec_id, "revision": record.basis.revision},
+        "disposition": record.disposition.disposition,
+        "policy": {
+            "version": record.policy.policy_version,
+            "gate_decision": record.policy.gate_decision,
+        },
+        "capability": {
+            "id": record.capability.capability_id,
+            "consumed": record.capability.consumed,
+        },
+        "mutation": {
+            "action": record.mutation.action,
+            "before_version": record.mutation.before_version,
+            "after_version": record.mutation.after_version,
+            "inventory_delta": record.mutation.inventory_delta,
+            "ledger_sequence": record.mutation.ledger_sequence,
+        },
+        "failure_category": record.failure_category,
+        "caused_by": record.consequences.caused_by,
     }
 
 
 def invoke(payload: dict, context=None) -> dict:
-    """Typed authority invocation. Importable directly for S0 testing."""
+    """Typed invocation. Importable directly for runtime testing."""
     if not isinstance(payload, dict):
         return {"ok": False, "error": "payload must be a JSON object"}
 
     action = payload.get("action")
-    log.info("vouch action=%s", action)
+    log.info("vouch v2 action=%s", action)
 
     try:
         if action == "evaluate_lot":
-            result = _VOUCH.evaluate_lot(payload["case_id"], payload["lot_id"])
-            return {
-                "ok": True,
-                "action": action,
-                "case_id": payload["case_id"],
-                "lot_id": payload["lot_id"],
-                "findings": result["findings"],
-                "actor": result["actor"],
-                "verifier": result["verifier"],
-                "authority": {
-                    "allowed": result["gate"].allowed,
-                    "tool": result["gate"].tool,
-                    "reason": result["gate"].reason,
-                    "source": result["gate"].authority_source,
-                },
-                "mutation_result": result["mutation_result"],
-                "state_before": result["state_before"],
-                "state_after": result["state_after"],
-                "authority_record": _serialize_record(result["authority_record"]),
-            }
-
-        if action == "evaluate_readiness":
-            result = _VOUCH.evaluate_production_readiness(
-                payload["case_id"], payload["order_id"]
+            events = EventLog()
+            document = payload.get("document")
+            documents = [{"raw": document.encode()}] if document else []
+            outcome = _VOUCH.evaluate_lot(
+                payload["lot_id"], documents=documents, events=events
             )
             return {
                 "ok": True,
                 "action": action,
+                "backend": _BACKEND,
+                "decision_record_id": outcome.decision_record_id,
+                "lot_id": outcome.lot_id,
+                "disposition": outcome.disposition,
+                "failure_category": outcome.failure_category,
+                "quality_decision_required": outcome.quality_decision_required,
+                "reason": outcome.reason,
+                "mutation": outcome.mutation,
+                "consequences": outcome.consequences,
+                "decision_record": _record_summary(outcome.record),
+                "events": outcome.events,
+            }
+
+        if action == "supply_evidence":
+            outcome = _VOUCH.supply_human_evidence(
+                decision_record_id=payload["decision_record_id"],
+                lot_id=payload["lot_id"],
+                raw=payload["document"].encode(),
+                authority_source=payload["authority_source"],
+            )
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND,
+                "decision_record_id": outcome.decision_record_id,
+                "disposition": outcome.disposition,
+                "reason": outcome.reason,
+                "decision_record": _record_summary(outcome.record),
+                "events": outcome.events,
+            }
+
+        if action == "readiness":
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND,
+                **compute_readiness(_CORPUS, payload["order_id"]).as_dict(),
+            }
+
+        if action == "recovery":
+            options, selected = enumerate_recovery(_CORPUS, payload["order_id"])
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND,
                 "order_id": payload["order_id"],
-                "shortage": result["shortage"],
-                "readiness": result["readiness"],
-                "mutation_result": result["mutation_result"],
-                "state_before": result["state_before"],
-                "state_after": result["state_after"],
-                "authority_record": _serialize_record(result["authority_record"]),
+                # Deterministic. No "actor"/"verifier" keys — there is no
+                # recovery agent, and pretending otherwise reads as theatre.
+                "decided_by": "deterministic_recovery_engine",
+                "candidates": [o.as_dict() for o in options],
+                "selected": selected.as_dict() if selected else None,
             }
 
-        if action == "evaluate_recovery":
-            result = _VOUCH.evaluate_recovery(payload["case_id"], payload["order_id"])
+        if action == "ledger":
             return {
                 "ok": True,
                 "action": action,
-                "order_id": payload["order_id"],
-                "actor": result["actor"],
-                "verifier": result["verifier"],
-                "authority": {
-                    "allowed": result["gate"].allowed,
-                    "tool": result["gate"].tool,
-                    "reason": result["gate"].reason,
-                    "source": result["gate"].authority_source,
-                },
-                "mutation_result": result["mutation_result"],
-                "state_before": result["state_before"],
-                "state_after": result["state_after"],
-                "authority_record": _serialize_record(result["authority_record"]),
-            }
-
-        if action == "add_qa_evidence":
-            # S7: QA supplies the missing correct-method evidence, then the same
-            # case is re-evaluated. Evidence entry is a human/QA action, not an
-            # agent capability — no agent can call this.
-            from vouch.fixtures import add_qa_evidence
-
-            evidence_id = add_qa_evidence(_STORE, payload["lot_id"])
-            return {
-                "ok": True,
-                "action": action,
-                "lot_id": payload["lot_id"],
-                "evidence_id": evidence_id,
-            }
-
-        if action == "authority_ledger":
-            return {
-                "ok": True,
-                "action": action,
-                "records": [_serialize_record(r) for r in _STORE.authority_log],
+                "backend": _BACKEND,
+                "entries": _VOUCH.capabilities.ledger,
             }
 
         return {"ok": False, "error": f"unknown action: {action}"}
@@ -165,7 +186,7 @@ def invoke(payload: dict, context=None) -> dict:
     except KeyError as exc:
         return {"ok": False, "error": f"missing required field: {exc}"}
     except Exception as exc:  # noqa: BLE001
-        log.exception("vouch action failed")
+        log.exception("vouch v2 action failed")
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
