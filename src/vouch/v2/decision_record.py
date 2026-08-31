@@ -99,12 +99,33 @@ class AgentSegment:
     #: P1-3: the ACTUAL category, not a blanket schema failure.
     failure_category: str = ""
     attempts: int = 1
+    #: P1-1/P1-9: the complete brief, so a reviewer can see what was actually
+    #: asserted rather than only its hash.
+    brief: dict = field(default_factory=dict)
 
 
 @dataclass
 class ReconciliationSegment:
     outcome: str = ""
     differing_fields: list[str] = field(default_factory=list)
+    #: P1-1: the ACTUAL differing values, not just which fields differed. An
+    #: auditor needs to see what each agent said, or "they disagreed on basis"
+    #: is unreviewable.
+    investigator_values: dict = field(default_factory=dict)
+    verifier_values: dict = field(default_factory=dict)
+
+
+@dataclass
+class CorpusSegment:
+    """P1-1: every authoritative object consulted, with its version.
+
+    Without this an auditor cannot tell whether a decision was made against the
+    corpus as it stood then or as it stands now.
+    """
+
+    #: object_id -> {"version"/"revision", "status", "effective_*", ...}
+    objects: dict[str, dict] = field(default_factory=dict)
+    corpus_hash: str = ""
 
 
 @dataclass
@@ -149,6 +170,16 @@ class MutationSegment:
 
 
 @dataclass
+class StorageSegment:
+    """P0-5/P1-1: where this record and its evidence actually live."""
+
+    evidence_store: str = ""
+    record_store: str = ""
+    record_ref: str = ""
+    event_count: int = 0
+
+
+@dataclass
 class ConsequenceSegment:
     coverage_changes: list[dict] = field(default_factory=list)
     readiness_changes: list[dict] = field(default_factory=list)
@@ -184,6 +215,7 @@ class DecisionRecord:
     investigator: AgentSegment = field(default_factory=AgentSegment)
     verifier: AgentSegment = field(default_factory=AgentSegment)
     reconciliation: ReconciliationSegment = field(default_factory=ReconciliationSegment)
+    corpus: CorpusSegment = field(default_factory=CorpusSegment)
     basis: BasisSegment = field(default_factory=BasisSegment)
     disposition: DispositionSegment = field(default_factory=DispositionSegment)
     policy: PolicySegment = field(default_factory=PolicySegment)
@@ -191,6 +223,7 @@ class DecisionRecord:
     mutation: MutationSegment = field(default_factory=MutationSegment)
     consequences: ConsequenceSegment = field(default_factory=ConsequenceSegment)
     human: HumanContinuationSegment = field(default_factory=HumanContinuationSegment)
+    storage: StorageSegment = field(default_factory=StorageSegment)
 
     failure_category: str = ""
     terminal: bool = False
@@ -237,12 +270,35 @@ class DecisionRecord:
         ]
         return all(bool(x) for x in required)
 
+    def is_re_derivable(self) -> bool:
+        """P1-1: could an auditor rebuild this decision from what is stored?
+
+        Stronger than `is_reconstructable`: that checks the chain is present,
+        this checks the INPUTS are recorded — the exact evidence bytes
+        (storage ref + hash), the corpus objects and versions consulted, the
+        prompt versions, and both complete briefs. Same inputs + same versions
+        reproduce the brief; that is what re-derivability means (contract D13).
+        """
+        return all(
+            [
+                bool(self.evidence.source_artifact_hashes),
+                bool(self.evidence.storage_refs),
+                bool(self.snapshot.claim_set_hash),
+                bool(self.corpus.objects),
+                bool(self.investigator.prompt_hash),
+                bool(self.investigator.brief or self.investigator.failure_category),
+                bool(self.verifier.brief or self.verifier.failure_category),
+                bool(self.storage.record_ref),
+            ]
+        )
+
 
 __all__ = [
     "AgentSegment",
     "BasisSegment",
     "CapabilitySegment",
     "ConsequenceSegment",
+    "CorpusSegment",
     "DecisionRecord",
     "DispositionSegment",
     "EvidenceSegment",
@@ -254,4 +310,5 @@ __all__ = [
     "ReconciliationSegment",
     "SecuritySegment",
     "SnapshotSegment",
+    "StorageSegment",
 ]

@@ -137,6 +137,9 @@ class CorpusTools:
         out = [
             {
                 "claim_id": c.claim_id,
+                "object_ref": c.claim_id,
+                "authority_class": ToolAuthority.FROZEN_CLAIMS,
+                "source_hash": c.source_hash,
                 "characteristic": c.characteristic,
                 "value": c.value,
                 "units": c.units,
@@ -166,13 +169,20 @@ class CorpusTools:
         revisions = self._corpus.candidate_specs(self._material_id)
         out = [
             {
+                # P1-8: a durable, versioned object reference — never an
+                # ambiguous unversioned object.
+                "object_ref": f"{r.spec_id}:{r.revision}",
+                "authority_class": ToolAuthority.AUTHORITATIVE,
                 "spec_id": r.spec_id,
                 "revision": r.revision,
                 "status": r.status,
                 "effective_date": r.effective_date,
+                # When it CEASED to govern — the field P1-4 turns on.
+                "effective_to": r.ended_at,
                 "effective_basis": r.effective_basis,
                 "superseded_by": r.superseded_by,
                 "is_current": r.is_current,
+                "material_scope": list(r.material_scope),
                 "incorporates": list(r.incorporates),
                 "requirement_count": len(r.requirements),
             }
@@ -199,6 +209,8 @@ class CorpusTools:
             out = [
                 {
                     "requirement_id": q.requirement_id,
+                    "object_ref": f"{spec_id}:{revision}/{q.requirement_id}",
+                    "authority_class": ToolAuthority.AUTHORITATIVE,
                     "characteristic": q.characteristic,
                     "method": q.method,
                     "condition": q.condition,
@@ -227,6 +239,9 @@ class CorpusTools:
         out = [
             {
                 "deviation_id": d.deviation_id,
+                "object_ref": d.deviation_id,
+                "authority_class": ToolAuthority.AUTHORITATIVE,
+                "material_id": d.material_id,
                 "characteristic": d.characteristic,
                 "status": d.status,
                 "effective_date": d.effective_date,
@@ -251,6 +266,8 @@ class CorpusTools:
         out = [
             {
                 "equivalence_id": e.equivalence_id,
+                "object_ref": e.equivalence_id,
+                "authority_class": ToolAuthority.AUTHORITATIVE,
                 "required_method": e.required_method,
                 "alternate_method": e.alternate_method,
                 "status": e.status,
@@ -268,25 +285,34 @@ class CorpusTools:
         return out
 
     def get_supplier_qualification(self) -> dict:
-        """Boolean + scope. Never a narrative."""
+        """Authoritative qualification data with its scope. No verdict (P1-8).
+
+        Deliberately does NOT return `covers_this_lot`. That boolean was a
+        precomputed conclusion handed to the model — the exact V1 mistake this
+        architecture corrects — and it is a HARD SCOPE check that deterministic
+        policy performs itself before any release. Handing the model the answer
+        neither helps it nor binds it; the model reports what it sees, and
+        `PolicyEngine` enforces the scope regardless.
+        """
         started = time.perf_counter()
         lot = self._corpus.lot(self._lot_id)
         qualification = (
             self._corpus.qualification(lot.supplier_id, self._material_id) if lot else None
         )
         out: dict = {"found": qualification is not None}
-        if qualification is not None and lot is not None:
+        if qualification is not None:
             out.update(
                 {
                     "qualification_id": qualification.qualification_id,
+                    "authority_class": ToolAuthority.AUTHORITATIVE,
+                    "supplier_id": qualification.supplier_id,
+                    "material_id": qualification.material_id,
                     "status": qualification.status,
                     "effective_date": qualification.effective_date,
                     "expiry_date": qualification.expiry_date,
+                    # Scope is DATA the model may reason about; whether it
+                    # contains this lot is decided deterministically.
                     "site_scope": list(qualification.site_scope),
-                    "covers_this_lot": qualification.covers(
-                        when=lot.received_at or lot.manufactured_at,
-                        site_id=lot.supplier_site,
-                    ),
                 }
             )
         self._record(

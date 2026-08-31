@@ -29,6 +29,7 @@ from .authority import Action, CapabilityStore, PolicyEngine, execute
 from .consequences import Verdict, enumerate_recovery, recalculate_consequences
 from .contracts import (
     ArtifactStatus,
+    content_hash,
     CanonicalEvidenceClaim,
     Disposition,
     EvidenceSnapshot,
@@ -49,6 +50,7 @@ from .evidence import (
     ingest,
 )
 from .lifecycle import EventLog, EventType, utcnow
+from .persistence import InMemoryRecordStore
 from .local_reasoners import investigator_reasoner, verifier_reasoner
 from .reconcile import POLICY_VERSION, reconcile, run_basis_checks
 
@@ -89,6 +91,7 @@ class VouchV2:
         detector=None,
         model_fallback=None,
         scanner=None,
+        record_store=None,
     ) -> None:
         self.corpus = corpus
         self.evidence_store = evidence_store or LocalEvidenceStore()
@@ -97,6 +100,9 @@ class VouchV2:
         self.detector = detector
         self.model_fallback = model_fallback
         self.scanner = scanner
+        # P1-1/P1-2: durable by default. InMemoryRecordStore is explicitly
+        # labeled non-durable and is only chosen by a caller that wants it.
+        self.record_store = record_store or InMemoryRecordStore()
 
         # Local reasoners are the default so the architecture is testable
         # without model access; bedrock mode swaps them at the agent layer.
@@ -215,6 +221,7 @@ class VouchV2:
         lot = self.corpus.lot(lot_id)
         if lot is None:
             record.fail(FailureCategory.PERSISTENCE_FAILURE, f"unknown lot {lot_id}")
+            self._persist(record, events)
             return DecisionOutcome(
                 record_id, lot_id, failure_category=record.failure_category,
                 reason=f"unknown lot {lot_id}", record=record, events=events.as_dicts(),
@@ -379,6 +386,17 @@ class VouchV2:
         )
         record.reconciliation.outcome = reconciliation.outcome.value
         record.reconciliation.differing_fields = reconciliation.differing_fields
+        # P1-1/P1-9: the actual differing VALUES, so a disagreement is
+        # reviewable rather than merely announced.
+        if reconciliation.differing_fields:
+            left = investigation.brief.material_fingerprint()
+            right = verification.brief.material_fingerprint()
+            record.reconciliation.investigator_values = {
+                k: left[k] for k in reconciliation.differing_fields
+            }
+            record.reconciliation.verifier_values = {
+                k: right[k] for k in reconciliation.differing_fields
+            }
 
         if reconciliation.outcome is ReconciliationOutcome.MATERIAL_DISAGREEMENT:
             return self._quality_decision(
@@ -398,6 +416,10 @@ class VouchV2:
         checks = run_basis_checks(
             brief, self.corpus, lot_id=lot_id, claims_by_id=claims_by_id
         )
+        record.corpus.objects = self._enrich_corpus_objects(
+            self._corpus_objects(brief, lot, checks)
+        )
+        record.corpus.corpus_hash = content_hash(record.corpus.objects)
         record.basis.spec_id = brief.governing_basis.spec_id
         record.basis.revision = brief.governing_basis.revision
         record.basis.checks_passed = checks.passed
@@ -490,7 +512,7 @@ class VouchV2:
             )
 
         record.terminal = result.disposition in (Disposition.RELEASE, Disposition.QUARANTINE)
-        record.events = events.as_dicts()
+        self._persist(record, events)
 
         return DecisionOutcome(
             decision_record_id=record_id,
@@ -691,6 +713,97 @@ class VouchV2:
         return run
 
     @staticmethod
+    def _corpus_objects(brief, lot, checks) -> dict:
+        """Every authoritative object this decision rested on, with versions.
+
+        P1-1: an auditor must be able to tell whether the decision was made
+        against the corpus as it stood THEN. Recording the ids without their
+        revisions/effective metadata would not answer that.
+        """
+        objects: dict[str, dict] = {}
+        basis = brief.governing_basis
+        objects[f"{basis.spec_id}:{basis.revision}"] = {
+            "kind": "spec_revision",
+            "spec_id": basis.spec_id,
+            "revision": basis.revision,
+        }
+        for requirement in checks.resolved_requirements:
+            objects[requirement.requirement_id] = {
+                "kind": "requirement",
+                "characteristic": requirement.characteristic,
+                "method": requirement.method,
+                "condition": requirement.condition,
+                "min_value": requirement.min_value,
+                "max_value": requirement.max_value,
+            }
+        for reference in brief.deviations_applied:
+            objects[reference.deviation_id] = {"kind": "deviation"}
+        for item in brief.coverage:
+            if item.equivalence_record_id:
+                objects[item.equivalence_record_id] = {"kind": "equivalence"}
+        return objects
+
+    def _enrich_corpus_objects(self, objects: dict) -> dict:
+        """Attach the authoritative version/status metadata for each object."""
+        for key, meta in objects.items():
+            if meta["kind"] == "spec_revision":
+                revision = self.corpus.spec_revision(meta["spec_id"], meta["revision"])
+                if revision is not None:
+                    meta.update(
+                        status=revision.status,
+                        effective_date=revision.effective_date,
+                        effective_to=revision.ended_at,
+                        effective_basis=revision.effective_basis,
+                    )
+            elif meta["kind"] == "deviation":
+                found = next(
+                    (d for d in self.corpus.all("deviation") if d.deviation_id == key),
+                    None,
+                )
+                if found is not None:
+                    meta.update(
+                        status=found.status, effective_date=found.effective_date,
+                        expiry_date=found.expiry_date,
+                    )
+            elif meta["kind"] == "equivalence":
+                found = next(
+                    (e for e in self.corpus.all("equivalence") if e.equivalence_id == key),
+                    None,
+                )
+                if found is not None:
+                    meta.update(
+                        status=found.status, effective_date=found.effective_date,
+                        expiry_date=found.expiry_date,
+                    )
+        return objects
+
+    def _persist(self, record: DecisionRecord, events: EventLog) -> None:
+        """P1-1/P1-2. Write the record and its events durably.
+
+        Called on EVERY exit — autonomous, refused, abstained or failed. A
+        decision that escalated is exactly the one an auditor will want to read.
+        """
+        record.events = events.as_dicts()
+        record.storage.evidence_store = getattr(
+            self.evidence_store, "kind", type(self.evidence_store).__name__
+        )
+        record.storage.record_store = getattr(
+            self.record_store, "kind", type(self.record_store).__name__
+        )
+        try:
+            record.storage.record_ref = self.record_store.save(record)
+            record.storage.event_count = self.record_store.append_all(events.events)
+            # Re-save so the storage segment itself is part of the stored
+            # document rather than only in memory.
+            self.record_store.save(record)
+        except VouchFailure:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE, f"could not persist record: {exc}"
+            ) from exc
+
+    @staticmethod
     def _agent_segment(run, snapshot: EvidenceSnapshot):
         from .decision_record import AgentSegment
 
@@ -709,6 +822,7 @@ class VouchV2:
                 run.failure_category.value if run.failure_category else ""
             ),
             attempts=run.attempts,
+            brief=run.brief.model_dump(mode="json") if run.brief else {},
         )
 
     def _quality_decision(
@@ -725,7 +839,6 @@ class VouchV2:
         record.fail(category, reason)
         record.human.review_id = f"QA-{record.record_id}"
         record.human.review_status = "OPEN"
-        record.events = events.as_dicts()
 
         reason_code = {
             FailureCategory.MATERIAL_DISAGREEMENT: "DISAGREEMENT",
@@ -737,6 +850,8 @@ class VouchV2:
             EventType.QUALITY_DECISION_REQUIRED, record.record_id,
             reason=reason_code, lot_id=lot_id, category=category.value,
         )
+        # P1-1: an escalated decision is exactly the one an auditor will read.
+        self._persist(record, events)
         return DecisionOutcome(
             decision_record_id=record.record_id,
             lot_id=lot_id,
