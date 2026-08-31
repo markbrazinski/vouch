@@ -52,7 +52,7 @@ uv pip install --python .venv/bin/python \
     strands-agents strands-agents-tools bedrock-agentcore \
     bedrock-agentcore-starter-toolkit pytest boto3
 
-.venv/bin/python -m pytest tests/ -q        # 78 passed
+.venv/bin/python -m pytest tests/ -q        # 80 passed
 ```
 
 Tests run offline against scripted reasoners, so CI exercises the full
@@ -105,7 +105,7 @@ AWS_PROFILE=gatehouse VOUCH_V2_MODE=bedrock \
 
 **`V2_AGENT_LOAD_BEARING_GATE_FAILED`.**
 
-The architecture is implemented and its security properties hold locally: 78
+The architecture is implemented and its security properties hold locally: 80
 tests pass, covering all ten capability properties and all fifteen red-team
 attacks — including proof that injected supplier documents are inert *with the
 prompt-attack detector disabled*, because detection is a layer and not the
