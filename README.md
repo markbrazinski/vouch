@@ -112,9 +112,12 @@ prompt-attack detector disabled*, because detection is a layer and not the
 boundary.
 
 But on the D21 gate, the agents do **not** materially beat a strong
-deterministic basis-selector on the `AGENT_VALUABLE` slice (A 21/22 vs B 20/22,
-live Nova Pro). Under the arbitration contract §26 this is a stop-and-report
-condition: no precedent work, no frontend redesign.
+deterministic basis-selector on the `AGENT_VALUABLE` slice. Across two live
+Nova Pro gate runs: A 21/22 vs B 19/22 and C 19/22. Basis accuracy ties
+(10/11 for every configuration); the agents lose on evidence applicability,
+where deterministic scope containment is more reliable. Under the arbitration
+contract §26 this is a stop-and-report condition: no precedent work, no
+frontend redesign.
 
 Two further limits, stated plainly:
 

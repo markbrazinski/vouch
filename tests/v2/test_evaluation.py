@@ -110,3 +110,49 @@ def test_agent_configs_run_without_bedrock():
     result = run_agent_config(case, with_verifier=True)
     assert result["basis"] is not None
     assert "reconciliation" in result
+
+
+def test_summarize_averages_repeats_rather_than_summing():
+    """Regression guard for a false PASS.
+
+    Summing repeated agent runs against a single deterministic baseline run
+    produced "basis 20/11" — a numerator above the case count — which the gate
+    then read as a PASS. Repeats must be averaged.
+    """
+    from vouch.v2.evaluation import CaseScore, summarize
+
+    def make(case_id, config, correct):
+        return CaseScore(
+            case_id=case_id, segment="AGENT_VALUABLE", config=config,
+            basis_correct=correct, applicability_correct=correct,
+            disposition_correct=correct,
+        )
+
+    # Two cases, config B measured twice, both times correct.
+    scores = [
+        make("AV-01", "A", True), make("AV-02", "A", True),
+        make("AV-01", "B", True), make("AV-02", "B", True),
+        make("AV-01", "B", True), make("AV-02", "B", True),
+    ]
+    summary = summarize(scores)["AGENT_VALUABLE"]
+
+    assert summary["B"]["n"] == 2
+    assert summary["B"]["repeats"] == 2
+    assert summary["B"]["basis"] == 2, "repeats must be averaged, not summed"
+    assert summary["B"]["basis"] <= summary["B"]["n"]
+
+
+def test_gate_refuses_to_report_a_verdict_on_broken_aggregation():
+    """A malformed summary must never yield a PASS."""
+    from vouch.v2.evaluation import gate_verdict
+
+    broken = {
+        "AGENT_VALUABLE": {
+            "A": {"n": 11, "basis": 10, "applicability": 11, "disposition": 9},
+            "B": {"n": 11, "basis": 20, "applicability": 18, "disposition": 17},
+            "C": {"n": 11, "basis": 20, "applicability": 18, "disposition": 17},
+        }
+    }
+    passed, detail = gate_verdict(broken)
+    assert not passed
+    assert "INVALID" in detail

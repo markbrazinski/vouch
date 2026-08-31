@@ -428,6 +428,14 @@ def run_all(cases: list[EvalCase] | None = None) -> dict:
 
 
 def summarize(scores: list[CaseScore]) -> dict:
+    """Aggregate per segment and config.
+
+    Repeated runs are AVERAGED, never summed. Summing produced a nonsense
+    "n=11, basis=20" that read as a gate PASS purely because configurations B
+    and C were measured twice while the deterministic A ran once. `n` is the
+    case count, so any numerator above it means the aggregation is broken —
+    which `test_summarize_averages_repeats` now asserts.
+    """
     out: dict = {}
     for segment in ("RULE_SOLVABLE", "AGENT_VALUABLE", "HUMAN_ONLY"):
         out[segment] = {}
@@ -435,11 +443,19 @@ def summarize(scores: list[CaseScore]) -> dict:
             subset = [s for s in scores if s.segment == segment and s.config == config]
             if not subset:
                 continue
+            # One score per case per repeat; distinct cases give the denominator.
+            case_count = len({s.case_id for s in subset})
+            repeats = len(subset) / case_count
             out[segment][config] = {
-                "n": len(subset),
-                "basis": sum(s.basis_correct for s in subset),
-                "applicability": sum(s.applicability_correct for s in subset),
-                "disposition": sum(s.disposition_correct for s in subset),
+                "n": case_count,
+                "repeats": round(repeats, 2),
+                "basis": round(sum(s.basis_correct for s in subset) / repeats, 2),
+                "applicability": round(
+                    sum(s.applicability_correct for s in subset) / repeats, 2
+                ),
+                "disposition": round(
+                    sum(s.disposition_correct for s in subset) / repeats, 2
+                ),
             }
     return out
 
@@ -456,6 +472,18 @@ def gate_verdict(summary: dict) -> tuple[bool, str]:
     a = slice_["A"]
     best = max(("B", "C"), key=lambda c: slice_[c]["basis"] + slice_[c]["applicability"])
     agent = slice_[best]
+
+    # A numerator above the case count means the aggregation is broken, and a
+    # broken aggregation must never be reported as a gate result. This exact
+    # failure produced a false PASS ("basis 20/11") when repeated agent runs
+    # were summed against a single deterministic baseline run.
+    for label, block in (("A", a), (best, agent)):
+        for metric in ("basis", "applicability", "disposition"):
+            if block.get(metric, 0) > block["n"]:
+                return False, (
+                    f"INVALID: {label}.{metric}={block[metric]} exceeds n={block['n']}; "
+                    "scores were not aggregated correctly, so no verdict is reportable"
+                )
 
     a_total = a["basis"] + a["applicability"]
     agent_total = agent["basis"] + agent["applicability"]
