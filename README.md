@@ -11,20 +11,36 @@ authorized state change, a refusal, or an escalation — each with an audit reco
 
 ---
 
-## The core invariant
+## The architectural line (V2)
 
-> A proposal never mutates state. Only a deterministic authority gate mutates
-> state, and only after independent verification passes.
+> **The model decides what governs and what applies. Deterministic code decides
+> what happens.**
 
-This is enforced structurally, not by prompt. Mutation tools require an
-`AuthorityToken` that only a gate can mint, bound to `(case_id, tool, target)`.
-Agents are never given mutation tools; a verifier handed one raises at
-construction time.
+Two model-backed agents own the genuinely interpretive work — which
+specification revision governs a lot, and whether each piece of evidence applies
+to it. Everything consequential is deterministic: disposition, policy,
+capability issuance, mutation, consequences, recovery.
 
 ```
-evidence → actor proposes → independent verifier → deterministic gate
-        → mutation (or refusal) → authority record
+supplier evidence (assume hostile)
+  → security boundary → immutable original → parse → canonical claims
+  → provenance + trust labels → frozen snapshot
+      ├─→ Applicability Investigator   [model, scoped read-only tools]
+      └─→ Independent Verifier          [model, no brief, no precedent]
+  → deterministic reconcile → basis checks → disposition → policy
+  → capability record → atomic mutation → DecisionRecord
+  → consequences → deterministic recovery
 ```
+
+### The core invariant
+
+> A model can never express a disposition, and only the Policy Engine can create
+> authority.
+
+`EvidenceApplicabilityBrief` has no disposition field, so the vocabulary itself
+forbids it. Mutation requires an issuer-authenticated capability record, bound
+to one target, one action, one DecisionRecord and one observed state version,
+consumed by a single atomic conditional write.
 
 ---
 
@@ -36,17 +52,30 @@ uv pip install --python .venv/bin/python \
     strands-agents strands-agents-tools bedrock-agentcore \
     bedrock-agentcore-starter-toolkit pytest boto3
 
-.venv/bin/python -m pytest tests/ -q        # 26 passed, 3 skipped
+.venv/bin/python -m pytest tests/ -q        # 78 passed
 ```
 
-The 3 skips are S0, which needs live Bedrock access.
+Tests run offline against scripted reasoners, so CI exercises the full
+architecture — tools, reconciliation, capability security, concurrency — without
+model access.
 
-Run the vertical through the AgentCore entrypoint:
+Run the pipeline:
+
+```python
+from vouch.v2.workflow import VouchV2
+from vouch.v2.fixtures import build_corpus, COA_HERO
+
+corpus = build_corpus()
+outcome = VouchV2(corpus).evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+print(outcome.disposition, outcome.record.basis.revision)
+# QUARANTINE C   — the COA cites rev B and says CONFORMS; rev C governs by receipt date
+```
+
+Run the load-bearing evaluation against live models:
 
 ```bash
-cd app/Gatehouse && python -c "
-import main
-print(main.invoke({'action':'evaluate_lot','case_id':'DEMO','lot_id':'LOT-1002'}))"
+AWS_PROFILE=gatehouse VOUCH_V2_MODE=bedrock \
+    python scripts/run_v2_gate.py --repeats 1
 ```
 
 ---
@@ -56,36 +85,45 @@ print(main.invoke({'action':'evaluate_lot','case_id':'DEMO','lot_id':'LOT-1002'}
 | Path | Purpose |
 |---|---|
 | `AGENTS.md` / `CLAUDE.md` | Operating contract. Byte-identical, sync-enforced. |
-| `src/vouch/state.py` | Entities, state machines, authoritative store |
-| `src/vouch/tools.py` | Read / deterministic-eval / gated-mutation tools |
-| `src/vouch/gates.py` | Deterministic authority gates (no LLM) |
-| `src/vouch/agents/` | Actor and verifier roles, permission enforcement |
-| `src/vouch/workflow.py` | The canonical chain |
-| `src/vouch/fixtures.py` | Smoke-test world |
-| `app/Gatehouse/main.py` | AgentCore Runtime entrypoint (typed, not chat) |
-| `agentcore/` | CLI config + CDK |
-| `SMOKE_TEST_REPORT.md` | S0–S9 results and blockers |
-| `EVAL_PLAN.md` | Next-stage eval design |
+| `src/vouch/v2/contracts.py` | Brief schema, trust labels, authority validators, failure taxonomy |
+| `src/vouch/v2/corpus.py` | Authoritative objects with currency/supersession/scope semantics |
+| `src/vouch/v2/evidence.py` | S1–S7 hostile-evidence boundary |
+| `src/vouch/v2/tools.py` | Scoped read-only Strands tools |
+| `src/vouch/v2/agents.py` | Investigator, Verifier, confined extractor |
+| `src/vouch/v2/reconcile.py` | Deterministic reconciliation + basis checks |
+| `src/vouch/v2/disposition.py` | Deterministic Disposition Engine |
+| `src/vouch/v2/authority.py` | Capability records, Policy Engine, atomic mutation |
+| `src/vouch/v2/consequences.py` | Readiness, causal links, deterministic recovery |
+| `src/vouch/v2/workflow.py` | The deterministic state machine |
+| `src/vouch/v2/evalcases.py` | Segmented evaluation corpus |
+| `src/vouch/adversarial.py` | V1 adversarial set (kept and promoted) |
+| `tests/v2/` | Capability, security red-team, pipeline, evaluation integrity |
 
 ---
 
 ## Status
 
-**PASS WITH BLOCKERS.** S1–S9 pass; S0 is blocked on Bedrock IAM. A deterministic
-baseline currently reproduces 4/4 agent dispositions, so the agentic layer is not
-yet justified by the existing fixtures. See `SMOKE_TEST_REPORT.md`.
+**`V2_AGENT_LOAD_BEARING_GATE_FAILED`.**
 
-## Deploy
+The architecture is implemented and its security properties hold locally: 78
+tests pass, covering all ten capability properties and all fifteen red-team
+attacks — including proof that injected supplier documents are inert *with the
+prompt-attack detector disabled*, because detection is a layer and not the
+boundary.
 
-```bash
-python scripts/stage_runtime.py     # stage src/vouch into the bundle
-agentcore validate
-agentcore deploy --dry-run
-agentcore deploy
-```
+But on the D21 gate, the agents do **not** materially beat a strong
+deterministic basis-selector on the `AGENT_VALUABLE` slice (A 21/22 vs B 20/22,
+live Nova Pro). Under the arbitration contract §26 this is a stop-and-report
+condition: no precedent work, no frontend redesign.
 
-Requires Bedrock invoke permissions, CloudFormation/CDK deploy rights, and the
-provisioned evidence bucket + DynamoDB table.
+Two further limits, stated plainly:
+
+- **Local-first.** S3 Object Lock, Bedrock Guardrails, DynamoDB conditional
+  writes and AgentCore deployment are built against real interfaces and proven
+  by local equivalents. That is not evidence the AWS controls behave as
+  specified. Live qualification is required before any Milestone 1 claim.
+- **The evaluation corpus is unreviewed.** It was authored alongside the code it
+  measures, and case design materially determines the outcome.
 
 ## Contributing
 
