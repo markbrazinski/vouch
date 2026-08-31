@@ -249,7 +249,14 @@ def ingest(
     artifact_id = f"ART-{uuid.uuid4().hex[:12]}"
     storage_ref, digest, object_version = store.put_original(f"{lot_id}/{artifact_id}", raw)
 
-    text = _safe_decode(raw)
+    # P0-8: PDFs go through a real parser. A PDF that cannot be parsed is not
+    # forced through utf-8 — it yields no text, and no claims.
+    try:
+        text, parse_confidence = text_for_content_type(raw, content_type)
+        parse_error = ""
+    except PdfExtractionError as exc:
+        text, parse_confidence, parse_error = "", 0.0, str(exc)
+
     # Identity is derived from the ARTIFACT, before the requested target is
     # consulted. HUMAN_AUTHORIZED evidence is still checked: a QA retest for the
     # wrong lot is still the wrong lot.
@@ -292,6 +299,9 @@ def ingest(
         status=status,
         trust_label=trust_label,
         identity_stated=claimed.states_any,
+        extraction_text=text,
+        parse_confidence=parse_confidence,
+        parse_error=parse_error,
     )
 
     events.emit(
@@ -348,6 +358,13 @@ _LINE = re.compile(
     r"(?P<value>-?\d+(?:\.\d+)?)\s*(?P<units>[A-Za-z%/°]+)?"
     r"(?:\s*\((?P<qual>[^)]*)\))?\s*$"
 )
+#: A line that presents as "characteristic: value ..." and therefore SHOULD
+#: parse. Used to score extraction confidence against what was parseable rather
+#: than against every line of boilerplate in the document.
+_MEASUREMENT_SHAPED = re.compile(r"^[A-Za-z][A-Za-z0-9 _-]{2,40}?\s*[:=]\s*-?\d")
+
+#: Emitted by the PDF extractor so claims can bind to a page (P0-8).
+_PAGE_MARKER = re.compile(r"^\[\[page:(?P<page>\d+)\]\]$")
 _SPEC_CITED = re.compile(
     r"spec(?:ification)?\s+(?P<spec>[A-Z0-9-]+)\s+rev(?:ision)?\s+(?P<rev>[A-Z0-9]+)",
     re.IGNORECASE,
@@ -467,14 +484,22 @@ def validate_binding(
 def parse_deterministic(text: str) -> tuple[list[CandidateClaim], float]:
     """S3a — the PRIMARY path. Structured COA/table extraction, no model.
 
-    Returns (claims, confidence). Confidence is the fraction of non-blank lines
-    it could account for; a document it mostly cannot read reports low
-    confidence and hands off to the fallback.
+    Returns (claims, confidence).
+
+    Confidence is the fraction of MEASUREMENT-SHAPED lines the parser could
+    fully resolve — not the fraction of all lines. Every real COA carries
+    headers, addresses, signatures and boilerplate; counting those as parse
+    failures would route perfectly readable documents to human review and make
+    the low-confidence signal meaningless. A document with no measurement-shaped
+    lines at all scores 0.0, which is the genuine "cannot read this" case.
     """
     claims: list[CandidateClaim] = []
     lines = [ln.strip() for ln in text.splitlines()]
-    content = [ln for ln in lines if ln]
     cited_spec = ""
+    page = 0  # 0 = no page structure (plain text); set by [[page:N]] markers
+    #: Lines that LOOK like "name: value" — i.e. lines the parser is supposed
+    #: to be able to read. Failing on one of these is a real parse failure.
+    measurement_shaped = sum(1 for ln in lines if _MEASUREMENT_SHAPED.match(ln))
 
     spec_match = _SPEC_CITED.search(text)
     if spec_match:
@@ -482,6 +507,11 @@ def parse_deterministic(text: str) -> tuple[list[CandidateClaim], float]:
 
     for index, line in enumerate(lines):
         if not line:
+            continue
+        marker = _PAGE_MARKER.match(line)
+        if marker:
+            # P0-8: track the page so every claim carries a page locator.
+            page = int(marker.group("page"))
             continue
         match = _LINE.match(line)
         if not match:
@@ -496,13 +526,97 @@ def parse_deterministic(text: str) -> tuple[list[CandidateClaim], float]:
                 method=method.strip(),
                 condition=condition.strip(),
                 claimed_spec=cited_spec,
-                locator=f"line:{index + 1}",
+                locator=(
+                    f"page:{page}/line:{index + 1}" if page else f"line:{index + 1}"
+                ),
                 confidence=1.0,
             )
         )
 
-    confidence = len(claims) / max(len(content), 1)
-    return claims, confidence
+    confidence = len(claims) / measurement_shaped if measurement_shaped else 0.0
+    return claims, min(confidence, 1.0)
+
+
+# ==========================================================================
+# S3a — PDF extraction (P0-8)
+# ==========================================================================
+
+#: Bounds on PDF parsing. A hostile PDF must not be able to exhaust memory or
+#: CPU: it is external content, and the parser is an attack surface.
+MAX_PDF_PAGES = 100
+MAX_PDF_CHARS = 2_000_000
+
+
+class PdfExtractionError(ValueError):
+    """The artifact could not be parsed as a PDF. Never silently decoded."""
+
+
+def extract_pdf_text(raw: bytes) -> tuple[str, list[str], float]:
+    """Deterministic PDF text/table extraction (P0-8).
+
+    Returns (text, per_page_text, confidence). Text carries page markers so
+    every claim can be bound to a page locator rather than a byte offset.
+
+    `bytes.decode("utf-8")` is NOT an implementation of this: a PDF is a
+    structured container, and decoding it yields either mojibake or nothing.
+    Confidence reflects how much of the document actually yielded text — a
+    scanned/image PDF extracts nothing, reports ~0.0, and routes to a human
+    rather than to an autonomous decision.
+    """
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:  # pragma: no cover - declared dependency
+        raise PdfExtractionError(f"no PDF parser available: {exc}") from exc
+
+    import io
+
+    try:
+        reader = PdfReader(io.BytesIO(raw))
+        if reader.is_encrypted:
+            # An encrypted artifact is not parseable evidence. It is preserved
+            # and routed to a human; it is never guessed at.
+            raise PdfExtractionError("PDF is encrypted; cannot extract deterministically")
+        pages = reader.pages[:MAX_PDF_PAGES]
+    except PdfExtractionError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — malformed PDFs are expected input
+        raise PdfExtractionError(f"unparseable PDF: {type(exc).__name__}: {exc}") from exc
+
+    per_page: list[str] = []
+    for page in pages:
+        try:
+            per_page.append((page.extract_text() or "").strip())
+        except Exception:  # noqa: BLE001 — one bad page must not lose the rest
+            per_page.append("")
+
+    marked: list[str] = []
+    total = 0
+    for index, text in enumerate(per_page, start=1):
+        if total >= MAX_PDF_CHARS:
+            break
+        chunk = text[: MAX_PDF_CHARS - total]
+        total += len(chunk)
+        marked.append(f"[[page:{index}]]\n{chunk}")
+
+    # Confidence: fraction of pages that yielded any text at all. A PDF whose
+    # pages are images scores 0.0 and cannot support an autonomous decision.
+    populated = sum(1 for t in per_page if t)
+    confidence = populated / len(per_page) if per_page else 0.0
+    return "\n".join(marked), per_page, confidence
+
+
+def text_for_content_type(raw: bytes, content_type: str) -> tuple[str, float]:
+    """Decode an artifact to text according to its declared type.
+
+    PDF goes through a real parser; plain text decodes. An unknown type is not
+    forced through utf-8 — it reports zero confidence and routes to a human.
+    """
+    if content_type == "application/pdf":
+        text, _pages, confidence = extract_pdf_text(raw)
+        return text, confidence
+    if content_type in ("text/plain", "text/csv"):
+        return _safe_decode(raw), 1.0
+    return "", 0.0
 
 
 class ConfinedExtractor(Protocol):
@@ -522,15 +636,26 @@ def extract(
     events: EventLog,
     decision_record_id: str,
     model_fallback: ConfinedExtractor | None = None,
+    *,
+    parse_confidence: float = 1.0,
 ) -> tuple[list[CandidateClaim], ExtractionMethod, float]:
-    """Deterministic parser first; confined model only where it cannot cope."""
+    """Deterministic parser first; confined model only where it cannot cope.
+
+    `parse_confidence` carries how well the artifact could be turned into text
+    at all (a scanned PDF ~ 0.0). It caps the final confidence, because claims
+    parsed cleanly out of a document we could barely read are not trustworthy
+    just because the lines that DID emerge matched a regex.
+    """
     claims, confidence = parse_deterministic(text)
     method = ExtractionMethod.DETERMINISTIC_PARSER
+    confidence = min(confidence, parse_confidence)
 
     if confidence < LOW_CONFIDENCE and model_fallback is not None:
         claims = model_fallback(text)
         method = ExtractionMethod.MODEL_FALLBACK
-        confidence = min(c.confidence for c in claims) if claims else 0.0
+        confidence = min(
+            (min(c.confidence for c in claims) if claims else 0.0), parse_confidence
+        )
 
     events.emit(
         EventType.EVIDENCE_EXTRACTED,
@@ -539,6 +664,7 @@ def extract(
         method=method.value,
         confidence=round(confidence, 3),
         claim_count=len(claims),
+        low_confidence=confidence < LOW_CONFIDENCE,
         version=PARSER_VERSION if method is ExtractionMethod.DETERMINISTIC_PARSER
         else MODEL_EXTRACTOR_VERSION,
     )

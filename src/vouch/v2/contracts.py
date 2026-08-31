@@ -200,6 +200,11 @@ class ExternalEvidenceArtifact(BaseModel):
     #: P0-4: did the document state its own identity at all? A document that
     #: states nothing is a different case from one that states a contradiction.
     identity_stated: bool = False
+    #: P0-8: text the deterministic parser recovered, how much of the artifact
+    #: it could actually read, and why it failed if it did.
+    extraction_text: str = ""
+    parse_confidence: float = 1.0
+    parse_error: str = ""
 
 
 # ==========================================================================

@@ -167,18 +167,30 @@ class VouchV2:
             "identity_stated": artifact.identity_stated,
         }
 
+        if artifact.parse_error:
+            # P0-8. The artifact could not be read at all. That is an extraction
+            # failure requiring a human, not evidence that anything is missing.
+            summary["extraction_method"] = "NONE"
+            summary["extraction_confidence"] = 0.0
+            summary["low_confidence"] = True
+            summary["parse_error"] = artifact.parse_error
+            return [], summary
+
         if artifact.status is not ArtifactStatus.RECEIVED:
             # Binding mismatch or security quarantine: no claims are produced,
             # and nothing is rebound to the requested lot.
             return [], summary
 
-        text = raw.decode("utf-8", errors="replace")
+        # P0-8: the text comes from the content-type-aware parser used during
+        # ingestion (a real PDF parser for PDFs), not a blind utf-8 decode.
         candidates, method, confidence = extract(
-            artifact, text, events, decision_record_id, self.model_fallback
+            artifact, artifact.extraction_text, events, decision_record_id,
+            self.model_fallback, parse_confidence=artifact.parse_confidence,
         )
         summary["extraction_method"] = method.value
         summary["extraction_confidence"] = confidence
         summary["low_confidence"] = confidence < LOW_CONFIDENCE
+        summary["parse_error"] = artifact.parse_error
 
         claims = canonicalize(candidates, artifact, method, trust_label)
         return claims, summary
