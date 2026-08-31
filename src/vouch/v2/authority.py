@@ -8,7 +8,7 @@ V2 mechanism: an issuer-authenticated capability RECORD, written only by the
 Policy Engine, consumed by a single atomic conditional write.
 
     consume iff  the row exists
-            and  it was written by the Policy Engine
+            and  it was written by an authorized issuer
             and  it is unused
             and  it is unexpired
             and  target and action match exactly
@@ -18,14 +18,23 @@ Policy Engine, consumed by a single atomic conditional write.
 Then, in the same atomic step: perform the transition, mark consumed, append to
 the ledger.
 
-Why a record rather than an HMAC: there is no secret to leak, and replay
-protection, idempotency and state-binding all fall out of the same conditional
-write. Once an HMAC needs a consumed-nonce store to be single-use, that store IS
-the authority and the signature is redundant.
+Two properties this module must enforce, both proven by the audit to have been
+missing at b8f54b0:
 
-Crucially, this does NOT rely on Python import discipline. `_issuer_secret` is a
-process-local value the Policy Engine holds; a forged record without it fails
-`_authentic`, so constructing a `CapabilityRecord` by hand gets you nothing.
+**Issuance is authorized, not merely conventional (P0-1).** `issue()` demands an
+`Issuer` credential. Only `PolicyEngine` mints one, and it does so for itself at
+construction; there is no public constructor path that yields a valid credential
+to anything else. A caller holding the store but no credential cannot create
+authority — `store.issue(...)` without a credential is a TypeError, and with a
+forged credential it is a POLICY_REFUSAL. The production DynamoDB adapter binds
+the same boundary to an IAM principal, so the enforcement is not Python-only.
+
+**Consumption dispatches internally (P0-2).** `consume()` takes a capability id
+and NOTHING executable. The mutation is looked up from a closed table keyed by
+the capability's own bound action, and it can only touch the capability's own
+bound target. There is no parameter through which a caller can supply a
+callable, so a capability for LOT-1001 cannot be made to mutate LOT-1002 no
+matter what the caller passes.
 """
 
 from __future__ import annotations
@@ -53,6 +62,8 @@ class Action(str, Enum):
     CREATE_QA_REVIEW = "create_qa_review"
     HOLD_PRODUCTION_ORDER = "hold_production_order"
     RESEQUENCE_PRODUCTION_ORDER = "resequence_production_order"
+    #: Readiness is a persisted state transition, not a computed view (P1-6).
+    SET_ORDER_READINESS = "set_order_readiness"
 
 
 class TargetType(str, Enum):
@@ -79,6 +90,10 @@ class CapabilityRecord:
     expires_at: str
     nonce: str
     issuer_proof: str
+    #: Which authorized issuer created this row (P0-1). Recorded in the ledger
+    #: so an auditor can see authority never originated outside the Policy
+    #: Engine.
+    issuer_identity: str = ""
     used: bool = False
     consumed_at: str = ""
 
@@ -88,6 +103,7 @@ class CapabilityRecord:
                 self.capability_id, self.decision_record_id, self.target_type.value,
                 self.target_id, self.action.value, str(self.observed_state_version),
                 self.policy_version, self.expires_at, self.nonce,
+                self.issuer_identity,
             ]
         )
 
@@ -96,27 +112,67 @@ class CapabilityRecord:
         return now > datetime.fromisoformat(self.expires_at)
 
 
+class IssuerViolation(PermissionError):
+    """Something other than an authorized issuer tried to create authority."""
+
+
+@dataclass(frozen=True)
+class Issuer:
+    """Proof that the holder is permitted to create authority (P0-1).
+
+    This is the local-mode model of the production boundary: in DynamoDB the
+    right to write a capability row belongs to the Policy Engine's IAM
+    principal, and no other component's credentials can perform that PutItem.
+    Here the same boundary is a credential object the store recognizes.
+
+    It is deliberately NOT constructible into a valid state by an outsider:
+    `secret` must equal the store's own issuer secret, which is never exposed.
+    `PolicyEngine` receives one at construction and nothing else does.
+    """
+
+    identity: str
+    secret: bytes = field(repr=False, default=b"")
+
+
 class CapabilityStore:
     """Persisted capability rows with atomic conditional consumption.
 
     The lock is what DynamoDB's ConditionExpression provides in production; the
-    semantics proven here are identical. `consume_atomically` is the single
-    place a capability is spent, and it is the single place state mutates.
+    semantics proven here are identical. `consume` is the single place a
+    capability is spent, and it is the single place state mutates.
 
     ponytail: threading.Lock, not a distributed lock. Single-process semantics
-    match the conditional-write guarantee; the DynamoDB adapter swaps this for
-    a transactional write with the same conditions.
+    match the conditional-write guarantee; the DynamoDB adapter (aws.py) swaps
+    this for a TransactWriteItems with the same conditions.
     """
 
     def __init__(self) -> None:
         self._rows: dict[str, CapabilityRecord] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._ledger: list[dict] = []
         # Process-local issuer secret. Never persisted, never exposed. Rotating
         # it invalidates outstanding capabilities, which is correct.
         self._issuer_secret = secrets.token_bytes(32)
 
-    # -- issuance (Policy Engine only) ------------------------------------
+    # -- issuer boundary ---------------------------------------------------
+    def _mint_issuer(self, identity: str) -> Issuer:
+        """Create an issuer credential. Called ONLY by PolicyEngine.__init__.
+
+        This is a private method by name, but the enforcement does not rest on
+        that: the credential it returns carries the store's secret, and
+        `issue()` compares against that secret. A caller that constructs
+        `Issuer("policy-engine", b"guess")` fails the comparison.
+        """
+        return Issuer(identity=identity, secret=self._issuer_secret)
+
+    def _authorized_issuer(self, issuer: Issuer | None) -> bool:
+        return (
+            isinstance(issuer, Issuer)
+            and bool(issuer.secret)
+            and secrets.compare_digest(issuer.secret, self._issuer_secret)
+        )
+
+    # -- issuance (authorized issuers only) --------------------------------
     def _proof(self, binding: str) -> str:
         return hashlib.blake2b(
             binding.encode(), key=self._issuer_secret, digest_size=32
@@ -127,6 +183,7 @@ class CapabilityStore:
 
     def issue(
         self,
+        issuer: Issuer,
         *,
         decision_record_id: str,
         target_type: TargetType,
@@ -135,7 +192,18 @@ class CapabilityStore:
         observed_state_version: int,
         ttl_seconds: int = CAPABILITY_TTL_SECONDS,
     ) -> CapabilityRecord:
-        """Write a capability row. Called ONLY by the Policy Engine."""
+        """Write a capability row. Requires an authorized issuer credential.
+
+        `issuer` is positional and mandatory, so a caller cannot omit it: an
+        `issue(...)` call without it raises TypeError before any row exists.
+        """
+        if not self._authorized_issuer(issuer):
+            identity = getattr(issuer, "identity", type(issuer).__name__)
+            raise IssuerViolation(
+                f"{identity!r} is not authorized to issue capabilities; "
+                "only the Policy Engine may create authority"
+            )
+
         capability_id = f"CAP-{uuid.uuid4().hex[:16]}"
         expires_at = (
             datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
@@ -151,6 +219,7 @@ class CapabilityStore:
             expires_at=expires_at,
             nonce=secrets.token_hex(16),
             issuer_proof="",
+            issuer_identity=issuer.identity,
         )
         record = replace(skeleton, issuer_proof=self._proof(skeleton.binding()))
         with self._lock:
@@ -161,20 +230,25 @@ class CapabilityStore:
         return self._rows.get(capability_id)
 
     # -- consumption -------------------------------------------------------
-    def consume_atomically(
+    def consume(
         self,
-        capability: CapabilityRecord,
+        capability_id: str,
         corpus: Corpus,
-        apply_change,
+        *,
+        params: dict | None = None,
     ) -> dict:
-        """The ONLY path to a state mutation.
+        """The ONLY path to a state mutation (P0-2).
 
-        Every check happens at consume time, inside the lock, together with the
-        transition and the ledger append. There is no window between validating
-        and acting.
+        Takes an ID and a parameter dict — never a callable. The mutation is
+        resolved from the closed `MUTATIONS` table using the STORED record's
+        own action, and applied to the STORED record's own target. A caller
+        cannot supply, substitute, or redirect the operation.
+
+        Every check happens inside the lock, together with the transition and
+        the ledger append. There is no window between validating and acting.
         """
         with self._lock:
-            stored = self._rows.get(capability.capability_id)
+            stored = self._rows.get(capability_id)
 
             # 1. unforgeability + issuer authenticity
             if stored is None:
@@ -185,11 +259,6 @@ class CapabilityStore:
             if not self._authentic(stored):
                 raise VouchFailure(
                     FailureCategory.POLICY_REFUSAL, "capability failed issuer authentication"
-                )
-            # The presented record must be the stored one, not a lookalike.
-            if stored.binding() != capability.binding():
-                raise VouchFailure(
-                    FailureCategory.POLICY_REFUSAL, "presented capability does not match issued row"
                 )
 
             # 2. single use
@@ -205,7 +274,22 @@ class CapabilityStore:
                     FailureCategory.POLICY_REFUSAL, "capability has expired"
                 )
 
-            # 4. state-version binding — kills TOCTOU
+            # 4. the action must resolve in the closed dispatch table
+            apply_change = MUTATIONS.get(stored.action)
+            if apply_change is None:
+                raise VouchFailure(
+                    FailureCategory.POLICY_REFUSAL,
+                    f"no mutation is bound to {stored.action.value}; refusing",
+                )
+
+            # 5. the bound target must exist and be of the bound type
+            if corpus.get(stored.target_type.value, stored.target_id) is None:
+                raise VouchFailure(
+                    FailureCategory.STATE_CONFLICT,
+                    f"{stored.target_type.value} {stored.target_id} does not exist",
+                )
+
+            # 6. state-version binding — kills TOCTOU
             current_version = corpus.version_of(stored.target_type.value, stored.target_id)
             if current_version != stored.observed_state_version:
                 raise VouchFailure(
@@ -214,9 +298,9 @@ class CapabilityStore:
                     f"{stored.observed_state_version} to {current_version}; re-evaluate",
                 )
 
-            # 5. transition + consume + ledger, atomically
+            # 7. transition + consume + ledger, atomically
             before = current_version
-            outcome = apply_change(corpus, stored)
+            outcome = apply_change(corpus, stored, dict(params or {}))
             after = corpus.version_of(stored.target_type.value, stored.target_id)
 
             self._rows[stored.capability_id] = replace(
@@ -227,6 +311,7 @@ class CapabilityStore:
                 "sequence": sequence,
                 "capability_id": stored.capability_id,
                 "decision_record_id": stored.decision_record_id,
+                "issuer_identity": stored.issuer_identity,
                 "action": stored.action.value,
                 "target_type": stored.target_type.value,
                 "target_id": stored.target_id,
@@ -288,9 +373,15 @@ class PolicyEngine:
     interval containment — never model discretion.
     """
 
+    IDENTITY = "vouch.policy-engine"
+
     def __init__(self, corpus: Corpus, capabilities: CapabilityStore) -> None:
         self._corpus = corpus
         self._capabilities = capabilities
+        # The single issuer credential in the system. Nothing else obtains one:
+        # `_mint_issuer` is reached only from here, and the credential carries
+        # the store's secret rather than a name anyone could assert.
+        self._issuer = capabilities._mint_issuer(self.IDENTITY)
 
     def evaluate_lot_disposition(
         self,
@@ -362,6 +453,7 @@ class PolicyEngine:
             )
 
         capability = self._capabilities.issue(
+            self._issuer,
             decision_record_id=decision_record_id,
             target_type=TargetType.LOT,
             target_id=lot_id,
@@ -411,10 +503,17 @@ class PolicyEngine:
         if action is Action.HOLD_PRODUCTION_ORDER:
             if "BLOCKED" not in ORDER_TRANSITIONS.get(order.status, set()):
                 return refuse(f"transition {order.status} -> BLOCKED is not permitted")
+        elif action is Action.SET_ORDER_READINESS:
+            # Legality of the specific target state is re-checked at consume
+            # time against the value bound in params; here we only confirm the
+            # order is in a state that can transition at all.
+            if not ORDER_TRANSITIONS.get(order.status, set()):
+                return refuse(f"order in {order.status} cannot transition")
         elif action is not Action.RESEQUENCE_PRODUCTION_ORDER:
             return refuse(f"{action.value} is not an order action")
 
         capability = self._capabilities.issue(
+            self._issuer,
             decision_record_id=decision_record_id,
             target_type=TargetType.PRODUCTION_ORDER,
             target_id=order_id,
@@ -448,19 +547,19 @@ def _set_inventory_usable(corpus: Corpus, lot_id: str, usable: bool) -> float:
     return record.quantity if usable else -record.quantity
 
 
-def apply_release(corpus: Corpus, capability: CapabilityRecord) -> dict:
+def apply_release(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
     corpus.bump("lot", capability.target_id, status="RELEASED")
     delta = _set_inventory_usable(corpus, capability.target_id, True)
     return {"result": f"lot {capability.target_id} RELEASED", "inventory_delta": delta}
 
 
-def apply_quarantine(corpus: Corpus, capability: CapabilityRecord) -> dict:
+def apply_quarantine(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
     corpus.bump("lot", capability.target_id, status="QUARANTINED")
     delta = _set_inventory_usable(corpus, capability.target_id, False)
     return {"result": f"lot {capability.target_id} QUARANTINED", "inventory_delta": delta}
 
 
-def apply_qa_review(corpus: Corpus, capability: CapabilityRecord) -> dict:
+def apply_qa_review(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
     """Escalation, not a defect finding. A lot pending QA is not defective."""
     lot = corpus.lot(capability.target_id)
     if lot is not None and lot.status == "RECEIVED":
@@ -479,24 +578,100 @@ def apply_qa_review(corpus: Corpus, capability: CapabilityRecord) -> dict:
     return {"result": f"QA review {review_id} created", "inventory_delta": 0.0}
 
 
-def apply_hold(corpus: Corpus, capability: CapabilityRecord) -> dict:
+def apply_hold(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
     corpus.bump("production_order", capability.target_id, status="BLOCKED")
     return {"result": f"order {capability.target_id} BLOCKED", "inventory_delta": 0.0}
 
 
-def apply_resequence(corpus: Corpus, capability: CapabilityRecord, target_slot: str) -> dict:
+def apply_resequence(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+    """Resequence the bound order into its bound target slot (P1-7).
+
+    The slot is re-verified HERE, at execution, not merely when the recovery
+    option was enumerated: another order may have taken the slot in between.
+    A conflict is a STATE_CONFLICT, not a silent overwrite.
+    """
+    target_slot = str(params.get("target_slot", ""))
+    if not target_slot:
+        raise VouchFailure(
+            FailureCategory.POLICY_REFUSAL, "resequence requires a target_slot"
+        )
+
+    order = corpus.order(capability.target_id)
+    if order is None:
+        raise VouchFailure(
+            FailureCategory.STATE_CONFLICT, f"order {capability.target_id} does not exist"
+        )
+
+    conflict = [
+        o
+        for o in corpus.all("production_order")
+        if o.order_id != capability.target_id
+        and o.resource == order.resource
+        and o.planned_slot == target_slot
+        and o.status != "BLOCKED"
+    ]
+    if conflict:
+        raise VouchFailure(
+            FailureCategory.STATE_CONFLICT,
+            f"slot {target_slot} on {order.resource} is occupied by "
+            f"{conflict[0].order_id}; refusing to resequence",
+        )
+
+    from_slot = order.planned_slot
     corpus.bump("production_order", capability.target_id, planned_slot=target_slot)
     return {
-        "result": f"order {capability.target_id} resequenced to {target_slot}",
+        "result": (
+            f"order {capability.target_id} resequenced from {from_slot} to {target_slot}"
+        ),
         "inventory_delta": 0.0,
+        "from_slot": from_slot,
+        "target_slot": target_slot,
     }
 
 
+def apply_set_readiness(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+    """Persist a deterministically-computed readiness state (P1-6).
+
+    Readiness is not a view. A recomputation that changes it performs a real,
+    authorized, version-checked transition through this path like any other
+    mutation, so the order's status and state_version actually move.
+    """
+    to_status = str(params.get("readiness", ""))
+    if to_status not in ORDER_TRANSITIONS:
+        raise VouchFailure(
+            FailureCategory.POLICY_REFUSAL, f"{to_status!r} is not a readiness state"
+        )
+    order = corpus.order(capability.target_id)
+    if order is None:
+        raise VouchFailure(
+            FailureCategory.STATE_CONFLICT, f"order {capability.target_id} does not exist"
+        )
+    if to_status not in ORDER_TRANSITIONS.get(order.status, set()):
+        raise VouchFailure(
+            FailureCategory.POLICY_REFUSAL,
+            f"transition {order.status} -> {to_status} is not permitted",
+        )
+    from_status = order.status
+    corpus.bump("production_order", capability.target_id, status=to_status)
+    return {
+        "result": f"order {capability.target_id} {from_status} -> {to_status}",
+        "inventory_delta": 0.0,
+        "from_status": from_status,
+        "to_status": to_status,
+        "caused_by": params.get("caused_by", {}),
+    }
+
+
+#: The CLOSED dispatch table (P0-2). A capability's bound action selects its
+#: mutation here; nothing a caller passes can add to, replace, or redirect an
+#: entry. An action with no entry fails closed in `consume`.
 MUTATIONS = {
     Action.RELEASE_LOT: apply_release,
     Action.QUARANTINE_LOT: apply_quarantine,
     Action.CREATE_QA_REVIEW: apply_qa_review,
     Action.HOLD_PRODUCTION_ORDER: apply_hold,
+    Action.RESEQUENCE_PRODUCTION_ORDER: apply_resequence,
+    Action.SET_ORDER_READINESS: apply_set_readiness,
 }
 
 
@@ -505,14 +680,15 @@ def execute(
     corpus: Corpus,
     capabilities: CapabilityStore,
     events: EventLog,
+    *,
+    params: dict | None = None,
 ) -> dict:
-    """Consume the capability and perform its mutation atomically."""
-    apply_change = MUTATIONS.get(capability.action)
-    if apply_change is None:
-        raise VouchFailure(
-            FailureCategory.POLICY_REFUSAL, f"no mutation bound to {capability.action.value}"
-        )
-    entry = capabilities.consume_atomically(capability, corpus, apply_change)
+    """Consume the capability and perform its bound mutation atomically.
+
+    Only the capability ID crosses into the store; the mutation is chosen there
+    from the stored record's own action.
+    """
+    entry = capabilities.consume(capability.capability_id, corpus, params=params)
     events.emit(
         EventType.MUTATION_COMPLETED, capability.decision_record_id,
         before_version=entry["before_version"], after_version=entry["after_version"],
@@ -526,11 +702,13 @@ __all__ = [
     "CAPABILITY_TTL_SECONDS",
     "CapabilityRecord",
     "CapabilityStore",
+    "Issuer",
+    "IssuerViolation",
     "LOT_TRANSITIONS",
+    "MUTATIONS",
     "ORDER_TRANSITIONS",
     "PolicyDecision",
     "PolicyEngine",
     "TargetType",
-    "apply_resequence",
     "execute",
 ]

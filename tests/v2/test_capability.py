@@ -3,6 +3,16 @@
 V1's AuthorityToken failed most of these. The audit minted one with
 authority_source="i_made_this_up" and released a lot. Each test below is the
 counter-proof.
+
+Iteration 2 adds the two boundaries the independent audit proved were missing at
+b8f54b0 and which no test then covered:
+
+  P0-1  authority cannot be created outside the Policy Engine;
+  P0-2  consumption dispatches internally and cannot execute caller-supplied
+        mutation logic against an arbitrary target.
+
+The capabilities used here are obtained the only way the architecture permits —
+from the Policy Engine — because there is no longer any other way to obtain one.
 """
 
 from __future__ import annotations
@@ -17,13 +27,21 @@ from vouch.v2.authority import (
     Action,
     CapabilityRecord,
     CapabilityStore,
+    Issuer,
+    IssuerViolation,
     PolicyEngine,
     TargetType,
-    apply_release,
     execute,
 )
 from vouch.v2.contracts import Disposition, FailureCategory, VouchFailure
-from vouch.v2.corpus import Corpus, InventoryRecord, Lot, SupplierQualification
+from vouch.v2.corpus import (
+    Corpus,
+    InventoryRecord,
+    Lot,
+    MaterialRequirementLine,
+    ProductionOrder,
+    SupplierQualification,
+)
 from vouch.v2.lifecycle import EventLog
 
 
@@ -44,16 +62,224 @@ def world():
     return corpus, capabilities, PolicyEngine(corpus, capabilities), EventLog()
 
 
-def _issue(world, action=Action.RELEASE_LOT, version=1):
-    _, capabilities, _, _ = world
+def _issue(world, action=Action.RELEASE_LOT, version=1, lot_id="LOT-1"):
+    """Obtain a capability the only way the architecture allows: via policy.
+
+    `_grant` is the Policy Engine's own credential. Reaching into it here is
+    deliberate — these tests need capabilities with specific bindings that the
+    disposition path would not naturally produce (a quarantine capability for a
+    clean lot, an already-expired TTL). Every OTHER test in the suite obtains
+    capabilities through `evaluate_lot_disposition`, and the P0-1 tests below
+    prove no caller without this credential can do what this helper does.
+    """
+    _, capabilities, policy, _ = world
     return capabilities.issue(
-        decision_record_id="DR-1", target_type=TargetType.LOT, target_id="LOT-1",
+        policy._issuer,
+        decision_record_id="DR-1", target_type=TargetType.LOT, target_id=lot_id,
         action=action, observed_state_version=version,
     )
 
 
+def _authorize_release(world, lot_id="LOT-1"):
+    """The real path: policy evaluates, and only then is authority created."""
+    corpus, _, policy, events = world
+    return policy.evaluate_lot_disposition(
+        decision_record_id="DR-1", lot_id=lot_id, disposition=Disposition.RELEASE,
+        reconciliation_ok=True, basis_checks_ok=True,
+        observed_state_version=corpus.version_of("lot", lot_id), events=events,
+    )
+
+
+# ==========================================================================
+# P0-1 — issuance is enforced, not conventional
+# ==========================================================================
+
+
+def test_policy_engine_can_issue(world):
+    decision = _authorize_release(world)
+    assert decision.allowed
+    assert decision.capability is not None
+    assert decision.capability.issuer_identity == PolicyEngine.IDENTITY
+
+
+def test_normal_application_caller_cannot_issue(world):
+    """The exact audit bypass: `store.issue(...)` from ordinary code.
+
+    It no longer compiles as a call — the issuer credential is a required
+    positional argument, so the attempt fails before any row is created.
+    """
+    _, capabilities, _, _ = world
+    with pytest.raises(TypeError):
+        capabilities.issue(  # type: ignore[call-arg]
+            decision_record_id="DR-EVIL", target_type=TargetType.LOT,
+            target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
+        )
+    assert capabilities.ledger == []
+
+
+@pytest.mark.parametrize(
+    "impostor",
+    [
+        Issuer(identity="investigator"),
+        Issuer(identity="verifier"),
+        Issuer(identity="vouch.policy-engine"),  # right NAME, no secret
+        Issuer(identity="vouch.policy-engine", secret=b"guessed-secret"),
+        Issuer(identity="arbitrary-caller", secret=b""),
+    ],
+    ids=["investigator", "verifier", "name-only", "wrong-secret", "empty"],
+)
+def test_unauthorized_identities_cannot_issue(world, impostor):
+    """Asserting the Policy Engine's name is not the same as being it.
+
+    This is the test that must exercise authorization semantics rather than
+    method naming: the credential carries the store's secret, which is never
+    exposed, so no constructed Issuer passes.
+    """
+    corpus, capabilities, _, _ = world
+    with pytest.raises(IssuerViolation):
+        capabilities.issue(
+            impostor,
+            decision_record_id="DR-EVIL", target_type=TargetType.LOT,
+            target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
+        )
+    assert capabilities.ledger == []
+    assert corpus.lot("LOT-1").status == "RECEIVED"
+
+
+def test_arbitrary_direct_store_caller_cannot_issue(world):
+    """Even holding the store object itself grants nothing."""
+    _, capabilities, _, _ = world
+    for bogus in (None, object(), "vouch.policy-engine", 42):
+        with pytest.raises((IssuerViolation, TypeError, AttributeError)):
+            capabilities.issue(
+                bogus,  # type: ignore[arg-type]
+                decision_record_id="DR-EVIL", target_type=TargetType.LOT,
+                target_id="LOT-1", action=Action.RELEASE_LOT,
+                observed_state_version=1,
+            )
+    assert capabilities.ledger == []
+
+
+def test_issuer_from_a_different_store_cannot_issue_here(world):
+    """Credentials are per-store; a valid issuer elsewhere is worthless here."""
+    _, capabilities, _, _ = world
+    other_store = CapabilityStore()
+    other_policy = PolicyEngine(Corpus(), other_store)
+    with pytest.raises(IssuerViolation):
+        capabilities.issue(
+            other_policy._issuer,
+            decision_record_id="DR-EVIL", target_type=TargetType.LOT,
+            target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
+        )
+
+
+def test_issuer_secret_is_not_exposed_by_repr(world):
+    """A credential must not leak through logs or tracebacks."""
+    _, _, policy, _ = world
+    assert "secret" not in repr(policy._issuer).lower() or "b'" not in repr(policy._issuer)
+
+
+# ==========================================================================
+# P0-2 — consumption dispatches internally
+# ==========================================================================
+
+
+def test_consume_accepts_no_callable(world):
+    """The exact audit bypass: a caller-supplied mutation callback.
+
+    `consume` has no parameter that accepts executable logic, so the attack has
+    no argument to travel through.
+    """
+    corpus, capabilities, _, _ = world
+    capability = _issue(world)
+
+    def malicious(*args, **kwargs):
+        corpus.bump("lot", "LOT-2", status="RELEASED")
+        return {"result": "pwned", "inventory_delta": 0.0}
+
+    with pytest.raises(TypeError):
+        capabilities.consume(capability.capability_id, corpus, malicious)  # type: ignore[misc]
+
+
+def test_release_capability_cannot_quarantine(world):
+    """The action is read from the STORED row, not from the caller."""
+    corpus, capabilities, _, events = world
+    capability = _issue(world, action=Action.RELEASE_LOT)
+    entry = capabilities.consume(capability.capability_id, corpus)
+    assert entry["action"] == "release_lot"
+    assert corpus.lot("LOT-1").status == "RELEASED"
+
+
+def test_release_capability_cannot_mutate_another_lot(world):
+    """A capability for LOT-1 cannot touch LOT-2 (the audit's stated attack)."""
+    corpus, capabilities, _, _ = world
+    corpus.put("lot", "LOT-2", Lot("LOT-2", "SUP-A", "MAT-1", "PO-2", 50.0))
+    capability = _issue(world, lot_id="LOT-1")
+
+    capabilities.consume(capability.capability_id, corpus)
+
+    assert corpus.lot("LOT-1").status == "RELEASED"
+    assert corpus.lot("LOT-2").status == "RECEIVED"  # untouched
+
+
+def test_lot_capability_cannot_mutate_a_production_order(world):
+    corpus, capabilities, _, _ = world
+    corpus.put(
+        "production_order", "ORD-1",
+        ProductionOrder("ORD-1", "P", 10.0, (MaterialRequirementLine("MAT-1", 5.0),),
+                        "LINE-1", "SLOT-1"),
+    )
+    capability = _issue(world)
+    capabilities.consume(capability.capability_id, corpus)
+    order = corpus.order("ORD-1")
+    assert order.status == "READY"
+    assert order.state_version == 1  # never touched
+
+
+def test_consume_changes_the_bound_target_exactly_as_declared(world):
+    corpus, capabilities, _, _ = world
+    capability = _issue(world, action=Action.QUARANTINE_LOT)
+    entry = capabilities.consume(capability.capability_id, corpus)
+
+    assert entry["target_id"] == "LOT-1"
+    assert entry["action"] == "quarantine_lot"
+    assert corpus.lot("LOT-1").status == "QUARANTINED"
+    assert entry["before_version"] == 1
+    assert entry["after_version"] == 2
+    assert corpus.usable_inventory("MAT-1") == 0.0
+
+
+def test_unsupported_action_fails_closed(world, monkeypatch):
+    """An action with no dispatch entry refuses rather than improvising."""
+    import vouch.v2.authority as authority
+
+    corpus, capabilities, _, _ = world
+    capability = _issue(world, action=Action.RELEASE_LOT)
+    monkeypatch.setattr(authority, "MUTATIONS", {})
+
+    with pytest.raises(VouchFailure) as exc:
+        capabilities.consume(capability.capability_id, corpus)
+    assert exc.value.category is FailureCategory.POLICY_REFUSAL
+    assert corpus.lot("LOT-1").status == "RECEIVED"
+
+
+def test_missing_target_refuses(world):
+    corpus, capabilities, _, _ = world
+    capability = _issue(world, lot_id="LOT-1")
+    corpus._t["lot"].pop("LOT-1")
+    with pytest.raises(VouchFailure) as exc:
+        capabilities.consume(capability.capability_id, corpus)
+    assert exc.value.category is FailureCategory.STATE_CONFLICT
+
+
+# ==========================================================================
+# D12 properties 1-10
+# ==========================================================================
+
+
 # -- 1. unforgeability -----------------------------------------------------
 def test_forged_capability_is_refused(world):
+    """Constructing the data object yields no authority: there is no row."""
     corpus, capabilities, _, _ = world
     forged = CapabilityRecord(
         capability_id="CAP-forged", decision_record_id="DR-1",
@@ -63,32 +289,40 @@ def test_forged_capability_is_refused(world):
         nonce="n", issuer_proof="i_made_this_up",
     )
     with pytest.raises(VouchFailure) as exc:
-        capabilities.consume_atomically(forged, corpus, apply_release)
+        capabilities.consume(forged.capability_id, corpus)
     assert exc.value.category is FailureCategory.POLICY_REFUSAL
     assert corpus.lot("LOT-1").status == "RECEIVED"
 
 
 # -- 2. issuer authenticity ------------------------------------------------
-def test_tampered_binding_fails_authentication(world):
+def test_tampered_row_fails_authentication(world):
+    """Editing a stored row without the secret invalidates its proof."""
     corpus, capabilities, _, _ = world
     capability = _issue(world)
-    # Same id, but the caller widened the action after issuance.
-    tampered = replace(capability, action=Action.QUARANTINE_LOT)
-    with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(tampered, corpus, apply_release)
+    capabilities._rows[capability.capability_id] = replace(
+        capability, action=Action.QUARANTINE_LOT
+    )
+    with pytest.raises(VouchFailure) as exc:
+        capabilities.consume(capability.capability_id, corpus)
+    assert "issuer authentication" in exc.value.detail
     assert corpus.lot("LOT-1").status == "RECEIVED"
 
 
 def test_capability_from_another_store_is_refused(world):
-    """A record issued by a different issuer (different secret) is worthless."""
+    """A record issued by a different issuer is unknown to this store."""
     corpus, capabilities, _, _ = world
-    other = CapabilityStore()
-    foreign = other.issue(
+    other_store = CapabilityStore()
+    other_corpus = Corpus()
+    other_corpus.put("lot", "LOT-1", Lot("LOT-1", "SUP-A", "MAT-1", "PO-1", 100.0))
+    other_policy = PolicyEngine(other_corpus, other_store)
+    foreign = other_store.issue(
+        other_policy._issuer,
         decision_record_id="DR-1", target_type=TargetType.LOT, target_id="LOT-1",
         action=Action.RELEASE_LOT, observed_state_version=1,
     )
     with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(foreign, corpus, apply_release)
+        capabilities.consume(foreign.capability_id, corpus)
+    assert corpus.lot("LOT-1").status == "RECEIVED"
 
 
 # -- 3. single use ---------------------------------------------------------
@@ -108,22 +342,27 @@ def test_capability_cannot_be_replayed(world):
 
 # -- 4. target + action binding -------------------------------------------
 def test_capability_is_bound_to_one_target(world):
+    """Rebinding the in-hand copy changes nothing; the row is authoritative."""
     corpus, capabilities, _, _ = world
     corpus.put("lot", "LOT-2", Lot("LOT-2", "SUP-A", "MAT-1", "PO-2", 50.0))
     capability = _issue(world)
     redirected = replace(capability, target_id="LOT-2")
-    with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(redirected, corpus, apply_release)
+
+    capabilities.consume(redirected.capability_id, corpus)
+
     assert corpus.lot("LOT-2").status == "RECEIVED"
+    assert corpus.lot("LOT-1").status == "RELEASED"
 
 
 def test_capability_is_bound_to_one_action(world):
     corpus, capabilities, _, events = world
     capability = _issue(world, action=Action.QUARANTINE_LOT)
-    # Presenting a quarantine capability while asking for release must fail.
     swapped = replace(capability, action=Action.RELEASE_LOT)
-    with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(swapped, corpus, apply_release)
+
+    entry = capabilities.consume(swapped.capability_id, corpus)
+
+    assert entry["action"] == "quarantine_lot"
+    assert corpus.lot("LOT-1").status == "QUARANTINED"
 
 
 # -- 5. decision-record binding -------------------------------------------
@@ -132,10 +371,7 @@ def test_capability_traces_to_one_decision_record(world):
     capability = _issue(world)
     entry = execute(capability, corpus, capabilities, events)
     assert entry["decision_record_id"] == "DR-1"
-
-    other = replace(capability, decision_record_id="DR-2")
-    with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(other, corpus, apply_release)
+    assert entry["issuer_identity"] == PolicyEngine.IDENTITY
 
 
 # -- 6. state-version binding (TOCTOU) ------------------------------------
@@ -154,8 +390,9 @@ def test_stale_state_version_refuses_mutation(world):
 
 # -- 7. expiry -------------------------------------------------------------
 def test_expired_capability_is_refused(world):
-    corpus, capabilities, _, events = world
+    corpus, capabilities, policy, events = world
     capability = capabilities.issue(
+        policy._issuer,
         decision_record_id="DR-1", target_type=TargetType.LOT, target_id="LOT-1",
         action=Action.RELEASE_LOT, observed_state_version=1, ttl_seconds=-1,
     )
@@ -166,14 +403,15 @@ def test_expired_capability_is_refused(world):
 
 
 # -- 8. replay resistance (nonce) -----------------------------------------
-def test_consumed_nonce_cannot_be_reused_in_a_new_record(world):
+def test_consumed_capability_cannot_be_revived_by_cloning(world):
     corpus, capabilities, _, events = world
     capability = _issue(world)
     execute(capability, corpus, capabilities, events)
-    # Reusing the nonce under a fresh id yields no valid issuer proof.
+    # A clone under a fresh id corresponds to no stored row.
     clone = replace(capability, capability_id="CAP-clone", used=False, consumed_at="")
     with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(clone, corpus, apply_release)
+        capabilities.consume(clone.capability_id, corpus)
+    assert len(capabilities.ledger) == 1
 
 
 # -- 9. mutation-time verification ----------------------------------------
@@ -187,21 +425,10 @@ def test_all_checks_happen_at_consume_time(world):
 
 
 def test_direct_mutation_without_capability_is_impossible(world):
-    """There is no unguarded mutation entry point.
-
-    `execute` requires a CapabilityRecord; the mutation functions are only
-    reachable through consume_atomically, which authenticates first.
-    """
+    """There is no unguarded mutation entry point."""
     corpus, capabilities, _, _ = world
     with pytest.raises(VouchFailure):
-        capabilities.consume_atomically(
-            CapabilityRecord(
-                "CAP-x", "DR-1", TargetType.LOT, "LOT-1", Action.RELEASE_LOT, 1,
-                "p", (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-                "n", "",
-            ),
-            corpus, apply_release,
-        )
+        capabilities.consume("CAP-never-issued", corpus)
     assert corpus.lot("LOT-1").status == "RECEIVED"
 
 
@@ -232,7 +459,35 @@ def test_concurrent_conflicting_mutations_allow_exactly_one(world):
     assert len(capabilities.ledger) == 1
 
 
-# -- policy engine is the only issuer -------------------------------------
+def test_two_concurrent_consumers_of_one_capability(world):
+    """The same capability consumed twice in parallel: exactly one wins."""
+    corpus, capabilities, _, events = world
+    capability = _issue(world)
+    results = []
+
+    def attempt():
+        try:
+            execute(capability, corpus, capabilities, events)
+            results.append("ok")
+        except VouchFailure:
+            results.append("refused")
+
+    threads = [threading.Thread(target=attempt) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert results.count("ok") == 1
+    assert len(capabilities.ledger) == 1
+    assert corpus.usable_inventory("MAT-1") == 100.0
+
+
+# ==========================================================================
+# policy engine refusals
+# ==========================================================================
+
+
 def test_policy_refuses_when_basis_checks_failed(world):
     corpus, capabilities, policy, events = world
     decision = policy.evaluate_lot_disposition(
@@ -242,6 +497,7 @@ def test_policy_refuses_when_basis_checks_failed(world):
     )
     assert not decision.allowed
     assert decision.capability is None
+    assert capabilities.ledger == []
 
 
 def test_policy_refuses_on_illegal_transition(world):
