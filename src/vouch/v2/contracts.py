@@ -343,7 +343,21 @@ class CoverageItem(BaseModel):
             "authoritative requirement names it."
         )
     )
-    evidence_ref: str | None = None  # claim_id
+    evidence_ref: str | None = Field(
+        default=None,
+        description=(
+            "The claim_id of the evidence that covers this test, or null if no "
+            "evidence in the snapshot applies to it. A claim's `claimed_spec` "
+            "is what the SUPPLIER said its document was written against and is "
+            "never authority: a measurement taken by the required method at "
+            "the required condition covers this test even when the document "
+            "cites a different specification revision. Do not withhold an "
+            "evidence_ref, and do not set method_match false, on the ground "
+            "that the document names another revision — record the measurement "
+            "and let the deterministic checks judge it against the governing "
+            "revision."
+        ),
+    )
     #: The `description` is deliberately on the Field, not in a comment: it is
     #: the only form the model ever sees. Pydantic puts it in the JSON schema
     #: Strands sends as the structured-output contract, whereas a `#:` comment
