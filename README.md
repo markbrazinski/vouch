@@ -52,7 +52,7 @@ uv pip install --python .venv/bin/python \
     strands-agents strands-agents-tools bedrock-agentcore \
     bedrock-agentcore-starter-toolkit pytest boto3
 
-.venv/bin/python -m pytest tests/ -q        # 80 passed
+.venv/bin/python -m pytest tests/ -q        # 361 passed, 19 skipped
 ```
 
 Tests run offline against scripted reasoners, so CI exercises the full
@@ -119,17 +119,25 @@ where deterministic scope containment is more reliable. Under the arbitration
 contract §26 this is a stop-and-report condition: no precedent work, no
 frontend redesign.
 
-Two further limits, stated plainly:
+Three further limits, stated plainly:
 
-- **AWS coverage is partial and itemized.** DynamoDB transactional capability
-  consumption, S3 versioned evidence storage and DecisionRecord/event
-  persistence are implemented AND live-verified in this account. S3 Object
-  Lock, Bedrock Guardrails, malware scanning, AgentCore Runtime, Gateway tool
-  scoping and observability are NOT live-verified — Object Lock is not enabled
-  on the bucket and no guardrail is provisioned. Per-component status, with
-  what each claim does and does not cover, is in
+- **AWS coverage is itemized.** Live-verified in this account: S3 versioned
+  evidence, the DynamoDB authoritative corpus, transactional capability
+  consumption (including concurrency, replay, stale state and a forged row
+  written directly to the real table), DecisionRecord/event persistence,
+  restart/resume, live Nova Pro tool calls, and the AgentCore Runtime serving
+  both Hero flows. NOT live-verified: Bedrock Guardrails (no guardrail is
+  provisioned — `bedrock:CreateGuardrail` is denied), S3 Object Lock, the
+  attached IAM boundary, KMS issuance keys, malware scanning, Gateway scoping
+  and OTel observability. Per-component status is in
   [docs/architecture/v2/AWS_STATUS.md](docs/architecture/v2/AWS_STATUS.md).
   Evidence originals are **versioned, not WORM**.
+- **Hero A does not reach QUARANTINE autonomously on the live-model path.**
+  Repeated live Nova Pro runs reconcile to `MATERIAL_DISAGREEMENT`: the
+  Investigator cites an expired deviation the Verifier correctly omits. The
+  system fails safe and escalates rather than mutating — the designed
+  behaviour — but the autonomous path completes only on the deterministic
+  reasoners. Prompts were not tuned to close this, because D21 is frozen.
 - **The evaluation corpus is unreviewed.** It was authored alongside the code it
   measures, and case design materially determines the outcome.
 

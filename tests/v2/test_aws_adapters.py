@@ -1233,7 +1233,7 @@ def test_execute_drops_cached_corpus_objects_after_a_durable_mutation():
 # live Bedrock Guardrails
 #
 # Gated on VOUCH_GUARDRAIL_ID as well as VOUCH_LIVE_AWS, because the guardrail
-# is provisioned by an admin identity (scripts/provision_guardrail.sh) —
+# is provisioned by an admin identity (scripts/cloudshell_provision.sh) —
 # gatehouse-dev can apply a guardrail but deliberately cannot create one.
 # These SKIP rather than pass when no guardrail is configured: a green test
 # that never called ApplyGuardrail would be exactly the fictional evidence
@@ -1246,7 +1246,7 @@ GUARDRAIL_ID = os.environ.get("VOUCH_GUARDRAIL_ID") or os.environ.get(
 guardrail_only = pytest.mark.skipif(
     not (LIVE and GUARDRAIL_ID),
     reason="live guardrail test; set VOUCH_LIVE_AWS=1 and VOUCH_GUARDRAIL_ID "
-    "(see scripts/provision_guardrail.sh)",
+    "(see scripts/cloudshell_provision.sh)",
 )
 
 HOSTILE_INJECTION = (
