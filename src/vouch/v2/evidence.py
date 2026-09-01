@@ -253,6 +253,26 @@ def ingest(
     artifact_id = f"ART-{uuid.uuid4().hex[:12]}"
     storage_ref, digest, object_version = store.put_original(f"{lot_id}/{artifact_id}", raw)
 
+    # Custody is established before anything interprets the bytes: the object
+    # reference, its version and its hash exist and are recorded FIRST, so an
+    # artifact can never be inspected or parsed without a durable original to
+    # point back at.
+    events.emit(
+        EventType.EVIDENCE_RECEIVED,
+        decision_record_id,
+        artifact_id=artifact_id,
+        source=source,
+        content_type=content_type,
+        requested_lot=lot_id,
+        requested_material=material_id,
+        storage_ref=storage_ref,
+        content_hash=digest,
+        object_version=object_version,
+        store_kind=getattr(store, "kind", ""),
+        trust_label=trust_label.value,
+        byte_length=len(raw),
+    )
+
     # P0-8: PDFs go through a real parser. A PDF that cannot be parsed is not
     # forced through utf-8 — it yields no text, and no claims.
     try:
@@ -335,6 +355,21 @@ def ingest(
         binding_status=binding_status.value,
         claimed_identity=claimed.as_dict(),
         version=SECURITY_CONFIG_VERSION,
+    )
+    # Every artifact reports its binding outcome, bound or not. The frontend
+    # must never have to infer "bound" from the ABSENCE of a mismatch event.
+    events.emit(
+        EventType.EVIDENCE_BINDING_COMPLETED,
+        decision_record_id,
+        artifact_id=artifact_id,
+        requested_lot=lot_id,
+        requested_material=material_id,
+        binding_status=binding_status.value,
+        bound=binding_status is BindingStatus.BOUND,
+        claimed_identity=claimed.as_dict(),
+        identity_stated=claimed.states_any,
+        reasons=list(binding_reasons),
+        result=status.value,
     )
     if binding_status is not BindingStatus.BOUND:
         events.emit(

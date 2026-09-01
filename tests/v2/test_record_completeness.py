@@ -125,9 +125,12 @@ RELEASE_COMPONENTS = [
     ("mutation.target_id", "mutation.target_id"),
     ("mutation.result", "mutation.result"),
     ("mutation.ledger_sequence", "ledger_sequence"),
-    ("mutation.inventory_delta", "inventory_delta"),
+    # A zero delta is legitimate (quarantining a not-yet-usable lot moves
+    # nothing); what must be present is proof the inventory was evaluated.
+    ("mutation.inventory_before", "inventory_before/after"),
+    ("mutation.inventory_after", "inventory_before/after"),
     ("mutation.after_version", "state versions"),
-    ("consequences.caused_by", "caused_by"),
+
     ("storage.record_ref", "record_ref"),
     ("identity.lot_id", "identity.lot_id"),
     ("identity.record_id", "identity.record_id"),
@@ -349,3 +352,25 @@ def test_an_agent_that_failed_records_why_rather_than_a_brief():
     record.investigator.failure = ""
     record.failure_category = FailureCategory.MODEL_UNAVAILABLE.value
     assert any("investigator.failure detail" in e for e in record.missing_components())
+
+
+def test_consequence_analysis_is_required_but_may_be_coverage_only(released):
+    """A release must record its consequence analysis — but a readiness
+    TRANSITION is not the only honest form of one.
+
+    Hero B releases a lot into an order that was already covered: coverage
+    changes, readiness does not move, and `caused_by` is legitimately empty.
+    Either field satisfies the requirement; losing BOTH does not.
+    """
+    record = copy.deepcopy(released)
+    assert record.mutation.inventory_delta, "fixture must actually move inventory"
+
+    _blank(record, "consequences.caused_by")
+    assert record.is_reconstructable(), (
+        "coverage_changes alone is a complete consequence analysis"
+    )
+
+    _blank(record, "consequences.coverage_changes")
+    missing = record.missing_components()
+    assert any("caused_by or coverage_changes" in entry for entry in missing), missing
+    assert not record.is_reconstructable()

@@ -175,6 +175,14 @@ class MutationSegment:
     before_version: int = 0
     after_version: int = 0
     inventory_delta: float = 0.0
+    #: The inventory row as it stood before and after the transition. A delta of
+    #: 0.0 is a real, defensible outcome — quarantining a lot that was never
+    #: usable moves nothing — but it is only defensible if the record shows the
+    #: inventory was actually evaluated. These two fields are that proof, and
+    #: they are what distinguishes "no change was required" from "the
+    #: consequence step never ran".
+    inventory_before: dict = field(default_factory=dict)
+    inventory_after: dict = field(default_factory=dict)
     ledger_sequence: int = 0
     result: str = "NO_MUTATION"
 
@@ -500,16 +508,32 @@ class DecisionRecord:
             or self.mutation.target_type == "production_order",
             "mutation.before_version does not match the observed snapshot version",
         )
-        # Inventory: a release or quarantine of a lot moves usable inventory.
+        # Inventory: a release or quarantine must show that usable inventory
+        # was EVALUATED. Requiring a non-zero delta was wrong: quarantining a
+        # lot that was not yet usable correctly moves nothing, and that lot is
+        # exactly the Hero A case. What must never be missing is the evidence
+        # that the inventory position was examined.
         if self.mutation.action in ("release_lot", "quarantine_lot"):
             need(
-                self.mutation.inventory_delta != 0.0,
-                "mutation.inventory_delta for a release/quarantine",
+                bool(self.mutation.inventory_before)
+                and bool(self.mutation.inventory_after),
+                "mutation.inventory_before/after for a release/quarantine",
             )
         # Consequences: a mutation that changed usable inventory must record
         # what it did to coverage and readiness, and any recovery it triggered.
         if self.mutation.inventory_delta:
-            need(bool(self.consequences.caused_by), "consequences.caused_by")
+            # The causal chain must be recorded, but a readiness TRANSITION is
+            # not the only honest outcome. Releasing a lot into an order that
+            # was already covered changes coverage and flips nothing — that is
+            # Hero B. Requiring `caused_by` there would have forced us either to
+            # invent a transition or to call a correct record incomplete, so the
+            # requirement is the consequence analysis, of which a readiness
+            # change is one form and a coverage recalculation the other.
+            need(
+                bool(self.consequences.caused_by)
+                or bool(self.consequences.coverage_changes),
+                "consequences.caused_by or coverage_changes",
+            )
         for change in self.consequences.readiness_changes:
             if change.get("to") == "BLOCKED":
                 need(

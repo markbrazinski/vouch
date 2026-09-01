@@ -615,6 +615,8 @@ class VouchV2:
         record.mutation.before_version = entry["before_version"]
         record.mutation.after_version = entry["after_version"]
         record.mutation.inventory_delta = entry["inventory_delta"]
+        record.mutation.inventory_before = entry.get("inventory_before", {})
+        record.mutation.inventory_after = entry.get("inventory_after", {})
         record.mutation.ledger_sequence = entry["sequence"]
         record.mutation.result = entry["result"]
 
@@ -749,13 +751,30 @@ class VouchV2:
 
         result["executed"] = True
         result["mutation"] = entry
+        # Distinct from RECOVERY_EVALUATED: evaluation considers, execution
+        # changes the schedule. Only the latter moved the factory.
+        events.emit(
+            EventType.RECOVERY_EXECUTED, decision_record_id,
+            blocked_order_id=order_id,
+            order_id=candidate.order_id,
+            candidate_id=selected.candidate_id,
+            kind=selected.kind,
+            capability_id=decision.capability.capability_id,
+            from_slot=entry.get("from_slot")
+            or entry.get("before_state", {}).get("planned_slot", ""),
+            to_slot=entry.get("target_slot")
+            or entry.get("after_state", {}).get("planned_slot", ""),
+            ledger_sequence=entry["sequence"],
+        )
         result["caused_by"] = {
             "cause": "order_blocked",
             "blocked_order_id": order_id,
             "effect": "resequence",
             "order_id": candidate.order_id,
-            "from_slot": entry.get("from_slot", ""),
-            "to_slot": entry.get("target_slot", ""),
+            "from_slot": entry.get("from_slot")
+            or entry.get("before_state", {}).get("planned_slot", ""),
+            "to_slot": entry.get("target_slot")
+            or entry.get("after_state", {}).get("planned_slot", ""),
             "decision_record_id": decision_record_id,
             "ledger_sequence": entry["sequence"],
         }
@@ -812,6 +831,22 @@ class VouchV2:
         record.human.authority_source = authority_source
         record.human.evidence_supplied.extend(c.claim_id for c in claims)
 
+        # The human contribution is a first-class, provenanced event: who
+        # supplied it, under what authority, and which durable object it is.
+        events.emit(
+            EventType.HUMAN_EVIDENCE_RECEIVED,
+            decision_record_id,
+            lot_id=lot_id,
+            authority_source=authority_source,
+            document_identity=summary["document_identity"],
+            content_hash=summary["content_hash"],
+            storage_ref=summary["storage_ref"],
+            object_version=summary["object_version"],
+            trust_label=TrustLabel.HUMAN_AUTHORIZED.value,
+            claim_ids=[c.claim_id for c in claims],
+            binding_status=summary["binding_status"],
+        )
+
         # F8: the human artifact's provenance belongs in the record's evidence
         # segment like any other artifact. Recording it only under `human`
         # meant a resumed decision could not re-fetch the very evidence that
@@ -837,6 +872,18 @@ class VouchV2:
 
         existing = self.claims.get(decision_record_id, [])
         self.claims[decision_record_id] = existing + claims
+
+        # Continuation, not a new case. run_count is the proof: the frontend
+        # renders one continuous history rather than two unrelated decisions.
+        events.emit(
+            EventType.DECISION_RESUMED,
+            decision_record_id,
+            lot_id=lot_id,
+            run_count=record.run_count,
+            resumed_run_ids=list(record.human.resumed_run_ids),
+            trigger="HUMAN_EVIDENCE",
+            total_claims=len(self.claims[decision_record_id]),
+        )
 
         # Same record, new snapshot version, both agents rerun.
         outcome = self.evaluate_lot(
