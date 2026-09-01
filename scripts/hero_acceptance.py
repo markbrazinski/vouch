@@ -103,10 +103,17 @@ def hero_b() -> dict:
     # Quality. INSUFFICIENT_EVIDENCE and a genuine MATERIAL_DISAGREEMENT are
     # both truthful ways to reach that, so both are accepted — what may not
     # happen is a release, or an unsafe capability.
+    #: Opening the QA case IS a mutation, and the right one — `create_qa_review`
+    #: goes through the same policy/capability path as any other. What must not
+    #: happen on the first run is a LOT state change, so that is what is
+    #: checked rather than "no mutation at all", which would have failed the
+    #: system for doing exactly what it should.
+    first_mutation = first.get("mutation") or {}
     first_ok = {
         "asked quality": first.get("quality_decision_required") is True,
         "no release": first.get("disposition") != "RELEASE",
-        "no mutation": not first.get("mutation"),
+        "no lot state change": first_mutation.get("action")
+        in (None, "", "create_qa_review"),
         "reason persisted": bool(first.get("reason")),
     }
 
@@ -123,7 +130,8 @@ def hero_b() -> dict:
         "same record": second.get("decision_record_id") == record_id,
         "run_count 2": record.get("run_count") == 2,
         "RELEASE": second.get("disposition") == "RELEASE",
-        "capability consumed": bool(second.get("mutation")),
+        "capability consumed": (second.get("mutation") or {}).get("action")
+        == "release_lot",
         "C-419 READY": readiness.get("readiness") == "READY",
         "nova reasoners": second.get("backend", {}).get("reasoners") == "BEDROCK_NOVA",
     }

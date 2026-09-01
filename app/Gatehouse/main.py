@@ -178,7 +178,15 @@ def invoke(payload: dict, context=None) -> dict:
                 "backend": _BACKEND.as_dict(),
                 "decision_record_id": outcome.decision_record_id,
                 "disposition": outcome.disposition,
+                "failure_category": outcome.failure_category,
+                "quality_decision_required": outcome.quality_decision_required,
                 "reason": outcome.reason,
+                # The resumed run mutates too — it is the release the whole
+                # continuation exists to reach. Omitting the mutation and its
+                # consequences here left a caller unable to see the outcome of
+                # the second half of the story without reading the record.
+                "mutation": outcome.mutation,
+                "consequences": outcome.consequences,
                 "decision_record": _record_summary(outcome.record),
                 "events": outcome.events,
             }
