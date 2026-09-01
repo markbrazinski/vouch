@@ -11,7 +11,7 @@ segment maps to a D13 row.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 from .contracts import (
@@ -223,6 +223,31 @@ class HumanContinuationSegment:
 
 
 @dataclass
+class ArchivedRun:
+    """One completed run's structured evidence, kept when the next run begins.
+
+    `investigator`, `verifier` and `reconciliation` are single segments, so a
+    resumed case overwrote the run that made it necessary: Records could show
+    that a decision abstained, but not what the two agents actually said when it
+    did. The reason a human was asked for evidence was the first thing lost.
+
+    Structured facts only — briefs, hashes, tool metadata, the reconciliation
+    values. The same rule the live segments follow: no chain of thought, because
+    there is no field here to put it in.
+    """
+
+    run_number: int = 0
+    investigator: AgentSegment = field(default_factory=AgentSegment)
+    verifier: AgentSegment = field(default_factory=AgentSegment)
+    reconciliation: ReconciliationSegment = field(default_factory=ReconciliationSegment)
+    basis: BasisSegment = field(default_factory=BasisSegment)
+    disposition: DispositionSegment = field(default_factory=DispositionSegment)
+    snapshot: SnapshotSegment = field(default_factory=SnapshotSegment)
+    failure_category: str = ""
+    archived_at: str = field(default_factory=utcnow)
+
+
+@dataclass
 class DecisionRecord:
     """One consequential decision, start to finish."""
 
@@ -247,6 +272,9 @@ class DecisionRecord:
     consequences: ConsequenceSegment = field(default_factory=ConsequenceSegment)
     human: HumanContinuationSegment = field(default_factory=HumanContinuationSegment)
     storage: StorageSegment = field(default_factory=StorageSegment)
+    #: Completed runs, oldest first. Run N is archived when run N+1 begins, so
+    #: this holds every run but the current one.
+    archived_runs: list[ArchivedRun] = field(default_factory=list)
 
     failure_category: str = ""
     terminal: bool = False
@@ -260,9 +288,43 @@ class DecisionRecord:
             self.policy.refusal_reason = self.policy.refusal_reason or detail
 
     def rerun(self) -> None:
-        """A human supplied evidence; the SAME record continues (contract §18)."""
+        """A human supplied evidence; the SAME record continues (contract §18).
+
+        The outgoing run is archived first. This is the only moment its evidence
+        still exists: the next run writes straight over `investigator`,
+        `verifier` and `reconciliation`.
+        """
+        self.archived_runs.append(
+            ArchivedRun(
+                run_number=self.run_count,
+                investigator=replace(self.investigator),
+                verifier=replace(self.verifier),
+                reconciliation=replace(self.reconciliation),
+                basis=replace(self.basis),
+                disposition=replace(self.disposition),
+                snapshot=replace(self.snapshot),
+                failure_category=self.failure_category,
+            )
+        )
         self.run_count += 1
         self.human.resumed_run_ids.append(f"{self.record_id}#run{self.run_count}")
+
+    def runs(self) -> list[ArchivedRun]:
+        """Every run in order, the current one included.
+
+        What an audit surface actually wants: `archived_runs` alone is missing
+        the run in progress, and the live segments alone are missing history.
+        """
+        return [*self.archived_runs, ArchivedRun(
+            run_number=self.run_count,
+            investigator=self.investigator,
+            verifier=self.verifier,
+            reconciliation=self.reconciliation,
+            basis=self.basis,
+            disposition=self.disposition,
+            snapshot=self.snapshot,
+            failure_category=self.failure_category,
+        )]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

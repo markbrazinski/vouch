@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Iterable, Protocol
 
 from .contracts import FailureCategory, VouchFailure, content_hash
-from .decision_record import DecisionRecord
+from .decision_record import ArchivedRun, DecisionRecord
 from .lifecycle import EventType, LifecycleEvent, utcnow
 
 
@@ -426,6 +426,28 @@ def hydrate_record(document: dict) -> DecisionRecord:
         known = {f.name for f in dataclass_fields(cls)}
         return cls(**{k: v for k, v in payload.items() if k in known})
 
+    def build_run(payload):
+        """One archived run, whose own segments are dataclasses too.
+
+        A plain `build` would leave `investigator` and friends as dicts inside
+        an otherwise typed object, so `run.investigator.brief_hash` would raise
+        after a restart — the archive would survive storage but stop being
+        readable, which is the failure it exists to prevent.
+        """
+        if not isinstance(payload, dict):
+            return ArchivedRun()
+        # Build the nested segments FIRST. `build` would otherwise assign the
+        # raw dicts straight onto the run, and a type taken from the resulting
+        # attribute is then `dict`, not the segment class — the check has to
+        # come from a fresh default, which knows what each field really is.
+        default = ArchivedRun()
+        rebuilt = dict(payload)
+        for field_name in (f.name for f in dataclass_fields(ArchivedRun)):
+            nested = getattr(default, field_name)
+            if is_dataclass(nested) and isinstance(payload.get(field_name), dict):
+                rebuilt[field_name] = build(type(nested), payload[field_name])
+        return build(ArchivedRun, rebuilt)
+
     record = DecisionRecord(record_id=document.get("record_id", ""))
     for name in (f.name for f in dataclass_fields(DecisionRecord)):
         value = document.get(name)
@@ -434,6 +456,8 @@ def hydrate_record(document: dict) -> DecisionRecord:
         current = getattr(record, name)
         if is_dataclass(current):
             setattr(record, name, build(type(current), value))
+        elif name == "archived_runs" and isinstance(value, list):
+            setattr(record, name, [build_run(item) for item in value])
         else:
             setattr(record, name, value)
     return record
