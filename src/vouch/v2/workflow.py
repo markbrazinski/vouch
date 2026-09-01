@@ -21,8 +21,8 @@ INSUFFICIENT_EVIDENCE, which made a broken model look like missing paperwork.
 
 from __future__ import annotations
 
+import hashlib
 import time
-
 import uuid
 from dataclasses import dataclass, field
 
@@ -51,7 +51,7 @@ from .evidence import (
     freeze_snapshot,
     ingest,
 )
-from .lifecycle import EventLog, EventType, utcnow
+from .lifecycle import EventLog, EventType, LifecycleEvent, utcnow
 from .persistence import InMemoryRecordStore, hydrate_claims, hydrate_record
 from .local_reasoners import investigator_reasoner, verifier_reasoner
 from .reconcile import POLICY_VERSION, reconcile, run_basis_checks
@@ -166,6 +166,43 @@ class VouchV2:
         # a fresh process resumes a case rather than failing to find it.
         self.records: dict[str, DecisionRecord] = {}
         self.claims: dict[str, list[CanonicalEvidenceClaim]] = {}
+
+    # ------------------------------------------------------------------
+    # incremental event delivery (change A)
+    # ------------------------------------------------------------------
+    def _event_log(self, events: EventLog | None) -> EventLog:
+        """An EventLog that persists each event AS IT FIRES.
+
+        Until this existed, every event of a run was written in one batch at
+        terminal exit, so a UI polling the store saw nothing at all until the
+        decision was already over. The lifecycle was durable but not
+        *observable*, and a frontend could only ever replay a finished case.
+
+        This changes WHEN an event is written, never WHAT is written: no new
+        event type, no payload change, no emit-site change, and no influence on
+        any decision. `_persist` still appends the full log at the end; the
+        append is idempotent, so events already written here are skipped rather
+        than duplicated.
+
+        A caller-supplied log is returned untouched — it is already wired (or
+        deliberately not, as in tests that assert on a bare log).
+        """
+        if events is not None:
+            return events
+        return EventLog(sinks=[self._persist_event])
+
+    def _persist_event(self, event: LifecycleEvent) -> None:
+        """Append one event to the durable store, at its live sequence.
+
+        Deliberately best-effort: a decision must never fail because a UI feed
+        hiccuped. A sink failure costs live visibility for that event, and
+        `_persist` writes it again at terminal exit anyway, so the durable
+        record stays complete either way.
+        """
+        try:
+            self.record_store.append_all([event])
+        except Exception:  # noqa: BLE001 — observability must not break authority
+            pass
 
     # ------------------------------------------------------------------
     # durable hydration (audit-2 F8)
@@ -318,7 +355,7 @@ class VouchV2:
     ) -> DecisionOutcome:
         """Run the full pipeline for one lot."""
         record_id = decision_record_id or f"DR-{uuid.uuid4().hex[:12]}"
-        events = events or EventLog()
+        events = self._event_log(events)
         # F8: a record id that already exists durably is CONTINUED, never
         # replaced with a fresh object that would erase its prior runs.
         record = self._record_for(record_id) or DecisionRecord(record_id=record_id)
@@ -736,7 +773,7 @@ class VouchV2:
         Every candidate is returned with its verdict, so REFUSED (could, but not
         permitted) stays visibly distinct from NOT_FEASIBLE.
         """
-        events = events or EventLog()
+        events = self._event_log(events)
         blocked = self.corpus.order(order_id)
         options, selected = enumerate_recovery(self.corpus, order_id)
 
@@ -845,7 +882,7 @@ class VouchV2:
         tracked as human-sourced. Attachment is idempotent by content hash, so
         submitting twice does not duplicate claims or re-open a closed review.
         """
-        events = events or EventLog()
+        events = self._event_log(events)
         # F8: hydrate from the durable store. A case survives the process that
         # created it, so a new instance over the same stores can continue it.
         record = self.resume(decision_record_id)
@@ -853,6 +890,22 @@ class VouchV2:
             raise VouchFailure(
                 FailureCategory.PERSISTENCE_FAILURE,
                 f"no decision record {decision_record_id}",
+            )
+
+        # Idempotent attach, decided BEFORE ingestion.
+        #
+        # The check used to run on the ingest summary, which meant a replay
+        # re-ingested first and only then discovered it had nothing to add: a
+        # redundant object write, and — once events became observable as they
+        # fire (change A) — four EVIDENCE_* events appended to a settled case
+        # every time the same evidence was submitted again. The digest is the
+        # same plain sha256 of the bytes that ingestion computes, so deciding
+        # here costs nothing and keeps a replay genuinely inert.
+        if hashlib.sha256(raw).hexdigest() in record.human.content_hashes:
+            return DecisionOutcome(
+                decision_record_id, lot_id,
+                reason="evidence already attached to this record",
+                record=record, events=events.as_dicts(),
             )
 
         claims, summary = self.ingest_evidence(
@@ -864,14 +917,6 @@ class VouchV2:
             events=events,
             trust_label=TrustLabel.HUMAN_AUTHORIZED,
         )
-
-        if summary["content_hash"] in record.human.content_hashes:
-            # Idempotent attach: already have this exact evidence.
-            return DecisionOutcome(
-                decision_record_id, lot_id,
-                reason="evidence already attached to this record",
-                record=record, events=events.as_dicts(),
-            )
 
         record.human.content_hashes.append(summary["content_hash"])
         record.human.authority_source = authority_source

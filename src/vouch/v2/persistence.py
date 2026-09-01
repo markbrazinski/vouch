@@ -51,6 +51,37 @@ class EventStore(Protocol):
     def events_for(self, decision_record_id: str) -> list[dict]: ...
 
 
+def _event_identity(event: LifecycleEvent) -> tuple:
+    """Stable identity of ONE emitted event, independent of its sequence.
+
+    Change A writes each event twice: once live from the sink, once in the
+    terminal `append_all`. `event_id` cannot dedupe that, because it is derived
+    from the sequence — a re-append at the next free slot gets a new id and
+    lands as a duplicate. Identity has to come from the event itself.
+
+    `at` is included deliberately: it is set once at construction
+    (`LifecycleEvent.at`), so the same emitted event always carries the same
+    timestamp, while two genuinely separate emissions of the same type — three
+    `TOOL_CALLED`s for the same tool, say — stay distinct.
+    """
+    return (
+        event.decision_record_id,
+        event.event_type.value,
+        event.at,
+        content_hash(event.payload),
+    )
+
+
+def _row_identity(row: dict) -> tuple:
+    """The same identity, computed from a STORED row rather than a live event."""
+    return (
+        row.get("decision_record_id", ""),
+        row.get("event", ""),
+        row.get("at", ""),
+        content_hash(row.get("payload") or {}),
+    )
+
+
 def _event_row(event: LifecycleEvent, sequence: int, record_id: str) -> dict:
     """One durable, ordered event row (P1-2).
 
@@ -122,10 +153,21 @@ class JsonRecordStore:
         return self.root / f"{record_id}.events.jsonl"
 
     def append(self, event: LifecycleEvent, sequence: int) -> None:
+        # Idempotent on event identity, not on sequence: change A appends each
+        # event live and then again in the terminal batch.
+        if self._already_stored(event):
+            return
         row = _event_row(event, sequence, event.decision_record_id)
         with self._lock:
             with self._events_path(event.decision_record_id).open("a") as handle:
                 handle.write(json.dumps(row, default=str) + "\n")
+
+    def _already_stored(self, event: LifecycleEvent) -> bool:
+        identity = _event_identity(event)
+        return any(
+            _row_identity(row) == identity
+            for row in self.events_for(event.decision_record_id)
+        )
 
     def next_sequence(self, decision_record_id: str) -> int:
         existing = self.events_for(decision_record_id)
@@ -336,9 +378,11 @@ class InMemoryRecordStore:
         return sorted(self.records)
 
     def append(self, event: LifecycleEvent, sequence: int) -> None:
-        self.events.setdefault(event.decision_record_id, []).append(
-            _event_row(event, sequence, event.decision_record_id)
-        )
+        rows = self.events.setdefault(event.decision_record_id, [])
+        identity = _event_identity(event)
+        if any(_row_identity(row) == identity for row in rows):
+            return
+        rows.append(_event_row(event, sequence, event.decision_record_id))
 
     def next_sequence(self, decision_record_id: str) -> int:
         existing = self.events.get(decision_record_id, [])
