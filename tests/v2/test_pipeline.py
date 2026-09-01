@@ -510,3 +510,74 @@ def test_recovery_is_returned_to_the_caller_not_only_stored_on_the_record():
     verdicts = {c["candidate_id"]: c["verdict"] for c in recovery["candidates"]}
     assert verdicts["MAT-SUB-9"] == "REFUSED"
     assert verdicts["C-418"] == "ELIGIBLE"
+
+
+# ==========================================================================
+# category A — representation, normalized without erasing the seam
+# ==========================================================================
+
+
+def test_a_coverage_row_for_an_already_missing_test_is_not_a_disagreement():
+    """Two spellings of the same conclusion must reconcile.
+
+    Live Nova runs produced briefs that agreed on everything that matters —
+    same governing basis, same required test, same `missing` entry, same
+    sufficiency — and differed only in whether they ALSO wrote a coverage row
+    for the test they had just declared missing. That is one assertion in two
+    vocabularies, not a disagreement about applicability.
+    """
+    from vouch.v2.contracts import CoverageItem, MissingItem, RequiredTest
+
+    def brief(with_redundant_row: bool):
+        return EvidenceApplicabilityBrief(
+            governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+            required_tests=[RequiredTest(name="viscosity")],
+            coverage=(
+                [CoverageItem(test="viscosity", evidence_ref="CLM-1", method_match=False)]
+                if with_redundant_row
+                else []
+            ),
+            missing=[MissingItem(test="viscosity", reason="method not established")],
+            sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+        )
+
+    assert brief(True).material_fingerprint() == brief(False).material_fingerprint()
+
+
+def test_normalization_does_not_hide_a_real_coverage_disagreement():
+    """The other half: a test NOT declared missing is still compared in full."""
+    from vouch.v2.contracts import CoverageItem, RequiredTest
+
+    def brief(method_match: bool):
+        return EvidenceApplicabilityBrief(
+            governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+            required_tests=[RequiredTest(name="viscosity")],
+            coverage=[
+                CoverageItem(
+                    test="viscosity", evidence_ref="CLM-1", method_match=method_match
+                )
+            ],
+            sufficiency=Sufficiency.SUFFICIENT,
+        )
+
+    assert brief(True).material_fingerprint() != brief(False).material_fingerprint()
+
+
+def test_missing_itself_is_compared_so_it_cannot_become_invisible():
+    """Dropping the redundant rows must not drop the claim they restated."""
+    from vouch.v2.contracts import MissingItem, RequiredTest
+
+    def brief(missing: bool):
+        return EvidenceApplicabilityBrief(
+            governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+            required_tests=[RequiredTest(name="viscosity")],
+            coverage=[],
+            missing=(
+                [MissingItem(test="viscosity", reason="no applicable evidence")]
+                if missing
+                else []
+            ),
+            sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+        )
+
+    assert brief(True).material_fingerprint() != brief(False).material_fingerprint()

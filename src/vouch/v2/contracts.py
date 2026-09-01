@@ -427,6 +427,19 @@ class EvidenceApplicabilityBrief(BaseModel):
             "spec_id": self.governing_basis.spec_id,
             "revision": self.governing_basis.revision,
             "required_tests": sorted(t.name for t in self.required_tests),
+            # A test the brief has ALREADY declared missing is uncovered by
+            # definition, so a coverage row for it adds no claim — it just
+            # restates the same conclusion in the other vocabulary. Live runs
+            # showed both agents reaching identical judgments (same required
+            # test, same `missing` entry, same sufficiency) and reconciling to
+            # MATERIAL_DISAGREEMENT purely because one of them also wrote the
+            # redundant row. Excluding those rows compares what the briefs
+            # ASSERT rather than which of two equivalent spellings they chose.
+            #
+            # This is normalization, not judgment: a test is dropped here only
+            # when the SAME brief already said it is missing. Coverage for any
+            # test not declared missing is compared in full, so a real
+            # difference about applicability still surfaces.
             "coverage": sorted(
                 [
                     {
@@ -436,9 +449,13 @@ class EvidenceApplicabilityBrief(BaseModel):
                         "equivalence_record_id": c.equivalence_record_id,
                     }
                     for c in self.coverage
+                    if c.test not in {m.test for m in self.missing}
                 ],
                 key=lambda d: d["test"],
             ),
+            #: Declared-missing tests ARE compared: dropping the coverage rows
+            #: above must not make "missing" invisible to reconciliation.
+            "missing": sorted(m.test for m in self.missing),
             "deviations_applied": sorted(d.deviation_id for d in self.deviations_applied),
             "sufficiency": self.sufficiency.value,
         }
