@@ -313,7 +313,11 @@ def run_basis_checks(
     # genuinely absent is stated as a null evidence_ref or listed in
     # missing_evidence — both are answers; silence is not.
     covered = {item.test for item in brief.coverage}
-    declared_missing = set(getattr(brief, "missing_evidence", ()) or ())
+    # `missing` is the brief's own vocabulary for "this required test has no
+    # applicable evidence, and here is why". Naming the wrong field here would
+    # close the only legitimate escape hatch and force the model to invent a
+    # coverage row it does not believe in.
+    declared_missing = {item.test for item in brief.missing}
     for requirement in resolved:
         if requirement.characteristic in covered:
             continue
@@ -321,8 +325,9 @@ def run_basis_checks(
             continue
         failures.append(
             f"required test {requirement.characteristic} has no coverage entry "
-            f"and is not listed as missing evidence; the brief does not say "
-            f"whether any evidence applies to it"
+            f"and no `missing` entry; the brief does not say whether any "
+            f"evidence applies to it. Add a coverage row (evidence_ref may be "
+            f"null) or a `missing` entry naming this test."
         )
 
     # -- method_match must match the structured facts (category B) --------
@@ -348,7 +353,11 @@ def run_basis_checks(
             failures.append(
                 f"{item.test}: method_match is false, but the evidence used "
                 f"{claim.method}/{claim.condition} and the requirement asks for "
-                f"{requirement.method}/{requirement.condition} — they are the same"
+                f"{requirement.method}/{requirement.condition} — they are the "
+                f"same method and condition, so method_match must be true. "
+                f"method_match is about the METHOD only; whether the measured "
+                f"value meets the limit is computed separately and is not "
+                f"yours to state."
             )
         elif not identical and item.method_match:
             failures.append(

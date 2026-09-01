@@ -116,7 +116,13 @@ def deploy(archive: Path) -> int:
             }
         },
         environmentVariables={
+            # BOTH switches. VOUCH_MODE selects the stores; VOUCH_V2_MODE
+            # selects who decides. Setting only the first is the audit blocker:
+            # durable AWS persistence with scripted reasoners. The composition
+            # now refuses to start that way, so a deploy missing this line
+            # fails loudly instead of quietly deciding with Python.
             "VOUCH_MODE": "production",
+            "VOUCH_V2_MODE": "bedrock",
             "VOUCH_STATE_TABLE": config.state_table,
             "VOUCH_EVIDENCE_BUCKET": config.evidence_bucket,
             # Prototype issuance key. Not a KMS/Secrets Manager service — see

@@ -331,6 +331,13 @@ class CoverageItem(BaseModel):
 
     test: str
     evidence_ref: str | None = None  # claim_id
+    #: Whether the evidence used THE SAME test method and condition the
+    #: requirement names. Purely an identity question about the method — it
+    #: says nothing about whether the measured value passes. Evidence run by
+    #: the required method that fails the limit is still `method_match=True`;
+    #: conformance is computed deterministically downstream and is not the
+    #: brief's to state. Where the methods differ, this is False and an
+    #: authoritative equivalence is what may still make the evidence apply.
     method_match: bool = False
     equivalence_record_id: str | None = None
     value: float | str | None = None
