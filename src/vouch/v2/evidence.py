@@ -348,6 +348,10 @@ def ingest(
         detection_ran=inspection.performed,
         result=status.value,
         guardrail_outcome=inspection.guardrail_outcome.value,
+        # P0-6: WHICH guardrail cleared or blocked this, at which version. An
+        # outcome with no attribution is not provenance.
+        guardrail_id=inspection.guardrail_id,
+        guardrail_version=inspection.guardrail_version,
         malware_scan=inspection.malware_scan.value,
         prompt_attack_detected=inspection.prompt_attack_detected,
         quarantined=inspection.blocked,
