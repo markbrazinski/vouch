@@ -642,6 +642,12 @@ class VouchV2:
                 record.consequences.recovery = self.recover_order(
                     change["order_id"], decision_record_id=record_id, events=events,
                 )
+                # The caller gets what the record got. Recovery is the half of
+                # the consequence that actually moved the schedule, so omitting
+                # it from the returned dict left every API consumer — the
+                # AgentCore runtime included — unable to see the candidates,
+                # the refusals, or the executed resequence.
+                consequences["recovery"] = record.consequences.recovery
                 break
 
         if result.disposition is Disposition.INSUFFICIENT_EVIDENCE:

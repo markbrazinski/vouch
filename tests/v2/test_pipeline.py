@@ -429,3 +429,22 @@ def test_registered_tools_are_bound_to_the_decision_context(vouch):
     assert "get_supplier_qualification" in registered
     result = tools.get_supplier_qualification()
     assert result["qualification_id"] == "QUAL-1"
+
+
+def test_recovery_is_returned_to_the_caller_not_only_stored_on_the_record():
+    """Recovery is the half of the consequence that moved the schedule.
+
+    It was written to the DecisionRecord but left out of the returned
+    consequences, so every API consumer — the AgentCore runtime included — saw
+    a blocked order with no candidates, no refusals and no executed resequence.
+    """
+    corpus = build_corpus()
+    outcome = VouchV2(corpus).evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+
+    recovery = outcome.consequences.get("recovery")
+    assert recovery, "recovery must reach the caller"
+    assert recovery == outcome.record.consequences.recovery
+    assert recovery["executed"] is True
+    verdicts = {c["candidate_id"]: c["verdict"] for c in recovery["candidates"]}
+    assert verdicts["MAT-SUB-9"] == "REFUSED"
+    assert verdicts["C-418"] == "ELIGIBLE"
