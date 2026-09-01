@@ -1115,3 +1115,115 @@ def test_live_case_resumes_across_new_store_instances():
     assert [row["sequence"] for row in events] == [1, 2, 3], (
         "continuation events must extend history, not collide with it"
     )
+
+
+# ==========================================================================
+# durable-path regressions
+#
+# Three defects that only appear when the authority transaction is the real
+# DynamoDB one. Every one of them passed the local backend and both Hero flows
+# in-memory, and every one of them broke a Hero flow against the real table.
+# ==========================================================================
+
+
+def test_inventory_is_conditioned_on_its_own_version_not_the_lot_s():
+    """The lot's version and the inventory row's do not move in lockstep.
+
+    An abstention takes the lot to PENDING_QA and leaves inventory untouched,
+    so the two counters diverge permanently. Conditioning the inventory update
+    on the LOT's version meant every later release of that lot was refused as
+    "inventory moved" when nothing had moved. That is Hero B.
+    """
+    store = _store_with()
+    _seed_lot(store, status="PENDING_QA", version=3)
+    # Inventory never moved: it is still at 1 while the lot has advanced to 3.
+    store._ddb.items[("CORPUS#inventory", "LOT-1")]["state_version"] = {"N": "1"}
+
+    capability = store.issue(
+        _real_authority(), decision_record_id="DR-1", target_type=TargetType.LOT,
+        target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=3,
+        parameters={"quantity": "100.0"},
+    )
+    entry = store.consume(capability.capability_id)
+
+    assert entry["result"] == "lot LOT-1 RELEASED"
+    assert store.get_state("lot", "LOT-1")["status"] == "RELEASED"
+    inventory = store._ddb.items[("CORPUS#inventory", "LOT-1")]
+    assert inventory["usable"]["BOOL"] is True
+    assert inventory["state_version"]["N"] == "2", "advanced from its OWN version"
+
+
+def test_inventory_version_is_signed_into_the_capability():
+    """Race detection must survive the decoupling.
+
+    The version is captured at authorization and signed, so a concurrent
+    inventory write between issuance and consumption still invalidates it.
+    """
+    store = _store_with()
+    _seed_lot(store)
+    capability = store.issue(
+        _real_authority(), decision_record_id="DR-1", target_type=TargetType.LOT,
+        target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
+        parameters={"quantity": "100.0"},
+    )
+    assert dict(capability.parameters)["observed_inventory_version"] == "1"
+
+    # Someone else moves inventory after authorization.
+    store._ddb.items[("CORPUS#inventory", "LOT-1")]["state_version"] = {"N": "9"}
+
+    with pytest.raises(VouchFailure) as caught:
+        store.consume(capability.capability_id)
+    assert caught.value.category is FailureCategory.STATE_CONFLICT
+    assert store.get_state("lot", "LOT-1")["status"] == "RECEIVED", "no partial write"
+
+
+def test_release_records_the_inventory_position_it_evaluated():
+    """A zero-movement outcome must be evidenced, not indistinguishable from a
+    consequence step that never ran."""
+    store = _store_with()
+    _seed_lot(store, quantity=40.0)
+    capability = store.issue(
+        _real_authority(), decision_record_id="DR-1", target_type=TargetType.LOT,
+        target_id="LOT-1", action=Action.QUARANTINE_LOT, observed_state_version=1,
+        parameters={"quantity": "40.0"},
+    )
+    entry = store.consume(capability.capability_id)
+
+    # The lot was never usable, so quarantining it correctly moves nothing.
+    assert entry["inventory_before"] == {"usable": False, "quantity": 40.0}
+    assert entry["inventory_after"] == {"usable": False, "quantity": 40.0}
+    assert entry["inventory_delta"] == 0.0
+
+
+def test_execute_drops_cached_corpus_objects_after_a_durable_mutation():
+    """A durable store writes THROUGH the corpus cache.
+
+    Without invalidation the next read returns the pre-mutation object, so
+    consequences are computed against state the authority just changed and a
+    vacated slot still looks occupied. That is Hero A.
+    """
+    from vouch.v2.authority import execute
+    from vouch.v2.lifecycle import EventLog
+
+    refreshed = []
+
+    class _Corpus:
+        def refresh(self):
+            refreshed.append(True)
+
+    class _Store:
+        def consume(self, capability_id, corpus=None):
+            return {
+                "sequence": 1, "before_version": 1, "after_version": 2,
+                "action": "release_lot", "target_id": "LOT-1",
+            }
+
+    capability = CapabilityRecord(
+        capability_id="CAP-1", decision_record_id="DR-1",
+        target_type=TargetType.LOT, target_id="LOT-1",
+        action=Action.RELEASE_LOT, observed_state_version=1,
+        policy_version="p", expires_at="", nonce="n", issuer_proof="x",
+    )
+    execute(capability, _Corpus(), _Store(), EventLog())
+
+    assert refreshed, "execute must invalidate cached corpus objects"
