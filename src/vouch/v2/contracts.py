@@ -318,7 +318,15 @@ class EvidenceSnapshot(BaseModel):
 class RequiredTest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    name: str
+    name: str = Field(
+        description=(
+            "The characteristic exactly as the authoritative requirement names "
+            "it, e.g. 'viscosity' or 'tensile_strength'. Use the "
+            "`characteristic` value the spec tool returned, verbatim. Do NOT "
+            "write the method or condition into this field — they have their "
+            "own fields below."
+        )
+    )
     threshold: str = ""  # rendered form, e.g. ">= 480 MPa"; numbers re-checked deterministically
     required_method: str = ""
     required_condition: str = ""
@@ -329,16 +337,32 @@ class CoverageItem(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    test: str
+    test: str = Field(
+        description=(
+            "The characteristic this row covers, named exactly as the "
+            "authoritative requirement names it."
+        )
+    )
     evidence_ref: str | None = None  # claim_id
-    #: Whether the evidence used THE SAME test method and condition the
-    #: requirement names. Purely an identity question about the method — it
-    #: says nothing about whether the measured value passes. Evidence run by
-    #: the required method that fails the limit is still `method_match=True`;
-    #: conformance is computed deterministically downstream and is not the
-    #: brief's to state. Where the methods differ, this is False and an
-    #: authoritative equivalence is what may still make the evidence apply.
-    method_match: bool = False
+    #: The `description` is deliberately on the Field, not in a comment: it is
+    #: the only form the model ever sees. Pydantic puts it in the JSON schema
+    #: Strands sends as the structured-output contract, whereas a `#:` comment
+    #: reaches the reader of this file and nobody else. Live runs kept setting
+    #: this false for evidence run by the required method whose VALUE failed
+    #: its limit, because nothing in the schema said what the field meant.
+    method_match: bool = Field(
+        default=False,
+        description=(
+            "True when the evidence used the SAME test method and condition "
+            "the requirement names. This is only about the method identifier, "
+            "never about whether the measured value passes: evidence run by "
+            "the required method that FAILS its limit still has "
+            "method_match=true. Conformance is computed separately and is not "
+            "yours to state. Set false only when the method or condition "
+            "actually differs, in which case an authoritative equivalence "
+            "record may still make the evidence apply."
+        ),
+    )
     equivalence_record_id: str | None = None
     value: float | str | None = None
     units: str = ""
@@ -385,10 +409,29 @@ class DeviationRef(BaseModel):
 
 
 class MissingItem(BaseModel):
+    """A required test for which NO applicable evidence exists.
+
+    Not for evidence that exists and fails: a value outside its limit is
+    covered evidence, and what it means is computed separately.
+    """
+
     model_config = ConfigDict(frozen=True)
 
-    test: str
-    reason: str
+    test: str = Field(
+        description=(
+            "The characteristic, named exactly as the authoritative "
+            "requirement names it."
+        )
+    )
+    reason: str = Field(
+        description=(
+            "Why no applicable evidence exists for this test — for example no "
+            "claim was submitted for it, or the method used does not establish "
+            "the requirement and no equivalence covers it. Do NOT list a test "
+            "here because its measured value failed a limit: that evidence is "
+            "covered, and conformance is computed separately."
+        )
+    )
 
 
 class Sufficiency(str, Enum):
