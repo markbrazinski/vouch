@@ -82,6 +82,10 @@ tmp/
 # ---- private working directories -------------------------------------------
 # Deliberately private. Do NOT globally ignore *.md — see allowlist below.
 /docs/
+# Claude Design export: visual/interactivity reference ONLY, never production
+# source. Already covered by /docs/ above; stated explicitly so it stays ignored
+# if /docs/ is ever un-ignored.
+/docs/design/
 /notes/
 /research/
 /scratch/
@@ -127,7 +131,18 @@ strip_results.json
 # Records of specific runs / not-yet-frozen specs. Not source.
 SMOKE_TEST_REPORT.md
 evals/
-contracts/
+
+# Only the normative frontend contracts are tracked. Everything else under
+# contracts/ — prior audits, agent arbitration — stays local. Order matters:
+# git will not descend into an ignored directory, so the path down to the
+# files must be re-included before the files themselves.
+contracts/*
+!contracts/frontend/
+contracts/frontend/*
+!contracts/frontend/VOUCH_V2_UI_COMPONENT_DATA_REQUIREMENTS.md
+!contracts/frontend/VOUCH_V2_FRONTEND_DATA_CONTRACT.md
+!contracts/frontend/VOUCH_V2_BACKEND_CONFORMANCE.md
+!contracts/frontend/VOUCH_V2_FE_BE_INTEGRATION_CONTRACT.md
 
 # ---- local agent / editor tooling state ------------------------------------
 .claude/settings.local.json
