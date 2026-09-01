@@ -333,11 +333,30 @@ def run_basis_checks(
             po=lot.po_reference,
             lot_id=lot.lot_id,
         ):
+            # Name the specific reason. "Out of scope (site=…, po=…, when=…)"
+            # made the caller work out WHICH of those failed, and an expired
+            # deviation was being re-cited across retries because the message
+            # never said it had expired.
+            why = []
+            if deviation.expiry_date and when >= deviation.expiry_date:
+                why.append(f"it expired on {deviation.expiry_date}")
+            if deviation.effective_date and when < deviation.effective_date:
+                why.append(f"it is not effective until {deviation.effective_date}")
+            if deviation.site_scope and lot.supplier_site not in deviation.site_scope:
+                why.append(f"its site scope is {sorted(deviation.site_scope)}")
+            if deviation.po_scope and lot.po_reference not in deviation.po_scope:
+                why.append(f"its PO scope is {sorted(deviation.po_scope)}")
+            if deviation.lot_scope and lot.lot_id not in deviation.lot_scope:
+                why.append(f"its lot scope is {sorted(deviation.lot_scope)}")
+            detail = "; ".join(why) or (
+                f"it does not cover site={lot.supplier_site}, "
+                f"po={lot.po_reference}, date={when}"
+            )
             failures.append(
-                f"deviation {deviation.deviation_id} is out of scope for this lot "
-                f"(site={lot.supplier_site}, po={lot.po_reference}, when={when}), "
-                f"so it cannot be cited here. Remove it from deviations_applied; "
-                f"what the evidence establishes without it is yours to decide."
+                f"deviation {deviation.deviation_id} cannot be cited for this "
+                f"lot (basis date {when}): {detail}. Remove it from "
+                f"deviations_applied; what the evidence establishes without it "
+                f"is yours to decide."
             )
 
     # -- evidence refs must resolve, and to THIS lot ----------------------

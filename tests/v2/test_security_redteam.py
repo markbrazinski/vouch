@@ -158,7 +158,12 @@ def test_out_of_scope_deviation_is_refused(vouch):
     )
     result = run_basis_checks(brief, corpus, lot_id="LOT-1002", claims_by_id={})
     assert not result.passed
-    assert any("out of scope" in f for f in result.failures)
+    # The refusal must NAME the deviation and the scope that excluded it, so a
+    # retry can act on it. Asserting the substance rather than one phrasing.
+    assert any(
+        "DEV-OTHER-SITE" in f and "cannot be cited" in f and "SITE-ZZ" in f
+        for f in result.failures
+    ), result.failures
 
 
 def test_out_of_scope_equivalence_does_not_apply(vouch):

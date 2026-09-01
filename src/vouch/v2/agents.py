@@ -355,10 +355,13 @@ class BriefProducer:
             listed = "\n".join(f"- {e}" for e in validation_errors)
             task += (
                 "\n\nYour previous brief was rejected because it contradicts the "
-                "authoritative records:\n"
+                "authoritative records. Every point below must hold in your next "
+                "brief, including any you already corrected on an earlier "
+                "attempt:\n"
                 f"{listed}\n"
                 "Re-examine those specific points with your tools and return a "
-                "corrected brief. Do not change anything the errors do not name."
+                "corrected brief. Do not change anything the errors do not name, "
+                "and do not reintroduce a problem you have already fixed."
             )
 
         try:

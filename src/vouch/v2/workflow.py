@@ -984,7 +984,15 @@ class VouchV2:
             errors = validate(run.brief) if validate else []
             if not errors:
                 return run
-            pending_errors = tuple(errors)
+            # CUMULATIVE, not replaced. Live runs showed a model correct the
+            # error it was shown and reintroduce one it had already fixed on
+            # the previous attempt, because each retry only ever saw the
+            # latest complaint. Carrying the earlier ones forward stops the
+            # budget being spent oscillating between two violations.
+            #
+            # Everything listed is still a real contradiction of the corpus,
+            # and none of them says what the answer should be.
+            pending_errors = tuple(dict.fromkeys(pending_errors + tuple(errors)))
             run.validation_errors = pending_errors
             events.emit(
                 EventType.BRIEF_VALIDATION_FAILED, record_id,
