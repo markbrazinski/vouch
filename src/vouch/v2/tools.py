@@ -441,8 +441,8 @@ def _wrap_for_strands(bound: "CorpusTools", name: str) -> Callable:
             reference.
 
             Args:
-                spec_id: The specification id, e.g. "SPEC-A7".
-                revision: The revision label, e.g. "C".
+                spec_id: The specification id, as list_candidate_specs returned it.
+                revision: The revision label, as list_candidate_specs returned it.
             """
             return bound.get_spec_requirement(spec_id, revision)
 

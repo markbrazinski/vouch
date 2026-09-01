@@ -327,7 +327,7 @@ class RequiredTest(BaseModel):
             "own fields below."
         )
     )
-    threshold: str = ""  # rendered form, e.g. ">= 480 MPa"; numbers re-checked deterministically
+    threshold: str = ""  # rendered form, e.g. ">= <min> <units>"; re-checked deterministically
     required_method: str = ""
     required_condition: str = ""
 
@@ -424,7 +424,7 @@ class GoverningBasis(BaseModel):
     spec_id: str = Field(
         description=(
             "The id of the authoritative specification that governs this lot, "
-            "exactly as `list_candidate_specs` returned it (e.g. 'SPEC-A7'). "
+            "exactly as `list_candidate_specs` returned it (e.g. 'SPEC-NNN'). "
             "Only an AUTHORITATIVE_INTERNAL object may govern: a specification "
             "named by a supplier document is a claim about authority, not "
             "authority itself."
