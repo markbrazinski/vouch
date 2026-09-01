@@ -43,7 +43,6 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 
 from vouch.v2.consequences import compute_readiness, enumerate_recovery  # noqa: E402
 from vouch.v2.contracts import FailureCategory, VouchFailure  # noqa: E402
-from vouch.v2.lifecycle import EventLog  # noqa: E402
 from vouch.v2.runtime import build  # noqa: E402
 
 app = BedrockAgentCoreApp()
@@ -290,6 +289,13 @@ def _incoming_row(summary: dict) -> dict:
     disposition = summary.get("disposition", "")
     failure = summary.get("failure_category", "")
 
+    # Display names are joined here, from the authoritative corpus. The
+    # alternative — shipping ids and letting the browser resolve them — would
+    # mean every client reimplementing the same lookup, and a client that got
+    # it wrong would render a name the plant does not use.
+    material = _CORPUS.material(lot.material_id) if lot else None
+    supplier = _CORPUS.get("supplier", lot.supplier_id) if lot else None
+
     if failure == "SECURITY_QUARANTINE":
         row_state = "SECURITY_HOLD"
     elif disposition == "RELEASE":
@@ -305,7 +311,10 @@ def _incoming_row(summary: dict) -> dict:
         "decision_record_id": summary.get("record_id", ""),
         "lot_id": summary.get("lot_id", ""),
         "material_id": lot.material_id if lot else "",
+        "material_name": getattr(material, "name", "") or "",
         "supplier_id": lot.supplier_id if lot else "",
+        "supplier_name": getattr(supplier, "name", "") or "",
+        "supplier_site": lot.supplier_site if lot else "",
         "received_at": lot.received_at if lot else "",
         "quantity": lot.quantity if lot else None,
         "units": lot.units if lot else "",
@@ -374,11 +383,25 @@ def invoke(payload: dict, context=None) -> dict:
 
     try:
         if action == "evaluate_lot":
-            events = EventLog()
             document = payload.get("document")
             documents = [{"raw": document.encode()}] if document else []
+            # A caller may name the decision before it starts.
+            #
+            # Invocation is synchronous, so a browser that does not know the id
+            # until the call returns cannot poll the decision it is waiting on —
+            # by the time it could ask, there is nothing left to watch. Letting
+            # the caller supply the id closes that without touching what the
+            # decision does: `evaluate_lot` has always accepted one, and a
+            # supplied id is CONTINUED rather than replaced, which is the same
+            # path a resumed case already uses.
+            #
+            # No `events=` argument. Passing a bare EventLog here was silently
+            # opting out of the sink that makes events visible during the run,
+            # so every event still landed in one batch at the end.
             outcome = _VOUCH.evaluate_lot(
-                payload["lot_id"], documents=documents, events=events
+                payload["lot_id"],
+                documents=documents,
+                decision_record_id=payload.get("decision_record_id"),
             )
             return {
                 "ok": True,

@@ -119,6 +119,11 @@ carries `decision_record_id`, `lot_id`, `material_id`, `supplier_id`,
 `received_at`, `quantity`, `units`, `lot_status`, `disposition`,
 `failure_category`, `row_state`, `attention_required`, `decided_at`.
 
+Rows carry **display names joined server-side** — `material_name`,
+`supplier_name`, `supplier_site` alongside the ids — so no client needs corpus
+access to render Incoming. An unresolvable name is empty, never the id in
+disguise.
+
 `counts` returns `{"returned": n}` only. `arrivedToday` is derivable from
 `Lot.received_at` and can be added; **`inProgress` and `completedByVouch` are
 not returned and must be removed from the FE contract** — invocation is
@@ -503,6 +508,25 @@ dropped (`test_security_redteam.py:345-350`).
 
 **`SUPPORTED_VIA_ADAPTER`** for ordering, dedupe and cursor (shipped);
 **`BACKEND_GAP`** for browser transport only (change D).
+
+**In-flight discovery.** `evaluate_lot` accepts a caller-supplied
+`decision_record_id`, so a browser names the decision before starting it and can
+poll `get_events` while the synchronous call is still running. Verified with the
+Investigator slowed: 5 real events readable with the evaluation thread alive at
+the instant of the read, and the mid-run rows are a byte-identical prefix of the
+final 40.
+
+The three reads divide as follows, and the split is deliberate:
+
+| Read | During the run | Why |
+|---|---|---|
+| `get_events` | **live** | events persist as they fire (change A) |
+| `get_decision` | terminal only | the record document is written at exit; a half-written record is not an authoritative projection |
+| `list_decisions` | terminal only | it lists persisted records |
+
+Because neither list nor record answers mid-flight, the caller-supplied id is
+the *only* discovery path — which is why it is required rather than optional for
+a live UI.
 
 `action: "get_events"` serves the persisted row shape — `event_id`, `sequence`,
 `event`, `decision_record_id`, `at`, nested `payload` — with `after_sequence`
