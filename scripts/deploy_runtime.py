@@ -24,6 +24,7 @@ the runtime, NOT for the host platform.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -122,6 +123,10 @@ def deploy(archive: Path) -> int:
             # docs/architecture/v2/AWS_STATUS.md, which says so plainly.
             "VOUCH_ISSUANCE_KEY": "vouch-demo-issuance-key",
             "AWS_REGION": config.region,
+            # Real prompt-attack inspection on the deployed path. Absent this,
+            # the runtime falls back to no detector rather than to a heuristic
+            # pretending to be Guardrails.
+            "VOUCH_GUARDRAIL_ID": os.environ.get("VOUCH_GUARDRAIL_ID", ""),
         },
     )
     version = response["agentRuntimeVersion"]

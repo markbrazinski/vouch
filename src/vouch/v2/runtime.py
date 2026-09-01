@@ -157,8 +157,8 @@ def _build_production() -> Composition:
     NOTE: no fixture corpus is constructed here. `build_corpus` is not imported
     on this path at all, so production cannot accidentally serve fixture data.
     """
-    from ..config import load
-    from .aws import DynamoCapabilityStore, S3EvidenceStore
+    from ..config import env_var, load
+    from .aws import BedrockGuardrailDetector, DynamoCapabilityStore, S3EvidenceStore
     from .persistence import DynamoRecordStore
     from .state import DynamoCorpus
     from .workflow import VouchV2
@@ -188,11 +188,21 @@ def _build_production() -> Composition:
         record_store=DynamoRecordStore.kind,
         event_store=DynamoRecordStore.kind,
     )
+    # The real prompt-attack detector, where one is configured. Without it the
+    # production runtime inspected supplier evidence with the local regex
+    # heuristic while every other component was durable.
+    #
+    # An unconfigured guardrail is NOT a silent downgrade: the detector raises
+    # when it has no id and `inspect` turns that into a fail-closed ERROR. So
+    # production either inspects with Bedrock or refuses the artifact.
+    detector = BedrockGuardrailDetector() if env_var("GUARDRAIL_ID") else None
+
     workflow = VouchV2(
         corpus,
         evidence_store=evidence_store,
         capabilities=capabilities,
         record_store=record_store,
+        detector=detector,
     )
     return Composition(workflow, corpus, backend, capabilities, record_store)
 

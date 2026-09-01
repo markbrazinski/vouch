@@ -99,6 +99,32 @@ aws iam put-user-policy \
 echo "    attached"
 
 # ---------------------------------------------------------------------------
+# 1b. Let the RUNTIME role apply the guardrail too.
+#
+# The runtime role is the identity that actually inspects supplier evidence in
+# the deployed path. It has bedrock:InvokeModel but not ApplyGuardrail, so the
+# deployed runtime recorded guardrail_outcome=ERROR — fail-closed, correctly,
+# but reporting "the detector broke" rather than "an attack was detected".
+# ---------------------------------------------------------------------------
+RUNTIME_ROLE="GatehouseAgentCoreRuntimeRole"
+echo "==> granting ${RUNTIME_ROLE} bedrock:ApplyGuardrail"
+aws iam put-role-policy \
+  --role-name "${RUNTIME_ROLE}" \
+  --policy-name "VouchApplyGuardrail" \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Sid\": \"ApplyGuardrail\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"bedrock:ApplyGuardrail\",
+        \"Resource\": \"arn:aws:bedrock:${REGION}:${ACCOUNT_ID}:guardrail/*\"
+      }
+    ]
+  }"
+echo "    attached"
+
+# ---------------------------------------------------------------------------
 # 2. Create the guardrail (admin-only action), unless it already exists.
 # ---------------------------------------------------------------------------
 EXISTING="$(aws bedrock list-guardrails --region "${REGION}" \

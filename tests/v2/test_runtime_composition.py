@@ -197,3 +197,36 @@ def test_entrypoint_reports_typed_failures_without_mutating():
     assert "except VouchFailure" in source
     assert '"failure_category": failure.category.value' in source
     assert '"mutation": {}' in source
+
+
+def test_production_wires_the_real_guardrail_when_one_is_configured(monkeypatch):
+    """Otherwise the durable runtime inspects supplier evidence with the local
+    regex heuristic while every other component is real."""
+    from vouch.v2.aws import BedrockGuardrailDetector
+
+    monkeypatch.setenv("VOUCH_MODE", "production")
+    monkeypatch.setenv("VOUCH_STATE_TABLE", "t")
+    monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "b")
+    monkeypatch.setenv("VOUCH_GUARDRAIL_ID", "gr-test")
+
+    composition = build()
+
+    assert isinstance(composition.workflow.detector, BedrockGuardrailDetector)
+    assert composition.workflow.detector.guardrail_id == "gr-test"
+
+
+def test_production_without_a_guardrail_does_not_substitute_the_heuristic(monkeypatch):
+    """No detector is honest. A regex quietly standing in for Guardrails on the
+    durable path would be a silent downgrade of a named control."""
+    from vouch.v2.evidence import heuristic_detector
+
+    monkeypatch.setenv("VOUCH_MODE", "production")
+    monkeypatch.setenv("VOUCH_STATE_TABLE", "t")
+    monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "b")
+    monkeypatch.delenv("VOUCH_GUARDRAIL_ID", raising=False)
+    monkeypatch.delenv("GATEHOUSE_GUARDRAIL_ID", raising=False)
+
+    composition = build()
+
+    assert composition.workflow.detector is not heuristic_detector
+    assert composition.workflow.detector is None
