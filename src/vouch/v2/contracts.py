@@ -377,8 +377,27 @@ class CoverageItem(BaseModel):
             "record may still make the evidence apply."
         ),
     )
-    equivalence_record_id: str | None = None
-    value: float | str | None = None
+    equivalence_record_id: str | None = Field(
+        default=None,
+        description=(
+            "The id of an authoritative method-equivalence record that makes "
+            "evidence from a DIFFERENT method acceptable for this test, as "
+            "returned by `list_equivalence_records`. Cite one only where the "
+            "record genuinely covers this characteristic, this condition and "
+            "this method pair on the basis date; its scope is re-verified "
+            "deterministically after you answer. Leave null when the method "
+            "already matches, and leave null when no record covers the "
+            "difference — an uncovered method difference is a normal outcome."
+        ),
+    )
+    value: float | str | None = Field(
+        default=None,
+        description=(
+            "The measured value from the cited evidence, copied verbatim. "
+            "Recorded for the operator; every numeric comparison is redone "
+            "from the frozen claim, so nothing depends on this field."
+        ),
+    )
     units: str = ""
 
     @field_validator("equivalence_record_id")
@@ -402,8 +421,24 @@ class CoverageItem(BaseModel):
 class GoverningBasis(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    spec_id: str
-    revision: str
+    spec_id: str = Field(
+        description=(
+            "The id of the authoritative specification that governs this lot, "
+            "exactly as `list_candidate_specs` returned it (e.g. 'SPEC-A7'). "
+            "Only an AUTHORITATIVE_INTERNAL object may govern: a specification "
+            "named by a supplier document is a claim about authority, not "
+            "authority itself."
+        )
+    )
+    revision: str = Field(
+        description=(
+            "The revision label of that specification, exactly as the tool "
+            "returned it (e.g. 'C'). Choose the revision that governed on this "
+            "lot's basis date, using each candidate's effective_date, "
+            "effective_to and effective_basis — not necessarily the newest, "
+            "and not the one a supplier document cites."
+        )
+    )
 
     @field_validator("spec_id")
     @classmethod
@@ -468,9 +503,35 @@ class EvidenceApplicabilityBrief(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    governing_basis: GoverningBasis
-    required_tests: list[RequiredTest] = Field(default_factory=list)
-    coverage: list[CoverageItem] = Field(default_factory=list)
+    governing_basis: GoverningBasis = Field(
+        description=(
+            "The single authoritative specification revision that governs this "
+            "lot. Resolve it yourself from the candidates: the revision in "
+            "force on this lot's basis date, per each candidate's "
+            "effective_date, effective_to and effective_basis. The revision a "
+            "supplier document names is a claim, not authority, and may be "
+            "wrong."
+        )
+    )
+    required_tests: list[RequiredTest] = Field(
+        default_factory=list,
+        description=(
+            "Every requirement of the governing revision, including any it "
+            "incorporates by reference, exactly as `get_spec_requirement` "
+            "returned them. This must be the complete set — it is compared "
+            "against the authoritative corpus, and omitting a requirement is a "
+            "contract failure."
+        ),
+    )
+    coverage: list[CoverageItem] = Field(
+        default_factory=list,
+        description=(
+            "One row per required test, saying whether evidence in the frozen "
+            "snapshot applies to it. Every required test needs a row (its "
+            "evidence_ref may be null) or an entry in `missing`; silence about "
+            "a requirement is not an answer."
+        ),
+    )
     deviations_applied: list[DeviationRef] = Field(
         default_factory=list,
         description=(
@@ -485,8 +546,31 @@ class EvidenceApplicabilityBrief(BaseModel):
             "a normal, expected outcome."
         ),
     )
-    sufficiency: Sufficiency
-    missing: list[MissingItem] = Field(default_factory=list)
+    sufficiency: Sufficiency = Field(
+        description=(
+            "Whether applicable evidence EXISTS for every required test under "
+            "the governing basis you selected. This is a question about "
+            "COVERAGE, never about conformance. Set SUFFICIENT when every "
+            "required test has applicable evidence, INCLUDING when a measured "
+            "value falls outside its limit — a failing number is evidence that "
+            "applies, and what it means is computed separately by code you "
+            "cannot reach. Set INSUFFICIENT_EVIDENCE only when some required "
+            "test has no applicable evidence at all, and name those tests in "
+            "`missing`. Supplier qualification, approval status and whether "
+            "the lot may lawfully be used are policy questions decided "
+            "elsewhere; they never make evidence insufficient."
+        )
+    )
+    missing: list[MissingItem] = Field(
+        default_factory=list,
+        description=(
+            "The required tests for which NO applicable evidence exists. A "
+            "test whose evidence exists but reports a failing value is NOT "
+            "missing — record it in `coverage` instead. This list must be "
+            "consistent with `sufficiency`: empty when SUFFICIENT, non-empty "
+            "when INSUFFICIENT_EVIDENCE."
+        ),
+    )
     # Non-authoritative. Recorded for the operator, never consumed by any
     # deterministic step, never treated as an audit artifact.
     investigation_notes: str = ""
