@@ -996,7 +996,12 @@ class VouchV2:
             run.validation_errors = pending_errors
             events.emit(
                 EventType.BRIEF_VALIDATION_FAILED, record_id,
-                agent=agent.role, attempt=attempt, errors=list(errors),
+                agent=agent.role, attempt=attempt,
+                # What THIS attempt got wrong, and everything the next attempt
+                # is told. Logging only the former made cumulative feedback
+                # look like it was not being delivered.
+                errors=list(errors),
+                carried_forward=list(pending_errors),
             )
             if attempt >= MAX_MODEL_ATTEMPTS:
                 # Budget spent on a brief that still contradicts the corpus.
