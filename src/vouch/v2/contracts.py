@@ -400,7 +400,12 @@ class GoverningBasis(BaseModel):
 class DeviationRef(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    deviation_id: str
+    deviation_id: str = Field(
+        description=(
+            "The id of an authoritative deviation that genuinely covers this "
+            "lot on date, site, PO and lot scope."
+        )
+    )
 
     @field_validator("deviation_id")
     @classmethod
@@ -452,7 +457,20 @@ class EvidenceApplicabilityBrief(BaseModel):
     governing_basis: GoverningBasis
     required_tests: list[RequiredTest] = Field(default_factory=list)
     coverage: list[CoverageItem] = Field(default_factory=list)
-    deviations_applied: list[DeviationRef] = Field(default_factory=list)
+    deviations_applied: list[DeviationRef] = Field(
+        default_factory=list,
+        description=(
+            "Deviations you are relying on to accept a value that would "
+            "otherwise fall outside its limit. Cite one ONLY if the "
+            "authoritative record covers this lot on every axis it states: "
+            "the basis date must fall between its effective_date and its "
+            "expiry_date, and its site, PO and lot scopes must include this "
+            "lot. A deviation whose expiry_date has passed cannot be cited, "
+            "whatever its status field says. Leave this empty if none "
+            "qualifies — an out-of-limit value with no covering deviation is "
+            "a normal, expected outcome."
+        ),
+    )
     sufficiency: Sufficiency
     missing: list[MissingItem] = Field(default_factory=list)
     # Non-authoritative. Recorded for the operator, never consumed by any
