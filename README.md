@@ -126,10 +126,9 @@ Three further limits, stated plainly:
   consumption (including concurrency, replay, stale state and a forged row
   written directly to the real table), DecisionRecord/event persistence,
   restart/resume, live Nova Pro tool calls, and the AgentCore Runtime serving
-  both Hero flows. NOT live-verified: Bedrock Guardrails (no guardrail is
-  provisioned — `bedrock:CreateGuardrail` is denied), S3 Object Lock, the
-  attached IAM boundary, KMS issuance keys, malware scanning, Gateway scoping
-  and OTel observability. Per-component status is in
+  both Hero flows, and Bedrock Guardrails prompt-attack detection. NOT
+  live-verified: S3 Object Lock, the attached IAM boundary, KMS issuance keys,
+  malware scanning, Gateway scoping and OTel observability. Per-component status is in
   [docs/architecture/v2/AWS_STATUS.md](docs/architecture/v2/AWS_STATUS.md).
   Evidence originals are **versioned, not WORM**.
 - **Hero A does not reach QUARANTINE autonomously on the live-model path.**

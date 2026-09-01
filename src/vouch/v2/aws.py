@@ -240,15 +240,37 @@ class BedrockGuardrailDetector:
         detected = action == "GUARDRAIL_INTERVENED"
         detail = ""
         if detected:
-            kinds = [
-                filt.get("type", "")
-                for assessment in assessments
-                for filt in assessment.get("invocationMetrics", {}).get("guardrailCoverage", [])
-                or assessment.get("sensitiveInformationPolicy", {}).get("piiEntities", [])
-                or []
-            ]
+            # The filters that actually fired live under
+            # assessments[].contentPolicy.filters, each a dict with a `type`.
+            # The previous reading walked invocationMetrics.guardrailCoverage,
+            # whose entries are STRINGS — so this raised AttributeError the
+            # first time a guardrail genuinely intervened, which no test could
+            # catch while no guardrail was provisioned.
+            kinds = sorted(
+                {
+                    filt.get("type", "")
+                    for assessment in assessments
+                    for policy in ("contentPolicy", "topicPolicy", "wordPolicy")
+                    for filt in _policy_findings(assessment.get(policy, {}))
+                    if isinstance(filt, dict) and filt.get("type")
+                }
+            )
             detail = f"guardrail intervened: {action}" + (f" {kinds}" if kinds else "")
         return detected, detail
+
+
+def _policy_findings(policy: dict) -> list:
+    """The findings a guardrail policy block reports, whatever it calls them.
+
+    Content policies list `filters`, topic policies `topics`, word policies
+    `customWords` and `managedWordLists`. Returning them uniformly keeps the
+    caller from having to know which shape it got.
+    """
+    return [
+        finding
+        for key in ("filters", "topics", "customWords", "managedWordLists")
+        for finding in policy.get(key, []) or []
+    ]
 
 
 class ClamAVScanner:

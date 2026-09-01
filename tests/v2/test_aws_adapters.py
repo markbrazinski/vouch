@@ -746,9 +746,15 @@ def test_replay_and_stale_state_are_distinct_categories():
     assert failure.category is FailureCategory.STATE_CONFLICT
 
 
-def test_guardrail_detector_raises_when_unconfigured():
+def test_guardrail_detector_raises_when_unconfigured(monkeypatch):
     """A guardrail that cannot run must never read as 'found nothing' (P0-6)."""
     from vouch.v2.aws import BedrockGuardrailDetector
+
+    # The constructor falls back to the environment, so an ambient
+    # VOUCH_GUARDRAIL_ID would silently configure the very thing this test
+    # needs to be unconfigured.
+    monkeypatch.delenv("VOUCH_GUARDRAIL_ID", raising=False)
+    monkeypatch.delenv("GATEHOUSE_GUARDRAIL_ID", raising=False)
 
     detector = BedrockGuardrailDetector(guardrail_id="")
     with pytest.raises(VouchFailure) as exc:
