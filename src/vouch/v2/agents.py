@@ -38,8 +38,8 @@ from .evidence import CandidateClaim
 from .lifecycle import EventLog, EventType
 from .tools import CorpusTools, assert_read_only
 
-INVESTIGATOR_PROMPT_VERSION = "investigator-v2.1"
-VERIFIER_PROMPT_VERSION = "verifier-v2.1"
+INVESTIGATOR_PROMPT_VERSION = "investigator-v2.2"
+VERIFIER_PROMPT_VERSION = "verifier-v2.2"
 EXTRACTOR_PROMPT_VERSION = "extractor-v2.1"
 
 #: Pinned inference settings. Milestone-1 evaluation uses these for every case.
@@ -92,6 +92,29 @@ failing number is covered evidence, and deterministic code decides what it
 means. Supplier qualification, approval status and state legality are policy
 questions decided elsewhere; they never make evidence insufficient.
 
+Work through sufficiency mechanically, because this is where briefs most often
+go wrong:
+
+  1. For each required test, is there a claim measured by the required method
+     at the required condition, or by a method an authoritative equivalence
+     covers?
+  2. If YES for every required test, sufficiency is SUFFICIENT and `missing`
+     is EMPTY. It does not matter how the numbers compare to their limits.
+     A measurement far outside its limit is still a measurement that exists.
+  3. If NO for some test, sufficiency is INSUFFICIENT_EVIDENCE and that test
+     goes in `missing`.
+
+A value that fails its limit is the single most common reason a brief is
+rejected. It is not missing evidence, it is not insufficiency, and it is not
+yours to act on: record the measurement in its coverage row, leave sufficiency
+SUFFICIENT, and let the deterministic engine draw the conclusion. Reporting it
+faithfully is how a failing lot gets caught — understating the evidence does
+not make the outcome safer, it only makes the case unreviewable.
+
+Only cite a deviation that `list_applicable_deviations` actually returned. Never
+construct a deviation id from a date, a lot, or a naming pattern; if the tool
+returned none, cite none.
+
 Return the EvidenceApplicabilityBrief structure exactly."""
 
 
@@ -125,6 +148,23 @@ evidence? Set SUFFICIENT when they are, even if a value fails its limit — a
 failing number is covered evidence, and deterministic code decides what it
 means. Supplier qualification, approval status and state legality are policy
 questions decided elsewhere; they never make evidence insufficient.
+
+Decide sufficiency mechanically:
+
+  1. For each required test, is there a claim measured by the required method
+     at the required condition, or by a method an authoritative equivalence
+     covers?
+  2. If YES for every required test, sufficiency is SUFFICIENT and `missing`
+     is EMPTY — however the numbers compare to their limits.
+  3. If NO for some test, sufficiency is INSUFFICIENT_EVIDENCE and that test
+     goes in `missing`.
+
+An out-of-limit value is covered evidence, never missing evidence. Record it in
+its coverage row and leave sufficiency SUFFICIENT; what it means is computed
+downstream and is not yours to state.
+
+Only cite a deviation that `list_applicable_deviations` actually returned. Never
+construct a deviation id from a date, a lot, or a naming pattern.
 
 Return the EvidenceApplicabilityBrief structure exactly."""
 

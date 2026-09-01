@@ -431,11 +431,20 @@ def test_decision_record_stores_no_chain_of_thought(vouch):
 
 
 def test_model_id_and_prompt_version_are_recorded(vouch):
-    """An auditor must be able to tell which model made the decision."""
+    """An auditor must be able to tell which model made the decision.
+
+    The version is compared against the module constant rather than a literal:
+    what must hold is that the record reports the prompt that actually ran, and
+    pinning the string here only breaks the suite every time the prompt is
+    legitimately revised.
+    """
+    from vouch.v2.agents import INVESTIGATOR_PROMPT_VERSION
+
     corpus, v = vouch
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
     assert outcome.record.investigator.model_id == "us.amazon.nova-pro-v1:0"
-    assert outcome.record.investigator.prompt_version == "investigator-v2.1"
+    assert outcome.record.investigator.prompt_version == INVESTIGATOR_PROMPT_VERSION
+    assert outcome.record.investigator.prompt_version.startswith("investigator-")
     assert outcome.record.investigator.temperature == 0.0
 
 
