@@ -880,6 +880,17 @@ def execute(
     (audit-2 F7).
     """
     entry = capabilities.consume(capability.capability_id, corpus)
+
+    # A durable store commits the transition inside DynamoDB, writing THROUGH
+    # any objects this process has already read. Without dropping them, the
+    # very next read returns the pre-mutation lot or order: consequences would
+    # be computed against state the authority just changed, and a vacated slot
+    # would still look occupied. The local store mutates the corpus in place
+    # and has nothing to drop, so this is a no-op there.
+    invalidate = getattr(corpus, "refresh", None)
+    if callable(invalidate):
+        invalidate()
+
     events.emit(
         EventType.MUTATION_COMPLETED, capability.decision_record_id,
         before_version=entry["before_version"], after_version=entry["after_version"],

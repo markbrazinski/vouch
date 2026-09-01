@@ -618,6 +618,8 @@ class DynamoCapabilityStore:
             "after_state": plan["after_state"],
             "result": plan["result"],
             "inventory_delta": plan["inventory_delta"],
+            "inventory_before": plan["inventory_before"],
+            "inventory_after": plan["inventory_after"],
             "at": now,
         }
 
@@ -642,6 +644,8 @@ class DynamoCapabilityStore:
         before_state: dict = {}
         after_state: dict = {}
         inventory_delta = 0.0
+        inventory_before: dict = {}
+        inventory_after: dict = {}
         result = ""
 
         if capability.target_type is TargetType.LOT:
@@ -706,6 +710,21 @@ class DynamoCapabilityStore:
                 if not usable:
                     inventory_delta = -inventory_delta
                 after_state["inventory_usable"] = usable
+
+                # Parity with the local backend: the record must show that the
+                # inventory position was EVALUATED, so a zero-movement outcome
+                # (quarantining a lot that was never usable) is evidenced
+                # rather than indistinguishable from a step that never ran.
+                inventory_row = self.get_inventory(target_id) or {}
+                was_usable = bool(inventory_row.get("usable", False))
+                quantity = float(
+                    inventory_row.get("quantity", bound.get("quantity", 0.0) or 0.0)
+                )
+                inventory_before = {"usable": was_usable, "quantity": quantity}
+                inventory_after = {"usable": usable, "quantity": quantity}
+                if was_usable == usable:
+                    # Already in the target state: the transition moves nothing.
+                    inventory_delta = 0.0
 
             elif action is Action.CREATE_QA_REVIEW:
                 # F6: the QA action must actually create the QA record.
@@ -912,6 +931,8 @@ class DynamoCapabilityStore:
             "before_state": before_state,
             "after_state": after_state,
             "inventory_delta": inventory_delta,
+            "inventory_before": inventory_before,
+            "inventory_after": inventory_after,
             "result": result,
         }
 
