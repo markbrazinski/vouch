@@ -26,7 +26,7 @@
         "dynamodb:Query",
         "dynamodb:BatchGetItem"
       ],
-      "Resource": "${TABLE_ARN}"
+      "Resource": ["${TABLE_ARN}", "${TABLE_ARN}/index/*"]
     },
     {
       "Sid": "WriteNonAuthorityItems",

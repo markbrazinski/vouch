@@ -159,3 +159,38 @@ def test_the_iam_readme_does_not_claim_the_policies_are_attached():
     readme = (IAM / "README.md").read_text().lower()
     assert "not applied infrastructure" in readme or "tracked source" in readme
     assert "aws_status" in readme
+
+
+def test_the_runtime_can_query_the_decision_index():
+    """A GSI is a separate ARN. Reading the table does not grant reading its index.
+
+    Missing this is invisible until runtime, where it surfaces as AccessDenied
+    on the Incoming list rather than as anything resembling a permissions bug.
+    """
+    document = _load(RUNTIME_POLICY)
+    reads = [
+        statement
+        for statement in _statements(document, "Allow")
+        if "dynamodb:Query" in statement["Action"]
+    ]
+    assert reads, "nothing may query the table at all"
+
+    for statement in reads:
+        resources = statement["Resource"]
+        resources = resources if isinstance(resources, list) else [resources]
+        assert any(r.endswith("/index/*") for r in resources), (
+            f"{statement['Sid']} queries the table but not its indexes"
+        )
+
+
+def test_the_index_grant_adds_no_write_permission():
+    """The index is a read path. It must not become a way to write."""
+    document = _load(RUNTIME_POLICY)
+    for statement in _statements(document, "Allow"):
+        resources = statement["Resource"]
+        resources = resources if isinstance(resources, list) else [resources]
+        if not any(str(r).endswith("/index/*") for r in resources):
+            continue
+        assert not (CAPABILITY_WRITES & set(statement["Action"])), (
+            f"{statement['Sid']} permits writing through an index ARN"
+        )

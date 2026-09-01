@@ -48,7 +48,9 @@ class EventStore(Protocol):
     def append(self, event: LifecycleEvent, sequence: int) -> None: ...
     def append_all(self, events: Iterable[LifecycleEvent], start: int | None = None) -> int: ...
     def next_sequence(self, decision_record_id: str) -> int: ...
-    def events_for(self, decision_record_id: str) -> list[dict]: ...
+    def events_for(
+        self, decision_record_id: str, after_sequence: int = 0, limit: int | None = None
+    ) -> list[dict]: ...
 
 
 def _event_identity(event: LifecycleEvent) -> tuple:
@@ -186,12 +188,21 @@ class JsonRecordStore:
             index += 1
         return len(events)
 
-    def events_for(self, decision_record_id: str) -> list[dict]:
+    def events_for(
+        self,
+        decision_record_id: str,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[dict]:
         path = self._events_path(decision_record_id)
         if not path.exists():
             return []
         rows = [json.loads(line) for line in path.read_text().splitlines() if line]
-        return sorted(rows, key=lambda r: r["sequence"])
+        rows = sorted(
+            (r for r in rows if r["sequence"] > after_sequence),
+            key=lambda r: r["sequence"],
+        )
+        return rows[:limit] if limit is not None else rows
 
 
 # ==========================================================================
@@ -210,6 +221,12 @@ class DynamoRecordStore:
     """
 
     kind = "AWS_DYNAMODB"
+
+    #: Decision-enumeration index. Provisioned by scripts/cloudshell_provision.sh,
+    #: which is the only place the state table is defined.
+    DECISION_INDEX = "decisions-by-recency"
+    #: Constant partition value every DecisionRecord meta row carries.
+    DECISION_ENTITY = "DECISION"
 
     def __init__(self, table: str | None = None, *, region: str | None = None) -> None:
         from ..config import load
@@ -249,6 +266,11 @@ class DynamoRecordStore:
                 "failure_category": {"S": record.failure_category or ""},
                 "audit_hash": {"S": payload["audit_hash"]},
                 "saved_at": {"S": utcnow()},
+                # Constant partition key for the decision-enumeration index.
+                # Records are keyed `RECORD#<id>`, so without one shared value
+                # there is nothing to query "which decisions exist" against
+                # short of a table scan.
+                "entity": {"S": self.DECISION_ENTITY},
                 "document": {"S": json.dumps(payload, default=str)},
             },
         )
@@ -263,11 +285,53 @@ class DynamoRecordStore:
             return None
         return json.loads(item["document"]["S"])
 
-    def list_ids(self) -> list[str]:
-        raise VouchFailure(
-            FailureCategory.PERSISTENCE_FAILURE,
-            "listing all records requires a GSI; query by record id",
-        )
+    def list_ids(self, limit: int = 50, cursor: dict | None = None) -> list[str]:
+        """Record ids, newest first, via the decision index.
+
+        This used to raise: the single-table layout gives no way to enumerate
+        records without an index, and scanning the table to fake one would have
+        read every corpus, capability and ledger row to find them.
+        """
+        return [row["record_id"] for row in self.list_decisions(limit, cursor)[0]]
+
+    def list_decisions(
+        self, limit: int = 50, cursor: dict | None = None
+    ) -> tuple[list[dict], dict | None]:
+        """One page of decision summaries, newest first, plus the next cursor.
+
+        Returns the projected columns rather than whole records: an Incoming
+        list renders a row per decision, and loading every full document to
+        build it would be the expensive way to answer a cheap question.
+        """
+        request = {
+            "TableName": self.table,
+            "IndexName": self.DECISION_INDEX,
+            "KeyConditionExpression": "entity = :entity",
+            "ExpressionAttributeValues": {":entity": {"S": self.DECISION_ENTITY}},
+            "ScanIndexForward": False,  # newest first
+            "Limit": limit,
+        }
+        if cursor:
+            request["ExclusiveStartKey"] = cursor
+        try:
+            response = self.ddb.query(**request)
+        except Exception as exc:  # noqa: BLE001
+            raise VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE,
+                f"could not list decisions: {exc}",
+            ) from exc
+        rows = [
+            {
+                "record_id": item["record_id"]["S"],
+                "lot_id": item.get("lot_id", {}).get("S", ""),
+                "disposition": item.get("disposition", {}).get("S", ""),
+                "failure_category": item.get("failure_category", {}).get("S", ""),
+                "saved_at": item.get("saved_at", {}).get("S", ""),
+            }
+            for item in response.get("Items", [])
+            if "record_id" in item
+        ]
+        return rows, response.get("LastEvaluatedKey")
 
     def append(self, event: LifecycleEvent, sequence: int) -> None:
         row = _event_row(event, sequence, event.decision_record_id)
@@ -329,26 +393,58 @@ class DynamoRecordStore:
             index += 1
         return count
 
-    def events_for(self, decision_record_id: str) -> list[dict]:
-        response = self.ddb.query(
-            TableName=self.table,
-            KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
-            ExpressionAttributeValues={
-                ":pk": {"S": f"RECORD#{decision_record_id}"},
-                ":prefix": {"S": "EVENT#"},
-            },
-        )
-        return [
-            {
-                "event_id": i["event_id"]["S"],
-                "sequence": int(i["sk"]["S"].split("#")[1]),
-                "event": i["event"]["S"],
-                "decision_record_id": decision_record_id,
-                "at": i["at"]["S"],
-                "payload": json.loads(i["payload"]["S"]),
+    def events_for(
+        self,
+        decision_record_id: str,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Events for one record, ascending, optionally after a cursor.
+
+        `after_sequence` is what makes a frontend able to poll: it asks only for
+        what it has not seen, rather than re-reading the whole history each time.
+        Because the sort key is `EVENT#%06d`, "after N" is a key range and costs
+        nothing to express.
+
+        Paginating matters more than it looks. A query returns at most 1MB, and
+        the previous version ignored `LastEvaluatedKey` — so a long-running case
+        silently returned a truncated history that looked complete, which is the
+        worst shape for an audit read.
+        """
+        rows: list[dict] = []
+        start_key = None
+        while True:
+            request = {
+                "TableName": self.table,
+                "KeyConditionExpression": "pk = :pk AND sk > :after",
+                "ExpressionAttributeValues": {
+                    ":pk": {"S": f"RECORD#{decision_record_id}"},
+                    ":after": {"S": f"EVENT#{after_sequence:06d}"},
+                },
             }
-            for i in response.get("Items", [])
-        ]
+            if start_key:
+                request["ExclusiveStartKey"] = start_key
+            if limit is not None:
+                request["Limit"] = max(0, limit - len(rows))
+            response = self.ddb.query(**request)
+            rows.extend(
+                {
+                    "event_id": i["event_id"]["S"],
+                    "sequence": int(i["sk"]["S"].split("#")[1]),
+                    "event": i["event"]["S"],
+                    "decision_record_id": decision_record_id,
+                    "at": i["at"]["S"],
+                    "payload": json.loads(i["payload"]["S"]),
+                }
+                for i in response.get("Items", [])
+                # `sk > EVENT#...` also admits any sort key that sorts after the
+                # EVENT# range; keep only real event rows.
+                if i["sk"]["S"].startswith("EVENT#")
+            )
+            start_key = response.get("LastEvaluatedKey")
+            if not start_key or (limit is not None and len(rows) >= limit):
+                break
+        return rows[:limit] if limit is not None else rows
 
 
 # ==========================================================================
@@ -401,10 +497,20 @@ class InMemoryRecordStore:
             index += 1
         return len(events)
 
-    def events_for(self, decision_record_id: str) -> list[dict]:
-        return sorted(
-            self.events.get(decision_record_id, []), key=lambda r: r["sequence"]
+    def events_for(
+        self,
+        decision_record_id: str,
+        after_sequence: int = 0,
+        limit: int | None = None,
+    ) -> list[dict]:
+        rows = sorted(
+            (
+                r for r in self.events.get(decision_record_id, [])
+                if r["sequence"] > after_sequence
+            ),
+            key=lambda r: r["sequence"],
         )
+        return rows[:limit] if limit is not None else rows
 
 
 def hydrate_record(document: dict) -> DecisionRecord:
