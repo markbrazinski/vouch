@@ -31,14 +31,26 @@ ENTRYPOINT = ROOT / "app" / "Gatehouse" / "main.py"
 # ==========================================================================
 
 
-def test_production_mode_uses_durable_stores_for_every_authoritative_role(monkeypatch):
-    """F5: S3 evidence + Dynamo state, capability, record and event stores."""
+@pytest.fixture
+def production_env(monkeypatch):
+    """A correctly configured production deployment.
+
+    Both switches, deliberately: `VOUCH_STATE_TABLE`/`VOUCH_EVIDENCE_BUCKET`
+    choose the stores, `VOUCH_V2_MODE` chooses who decides. The audit blocker
+    was a deployment that set only the first group.
+    """
     monkeypatch.setenv("VOUCH_STATE_TABLE", "test-table")
     monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "test-bucket")
+    monkeypatch.setenv("VOUCH_V2_MODE", "bedrock")
     from vouch import config
 
     config.load.cache_clear()
+    yield
+    config.load.cache_clear()
 
+
+def test_production_mode_uses_durable_stores_for_every_authoritative_role(production_env):
+    """F5: S3 evidence + Dynamo state, capability, record and event stores."""
     composition = build(PRODUCTION)
     backend = composition.backend
 
@@ -60,18 +72,12 @@ def test_production_mode_uses_durable_stores_for_every_authoritative_role(monkey
     assert isinstance(composition.workflow.record_store, DynamoRecordStore)
 
 
-def test_production_mode_constructs_no_fixture_corpus(monkeypatch):
+def test_production_mode_constructs_no_fixture_corpus(monkeypatch, production_env):
     """F5: fixtures must be unreachable from the production path.
 
     Asserted by patching `build_corpus` to explode: if the production path
     calls it at all, this test fails rather than quietly serving demo data.
     """
-    monkeypatch.setenv("VOUCH_STATE_TABLE", "test-table")
-    monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "test-bucket")
-    from vouch import config
-
-    config.load.cache_clear()
-
     import vouch.v2.fixtures as fixtures
 
     def explode(*args, **kwargs):
@@ -199,14 +205,11 @@ def test_entrypoint_reports_typed_failures_without_mutating():
     assert '"mutation": {}' in source
 
 
-def test_production_wires_the_real_guardrail_when_one_is_configured(monkeypatch):
+def test_production_wires_the_real_guardrail_when_one_is_configured(monkeypatch, production_env):
     """Otherwise the durable runtime inspects supplier evidence with the local
     regex heuristic while every other component is real."""
     from vouch.v2.aws import BedrockGuardrailDetector
 
-    monkeypatch.setenv("VOUCH_MODE", "production")
-    monkeypatch.setenv("VOUCH_STATE_TABLE", "t")
-    monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "b")
     monkeypatch.setenv("VOUCH_GUARDRAIL_ID", "gr-test")
 
     composition = build()
@@ -215,14 +218,11 @@ def test_production_wires_the_real_guardrail_when_one_is_configured(monkeypatch)
     assert composition.workflow.detector.guardrail_id == "gr-test"
 
 
-def test_production_without_a_guardrail_does_not_substitute_the_heuristic(monkeypatch):
+def test_production_without_a_guardrail_does_not_substitute_the_heuristic(monkeypatch, production_env):
     """No detector is honest. A regex quietly standing in for Guardrails on the
     durable path would be a silent downgrade of a named control."""
     from vouch.v2.evidence import heuristic_detector
 
-    monkeypatch.setenv("VOUCH_MODE", "production")
-    monkeypatch.setenv("VOUCH_STATE_TABLE", "t")
-    monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "b")
     monkeypatch.delenv("VOUCH_GUARDRAIL_ID", raising=False)
     monkeypatch.delenv("GATEHOUSE_GUARDRAIL_ID", raising=False)
 
@@ -230,3 +230,55 @@ def test_production_without_a_guardrail_does_not_substitute_the_heuristic(monkey
 
     assert composition.workflow.detector is not heuristic_detector
     assert composition.workflow.detector is None
+
+
+# ==========================================================================
+# audit blocker 1: durable stores must not be paired with scripted reasoners
+# ==========================================================================
+
+
+def test_production_refuses_to_start_without_model_backed_reasoners(monkeypatch):
+    """The blocker itself.
+
+    `VOUCH_MODE` chose the stores and defaulted to production; `VOUCH_V2_MODE`
+    chose who decides and defaulted to local. A deployment that set only the
+    first ran real S3, real DynamoDB and real capability transactions with
+    hand-written Python making every applicability judgment — and said nothing.
+    """
+    monkeypatch.setenv("VOUCH_STATE_TABLE", "test-table")
+    monkeypatch.setenv("VOUCH_EVIDENCE_BUCKET", "test-bucket")
+    monkeypatch.delenv("VOUCH_V2_MODE", raising=False)
+    monkeypatch.delenv("GATEHOUSE_V2_MODE", raising=False)
+    monkeypatch.delenv("VOUCH_MODE", raising=False)
+    monkeypatch.delenv("GATEHOUSE_MODE", raising=False)
+    from vouch import config
+
+    config.load.cache_clear()
+
+    with pytest.raises(VouchFailure) as caught:
+        build(PRODUCTION)
+
+    assert caught.value.category is FailureCategory.MODEL_UNAVAILABLE
+    assert "VOUCH_V2_MODE=bedrock" in caught.value.detail
+
+
+def test_production_backend_reports_which_reasoners_decided(production_env):
+    """Durability alone was never the whole truth about a composition."""
+    backend = build(PRODUCTION).backend
+
+    assert backend.reasoners == "BEDROCK_NOVA"
+    assert backend.as_dict()["reasoners"] == "BEDROCK_NOVA"
+    assert backend.is_production
+
+
+def test_local_mode_labels_scripted_reasoners_rather_than_claiming_bedrock(monkeypatch):
+    """Local stays available for tests, and says what it is."""
+    monkeypatch.delenv("VOUCH_V2_MODE", raising=False)
+    monkeypatch.delenv("GATEHOUSE_V2_MODE", raising=False)
+    monkeypatch.delenv("VOUCH_MODE", raising=False)
+    monkeypatch.delenv("GATEHOUSE_MODE", raising=False)
+
+    backend = build(LOCAL).backend
+
+    assert backend.reasoners == "LOCAL_SCRIPTED_REASONERS"
+    assert not backend.is_production

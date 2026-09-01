@@ -385,10 +385,21 @@ def _classify_exception(exc: Exception, schema_category: FailureCategory) -> Fai
     return schema_category
 
 
-def _bedrock_enabled() -> bool:
+def bedrock_enabled() -> bool:
+    """Whether decision roles run on Bedrock. THE definition of that question.
+
+    Public because `vouch.v2.runtime` gates production on it: the composition
+    and the agents must not be able to disagree about which reasoners are in
+    use. Note this is `V2_MODE`, which is a different switch from the
+    `VOUCH_MODE` that selects the stores.
+    """
     from ..config import env_var
 
     return (env_var("V2_MODE") or env_var("MODE") or "local").lower() == "bedrock"
+
+
+#: Back-compat alias for the pre-existing private name.
+_bedrock_enabled = bedrock_enabled
 
 
 class ApplicabilityInvestigator(BriefProducer):

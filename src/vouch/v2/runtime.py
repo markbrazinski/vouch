@@ -51,16 +51,27 @@ class Backend:
     capability_store: str
     record_store: str
     event_store: str
+    #: WHICH reasoners actually decide. Durable persistence with scripted
+    #: reasoners was the audit blocker: every storage field read AWS while the
+    #: decisions were made by hand-written Python, and nothing in the response
+    #: said so.
+    reasoners: str = "UNKNOWN"
 
     DURABLE = frozenset({"AWS_DYNAMODB", "AWS_S3", "LOCAL_JSON"})
+    #: The only reasoner backend a production composition may use.
+    MODEL_BACKED = "BEDROCK_NOVA"
 
     @property
     def is_production(self) -> bool:
-        return self.mode == PRODUCTION and all(
-            kind in self.DURABLE
-            for kind in (
-                self.corpus, self.evidence_store,
-                self.capability_store, self.record_store, self.event_store,
+        return (
+            self.mode == PRODUCTION
+            and self.reasoners == self.MODEL_BACKED
+            and all(
+                kind in self.DURABLE
+                for kind in (
+                    self.corpus, self.evidence_store,
+                    self.capability_store, self.record_store, self.event_store,
+                )
             )
         )
 
@@ -72,13 +83,15 @@ class Backend:
             "capability_store": self.capability_store,
             "record_store": self.record_store,
             "event_store": self.event_store,
+            "reasoners": self.reasoners,
             "durable": self.is_production,
         }
 
     def describe(self) -> str:
         return (
             f"mode={self.mode} corpus={self.corpus} evidence={self.evidence_store} "
-            f"capabilities={self.capability_store} records={self.record_store}"
+            f"capabilities={self.capability_store} records={self.record_store} "
+            f"reasoners={self.reasoners}"
         )
 
 
@@ -103,6 +116,17 @@ def requested_mode() -> str:
     if explicit:
         return explicit.strip().lower()
     return PRODUCTION
+
+
+def bedrock_reasoners_enabled() -> bool:
+    """Whether the DECISION roles run on Bedrock rather than scripted Python.
+
+    One definition, shared by the composition gate and the agent layer, so the
+    runtime cannot believe one thing about itself while the agents do another.
+    """
+    from .agents import bedrock_enabled
+
+    return bedrock_enabled()
 
 
 def build(mode: str | None = None) -> Composition:
@@ -137,6 +161,11 @@ def _build_local() -> Composition:
         capability_store="IN_MEMORY_NOT_DURABLE",
         record_store=InMemoryRecordStore.kind,
         event_store=InMemoryRecordStore.kind,
+        reasoners=(
+            Backend.MODEL_BACKED
+            if bedrock_reasoners_enabled()
+            else "LOCAL_SCRIPTED_REASONERS"
+        ),
     )
     workflow = VouchV2(
         corpus,
@@ -180,6 +209,27 @@ def _build_production() -> Composition:
     capabilities = DynamoCapabilityStore(config.state_table)
     record_store = DynamoRecordStore(config.state_table)
 
+    # audit blocker 1: durable persistence with SCRIPTED reasoners.
+    #
+    # Two independent switches decided two halves of the same runtime.
+    # `VOUCH_MODE` chose the stores and defaulted to production; `VOUCH_V2_MODE`
+    # chose who actually decides and defaulted to LOCAL. A deployment that set
+    # only the first got real S3, real DynamoDB, real capability transactions —
+    # and hand-written Python making every applicability judgment, with nothing
+    # in the response saying so.
+    #
+    # Production now requires model-backed decision execution and refuses to
+    # start without it. This is the same fail-closed rule already applied to a
+    # missing table: a runtime that cannot do the real thing must not come up
+    # quietly doing a lesser thing.
+    if not bedrock_reasoners_enabled():
+        raise VouchFailure(
+            FailureCategory.MODEL_UNAVAILABLE,
+            "production mode requires model-backed decision execution; set "
+            "VOUCH_V2_MODE=bedrock. Refusing to serve durable state with "
+            "scripted reasoners.",
+        )
+
     backend = Backend(
         mode=PRODUCTION,
         corpus=DynamoCorpus.kind,
@@ -187,6 +237,7 @@ def _build_production() -> Composition:
         capability_store=DynamoCapabilityStore.kind,
         record_store=DynamoRecordStore.kind,
         event_store=DynamoRecordStore.kind,
+        reasoners=Backend.MODEL_BACKED,
     )
     # The real prompt-attack detector, where one is configured. Without it the
     # production runtime inspected supplier evidence with the local regex
