@@ -56,7 +56,15 @@ from .persistence import InMemoryRecordStore, hydrate_claims, hydrate_record
 from .local_reasoners import investigator_reasoner, verifier_reasoner
 from .reconcile import POLICY_VERSION, reconcile, run_basis_checks
 
-MAX_MODEL_ATTEMPTS = 2
+#: One initial brief plus two repair attempts. The budget is what bounds the
+#: cost of a model that cannot satisfy the contract; it is not a safety
+#: control, because an invalid brief fails closed whenever the budget runs
+#: out. Live 10-run qualification showed Nova occasionally spending its single
+#: repair attempt still misreading `sufficiency`, so a second one converts a
+#: recoverable-but-unrecovered brief into a completed decision rather than an
+#: escalation. Raising it further would buy little: a brief still wrong after
+#: two corrections is not one attempt away from right.
+MAX_MODEL_ATTEMPTS = 3
 
 #: Base backoff before retrying a throttled or timed-out model call, multiplied
 #: by the attempt number. Bedrock throttles under burst; retrying instantly just
