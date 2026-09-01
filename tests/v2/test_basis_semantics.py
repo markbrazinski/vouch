@@ -76,6 +76,33 @@ def _lot(corpus, lot_id, manufactured_at="", received_at=""):
     return lot_id
 
 
+def _claim(claim_id, lot_id, characteristic, *, method, condition, value):
+    """One canonical claim, as the frozen snapshot would present it."""
+    from vouch.v2.contracts import (
+        CanonicalEvidenceClaim,
+        ExtractionMethod,
+        TrustLabel,
+    )
+
+    return CanonicalEvidenceClaim(
+        claim_id=claim_id,
+        evidence_artifact_id="ART-1",
+        lot_id=lot_id,
+        material_id="MAT-ALLOY-7",
+        claim_type="measurement",
+        extraction_method=ExtractionMethod.DETERMINISTIC_PARSER,
+        extraction_version="test",
+        characteristic=characteristic,
+        value=value,
+        units="MPa",
+        method=method,
+        condition=condition,
+        source_locator="line 1",
+        trust_label=TrustLabel.UNTRUSTED_SUPPLIER,
+        source_hash="h",
+    )
+
+
 def _brief(revision: str, tests=("tensile_strength",), coverage=None):
     """A brief for the BASIS tests below.
 
@@ -363,4 +390,61 @@ def test_validator_does_not_decide_whether_ambiguous_evidence_applies(corpus):
 
     # No evidence to compare against, so no method claim is contradicted and
     # the validator offers no view on applicability.
+    assert result.passed, result.failures
+
+
+def test_missing_means_absent_not_failing(corpus):
+    """A failing value is covered evidence, not a missing test.
+
+    Live Verifier briefs declared tensile_strength missing because the number
+    was below the limit, against a claim measured by the required method at the
+    required condition. Conformance is computed downstream and the brief has no
+    vocabulary for it — which is why a failing value must still be reported as
+    covered.
+    """
+    from vouch.v2.contracts import MissingItem
+
+    _lot(corpus, "LOT-NOW", manufactured_at="2026-06-01")
+    claim = _claim(
+        "CLM-1", "LOT-NOW", "tensile_strength", method="ASTM-E8",
+        condition="room_temp", value=100.0,
+    )
+    brief = _brief("B", coverage=[])
+    brief = brief.model_copy(
+        update={
+            "missing": [
+                MissingItem(test="tensile_strength", reason="below the 450 MPa limit")
+            ]
+        }
+    )
+
+    result = run_basis_checks(
+        brief, corpus, lot_id="LOT-NOW", claims_by_id={"CLM-1": claim}
+    )
+
+    assert not result.passed
+    assert any("is listed as missing" in f for f in result.failures)
+
+
+def test_a_genuinely_inapplicable_method_may_still_be_missing(corpus):
+    """The boundary: a DIFFERENT method is left entirely to the model."""
+    from vouch.v2.contracts import MissingItem
+
+    _lot(corpus, "LOT-NOW", manufactured_at="2026-06-01")
+    claim = _claim(
+        "CLM-1", "LOT-NOW", "tensile_strength", method="ASTM-OTHER",
+        condition="room_temp", value=500.0,
+    )
+    brief = _brief("B", coverage=[]).model_copy(
+        update={
+            "missing": [
+                MissingItem(test="tensile_strength", reason="method not established")
+            ]
+        }
+    )
+
+    result = run_basis_checks(
+        brief, corpus, lot_id="LOT-NOW", claims_by_id={"CLM-1": claim}
+    )
+
     assert result.passed, result.failures

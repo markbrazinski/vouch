@@ -330,6 +330,47 @@ def run_basis_checks(
             f"null) or a `missing` entry naming this test."
         )
 
+    # -- `missing` must mean absent, not failing (category B) -------------
+    # A test is MISSING when no applicable evidence exists for it. It is not
+    # missing because the evidence that does exist reports a failing number:
+    # conformance is computed deterministically downstream and the brief has no
+    # vocabulary for it, which is exactly why a failing value must still be
+    # reported as covered.
+    #
+    # Live runs showed a Verifier declaring tensile_strength missing with the
+    # reason "Evidence does not meet the threshold of >= 480.0 MPa", against a
+    # claim measured by the required method at the required condition. That is
+    # not a judgment this validator is overriding — the brief contradicts the
+    # snapshot it was given.
+    #
+    # This is a claim-EXISTENCE test, not an applicability test. Where the
+    # method or condition genuinely differs, the evidence may well not apply
+    # and `missing` is correct, so those cases are left entirely alone.
+    for item in brief.missing:
+        requirement = next(
+            (r for r in resolved if r.characteristic == item.test), None
+        )
+        if requirement is None:
+            continue
+        matching = [
+            claim
+            for claim in claims_by_id.values()
+            if claim.characteristic == item.test
+            and claim.lot_id == lot_id
+            and _normalize_method(claim.method) == _normalize_method(requirement.method)
+            and _normalize_method(claim.condition)
+            == _normalize_method(requirement.condition)
+        ]
+        if matching:
+            failures.append(
+                f"{item.test} is listed as missing ({item.reason!r}), but the "
+                f"snapshot contains evidence {matching[0].claim_id} measured by "
+                f"the required method {requirement.method} at the required "
+                f"condition {requirement.condition}. That evidence is covered; "
+                f"whether its value meets the limit is computed separately and "
+                f"is not a reason to call the test missing."
+            )
+
     # -- method_match must match the structured facts (category B) --------
     # Whether two method identifiers are EQUAL is a string comparison against
     # authoritative tool output, not an interpretation. Deciding whether a
