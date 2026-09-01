@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
+from enum import Enum
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
@@ -112,6 +113,7 @@ def inspect(
     scanner: MalwareScanner | None = None,
     claimed_identity: "DocumentIdentity | None" = None,
     binding_mismatches: list[str] | None = None,
+    binding_status: "BindingStatus | None" = None,
 ) -> SecurityInspection:
     """S2. Deterministic validation + prompt-attack detection + AV.
 
@@ -159,6 +161,7 @@ def inspect(
         detail=detail,
         claimed_identity=(claimed_identity.as_dict() if claimed_identity else {}),
         binding_mismatches=list(binding_mismatches or []),
+        binding_status=(binding_status or BindingStatus.BOUND).value,
     )
 
 
@@ -262,21 +265,33 @@ def ingest(
     # consulted. HUMAN_AUTHORIZED evidence is still checked: a QA retest for the
     # wrong lot is still the wrong lot.
     claimed = extract_document_identity(text)
-    mismatches = validate_binding(
+    binding_status, binding_reasons = validate_binding(
         claimed,
         target_lot_id=lot_id,
         target_material_id=material_id,
         target_supplier_id=supplier_id,
         target_supplier_site=supplier_site,
     )
+    mismatches = (
+        binding_reasons if binding_status is BindingStatus.MISMATCH else []
+    )
 
     inspection = inspect(
         raw, content_type, text, detector,
         scanner=scanner, claimed_identity=claimed, binding_mismatches=mismatches,
+        binding_status=binding_status,
     )
 
-    if mismatches:
+    # audit-2 F3/F4: three distinct non-bound outcomes, each with its own
+    # status, because they mean different things to whoever triages them. All
+    # three preserve the artifact and produce zero claims; none marks the lot
+    # defective.
+    if binding_status is BindingStatus.MISMATCH:
         status = ArtifactStatus.EVIDENCE_BINDING_MISMATCH
+    elif binding_status is BindingStatus.IDENTITY_CONFLICT:
+        status = ArtifactStatus.EVIDENCE_IDENTITY_CONFLICT
+    elif binding_status is BindingStatus.UNBOUND_NO_IDENTITY:
+        status = ArtifactStatus.EVIDENCE_UNBOUND
     elif inspection.blocked:
         status = ArtifactStatus.QUARANTINED_SECURITY
     else:
@@ -300,6 +315,7 @@ def ingest(
         status=status,
         trust_label=trust_label,
         identity_stated=claimed.states_any,
+        binding_status=binding_status.value,
         extraction_text=text,
         parse_confidence=parse_confidence,
         parse_error=parse_error,
@@ -316,17 +332,19 @@ def ingest(
         prompt_attack_detected=inspection.prompt_attack_detected,
         quarantined=inspection.blocked,
         binding_mismatches=list(mismatches),
+        binding_status=binding_status.value,
         claimed_identity=claimed.as_dict(),
         version=SECURITY_CONFIG_VERSION,
     )
-    if mismatches:
+    if binding_status is not BindingStatus.BOUND:
         events.emit(
             EventType.EVIDENCE_BINDING_MISMATCH,
             decision_record_id,
             artifact_id=artifact_id,
             requested_lot=lot_id,
+            binding_status=binding_status.value,
             claimed_identity=claimed.as_dict(),
-            mismatches=list(mismatches),
+            mismatches=list(binding_reasons),
         )
     return artifact
 
@@ -379,6 +397,11 @@ _SPEC_CITED = re.compile(
 #: What the DOCUMENT says about itself. These are claims by the external party,
 #: never facts about the requested target, and they are parsed from the artifact
 #: BEFORE anything about the requested workflow target is in scope.
+#:
+#: audit-2 F4: these patterns are applied with `finditer`, not `search`. A
+#: first-match-wins parser reads "Lot LOT-1001 ... Corrected identity: Lot
+#: LOT-9999" as unambiguously LOT-1001 and releases the wrong lot. Every
+#: assertion in the artifact is collected and reconciled.
 _CLAIMED_LOT = re.compile(r"\blot[:\s#-]+(?P<lot>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE)
 _CLAIMED_MATERIAL = re.compile(
     r"\bmaterial[:\s#-]+(?P<material>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
@@ -386,7 +409,50 @@ _CLAIMED_MATERIAL = re.compile(
 _CLAIMED_SUPPLIER = re.compile(
     r"\bsupplier[:\s#-]+(?P<supplier>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
 )
-_CLAIMED_SITE = re.compile(r"\bsite[:\s#-]+(?P<site>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE)
+_CLAIMED_SITE = re.compile(
+    r"\b(?:supplier[\s_-]*)?site[:\s#-]+(?P<site>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
+)
+
+#: Structured/header form, e.g. a CSV header row or a key/value block at the
+#: top of a document. Parsed with the SAME reconciliation as body text (F4):
+#: a header saying one lot and a body saying another is a conflict, not a
+#: precedence question.
+_STRUCTURED_FIELD = re.compile(
+    r"^\s*(?P<key>lot(?:[\s_-]*id)?|material(?:[\s_-]*id)?|supplier(?:[\s_-]*id)?|"
+    r"(?:supplier[\s_-]*)?site(?:[\s_-]*id)?)\s*[:=|,]\s*(?P<value>[A-Z][A-Z0-9-]{2,})\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+_FIELD_ALIASES = {
+    "lot": "lot_id",
+    "material": "material_id",
+    "supplier": "supplier_id",
+    "site": "supplier_site",
+}
+
+
+class BindingStatus(str, Enum):
+    """Whether this artifact can be affirmatively tied to the receiving record.
+
+    audit-2 F3: the audit found "no mismatch" being treated as "bound". Those
+    are not the same thing, and conflating them let a COA that named no lot at
+    all release LOT-1001. Missing identity is not a contradiction, but it is
+    also not a successful binding, so it needs its own state.
+    """
+
+    #: The document states identity and it agrees with the receiving record.
+    BOUND = "BOUND"
+    #: The document states no identity that could tie it to anything.
+    UNBOUND_NO_IDENTITY = "UNBOUND_NO_IDENTITY"
+    #: The document states identity that contradicts the receiving record.
+    MISMATCH = "MISMATCH"
+    #: The document contradicts ITSELF: two different lots, materials, etc.
+    IDENTITY_CONFLICT = "IDENTITY_CONFLICT"
+
+    @property
+    def usable(self) -> bool:
+        """Only an affirmatively BOUND artifact yields autonomous claims."""
+        return self is BindingStatus.BOUND
 
 
 @dataclass(frozen=True)
@@ -396,20 +462,58 @@ class DocumentIdentity:
     Deliberately separate from the requested workflow target. The audit proved
     that populating these from the request — the V1/b8f54b0 behavior — lets a
     document that says LOT-9999 be silently accepted as evidence for LOT-1001.
-    A field left empty means the document did not state it, which is a distinct
-    outcome from stating something that disagrees.
+
+    Each field holds EVERY distinct value the artifact asserted (F4), not the
+    first one found. One value is an assertion; two different values are a
+    conflict the artifact cannot resolve on its own, and neither is a fact.
     """
 
-    lot_id: str = ""
-    material_id: str = ""
-    supplier_id: str = ""
-    supplier_site: str = ""
+    lot_ids: tuple[str, ...] = ()
+    material_ids: tuple[str, ...] = ()
+    supplier_ids: tuple[str, ...] = ()
+    supplier_sites: tuple[str, ...] = ()
+
+    #: Single-value accessors. They return a value ONLY when the artifact is
+    #: unambiguous about it; a conflicted field reads as empty so no caller can
+    #: accidentally pick a winner.
+    @property
+    def lot_id(self) -> str:
+        return self.lot_ids[0] if len(self.lot_ids) == 1 else ""
+
+    @property
+    def material_id(self) -> str:
+        return self.material_ids[0] if len(self.material_ids) == 1 else ""
+
+    @property
+    def supplier_id(self) -> str:
+        return self.supplier_ids[0] if len(self.supplier_ids) == 1 else ""
+
+    @property
+    def supplier_site(self) -> str:
+        return self.supplier_sites[0] if len(self.supplier_sites) == 1 else ""
 
     @property
     def states_any(self) -> bool:
         return any(
-            (self.lot_id, self.material_id, self.supplier_id, self.supplier_site)
+            (self.lot_ids, self.material_ids, self.supplier_ids, self.supplier_sites)
         )
+
+    @property
+    def conflicts(self) -> list[str]:
+        """Fields where the artifact asserted more than one distinct value."""
+        found = []
+        for label, values in (
+            ("lot", self.lot_ids),
+            ("material", self.material_ids),
+            ("supplier", self.supplier_ids),
+            ("supplier_site", self.supplier_sites),
+        ):
+            if len(values) > 1:
+                found.append(
+                    f"document asserts conflicting {label} identities: "
+                    + ", ".join(values)
+                )
+        return found
 
     def as_dict(self) -> dict:
         return {
@@ -417,25 +521,67 @@ class DocumentIdentity:
             "claimed_material": self.material_id,
             "claimed_supplier": self.supplier_id,
             "claimed_supplier_site": self.supplier_site,
+            # F4: the complete set, so an auditor sees the conflict itself and
+            # not just the fact that one was reported.
+            "claimed_lots": list(self.lot_ids),
+            "claimed_materials": list(self.material_ids),
+            "claimed_suppliers": list(self.supplier_ids),
+            "claimed_supplier_sites": list(self.supplier_sites),
         }
 
 
 def extract_document_identity(text: str) -> DocumentIdentity:
-    """Parse the identity the document claims for itself. Deterministic.
+    """Parse EVERY identity the document claims for itself. Deterministic.
 
     No workflow context reaches this function by design — it cannot echo back a
     requested target even by accident.
-    """
 
-    def first(pattern: re.Pattern, group: str) -> str:
-        match = pattern.search(text)
-        return match.group(group).upper() if match else ""
+    audit-2 F4: structured/header fields and free body text are collected with
+    the same weight and reconciled together. A "corrected" or "amended"
+    identity line does not override the original; it produces a conflict,
+    because deciding which of two contradictory identities an artifact really
+    has is not a parsing question.
+    """
+    found: dict[str, list[str]] = {
+        "lot_id": [], "material_id": [], "supplier_id": [], "supplier_site": []
+    }
+
+    def record(field: str, value: str) -> None:
+        value = value.upper()
+        if value not in found[field]:
+            found[field].append(value)
+
+    # Structured / header assertions.
+    for match in _STRUCTURED_FIELD.finditer(text):
+        key = match.group("key").lower()
+        # Longest alias first so "supplier_site" is not read as "supplier".
+        for alias in ("site", "supplier", "material", "lot"):
+            if alias in key:
+                record(_FIELD_ALIASES[alias], match.group("value"))
+                break
+
+    # Free-text assertions anywhere in the body.
+    for pattern, group, field in (
+        (_CLAIMED_LOT, "lot", "lot_id"),
+        (_CLAIMED_MATERIAL, "material", "material_id"),
+        (_CLAIMED_SUPPLIER, "supplier", "supplier_id"),
+        (_CLAIMED_SITE, "site", "supplier_site"),
+    ):
+        for match in pattern.finditer(text):
+            record(field, match.group(group))
+
+    # A site assertion also matches the supplier pattern when written
+    # "supplier site: SITE-1"; drop values claimed as BOTH so one syntax does
+    # not manufacture a phantom supplier conflict.
+    found["supplier_id"] = [
+        value for value in found["supplier_id"] if value not in found["supplier_site"]
+    ]
 
     return DocumentIdentity(
-        lot_id=first(_CLAIMED_LOT, "lot"),
-        material_id=first(_CLAIMED_MATERIAL, "material"),
-        supplier_id=first(_CLAIMED_SUPPLIER, "supplier"),
-        supplier_site=first(_CLAIMED_SITE, "site"),
+        lot_ids=tuple(found["lot_id"]),
+        material_ids=tuple(found["material_id"]),
+        supplier_ids=tuple(found["supplier_id"]),
+        supplier_sites=tuple(found["supplier_site"]),
     )
 
 
@@ -452,6 +598,17 @@ class EvidenceBindingMismatch(ValueError):
         super().__init__("; ".join(mismatches))
 
 
+#: Which identity fields an artifact must state to be affirmatively bindable
+#: (audit-2 F3). Lot identity alone is sufficient — a lot number is globally
+#: unique in this domain and implies its material and supplier through the
+#: receiving record. Material+supplier together also binds, for documents that
+#: legitimately cover a shipment rather than a single lot.
+def _is_affirmatively_bound(identity: DocumentIdentity) -> bool:
+    if identity.lot_id:
+        return True
+    return bool(identity.material_id and identity.supplier_id)
+
+
 def validate_binding(
     identity: DocumentIdentity,
     *,
@@ -459,13 +616,27 @@ def validate_binding(
     target_material_id: str,
     target_supplier_id: str,
     target_supplier_site: str,
-) -> list[str]:
-    """Compare claimed identity against the authoritative receiving record.
+) -> tuple[BindingStatus, list[str]]:
+    """Reconcile claimed identity against the authoritative receiving record.
 
-    Returns the list of contradictions. A field the document did not state is
-    NOT a contradiction — that is the missing-identity case, which routes to
-    human review rather than rejection.
+    Returns (status, reasons). audit-2 F3: three distinct negative outcomes,
+    because they mean different things to whoever triages them.
+
+      MISMATCH             the document is about something else
+      IDENTITY_CONFLICT    the document contradicts itself
+      UNBOUND_NO_IDENTITY  the document could be about anything
+
+    Only BOUND yields claims usable for an autonomous disposition. None of the
+    three marks the lot defective: an artifact that cannot be tied to a lot
+    says nothing about that lot's quality.
     """
+    conflicts = identity.conflicts
+    if conflicts:
+        # F4. Checked FIRST: a self-contradictory document cannot be compared
+        # against a target at all, and reporting it as a mismatch would blame
+        # the receiving record for the document's own inconsistency.
+        return BindingStatus.IDENTITY_CONFLICT, conflicts
+
     mismatches: list[str] = []
     for label, claimed, expected in (
         ("lot", identity.lot_id, target_lot_id),
@@ -478,8 +649,19 @@ def validate_binding(
                 f"document claims {label} {claimed}, but this evidence was "
                 f"submitted for {expected}"
             )
-    return mismatches
+    if mismatches:
+        return BindingStatus.MISMATCH, mismatches
 
+    if not _is_affirmatively_bound(identity):
+        # F3. The exploit: a COA stating no lot, material, supplier or site
+        # released LOT-1001 because "no mismatch" was read as "bound". Absence
+        # of a contradiction is not evidence of identity.
+        return BindingStatus.UNBOUND_NO_IDENTITY, [
+            "document states no lot, material or supplier identity, so it "
+            "cannot be affirmatively bound to the receiving record"
+        ]
+
+    return BindingStatus.BOUND, []
 
 
 def parse_deterministic(text: str) -> tuple[list[CandidateClaim], float]:
@@ -803,6 +985,7 @@ def freeze_snapshot(
 
 
 __all__ = [
+    "BindingStatus",
     "CandidateClaim",
     "CanonicalizationError",
     "ConfinedExtractor",
@@ -817,5 +1000,8 @@ __all__ = [
     "heuristic_detector",
     "ingest",
     "inspect",
+    "DocumentIdentity",
+    "extract_document_identity",
     "parse_deterministic",
+    "validate_binding",
 ]

@@ -16,6 +16,8 @@ Two product-level corrections from the contract:
 
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -213,21 +215,24 @@ def _persist_readiness(
 
     from .authority import Action, execute
 
+    # F7: the readiness state and its causal link are decided by policy and
+    # SIGNED into the capability. Consumption cannot substitute another state.
     decision = policy.authorize_order_action(
         decision_record_id=decision_record_id,
         order_id=order.order_id,
         action=Action.SET_ORDER_READINESS,
         observed_state_version=order.state_version,
         events=events,
+        parameters={
+            "readiness": result.readiness.value,
+            "caused_by": json.dumps(causal, sort_keys=True, default=str),
+        },
     )
     if not decision.allowed or decision.capability is None:
         return None
 
     try:
-        entry = execute(
-            decision.capability, corpus, capabilities, events,
-            params={"readiness": result.readiness.value, "caused_by": causal},
-        )
+        entry = execute(decision.capability, corpus, capabilities, events)
     except VouchFailure:
         # A concurrent change moved the order; the recomputation is stale and
         # will be redone. Never force the write.

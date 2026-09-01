@@ -21,20 +21,19 @@ the ledger.
 Two properties this module must enforce, both proven by the audit to have been
 missing at b8f54b0:
 
-**Issuance is authorized, not merely conventional (P0-1).** `issue()` demands an
-`Issuer` credential. Only `PolicyEngine` mints one, and it does so for itself at
-construction; there is no public constructor path that yields a valid credential
-to anything else. A caller holding the store but no credential cannot create
-authority — `store.issue(...)` without a credential is a TypeError, and with a
-forged credential it is a POLICY_REFUSAL. The production DynamoDB adapter binds
-the same boundary to an IAM principal, so the enforcement is not Python-only.
+**Issuance is authorized, not merely conventional (P0-1, audit-2 F1).** The
+capability store can VERIFY a proof and cannot CREATE one. Signing authority
+lives in `issuance.py`, which exports no signer; `PolicyEngine` obtains a
+one-shot `IssuanceAuthority` by class identity, and nothing else can. Holding
+the store object grants no path to a valid capability — there is no
+`_mint_issuer`, and `issue()` without an `IssuanceAuthority` is a refusal.
 
 **Consumption dispatches internally (P0-2).** `consume()` takes a capability id
 and NOTHING executable. The mutation is looked up from a closed table keyed by
-the capability's own bound action, and it can only touch the capability's own
-bound target. There is no parameter through which a caller can supply a
-callable, so a capability for LOT-1001 cannot be made to mutate LOT-1002 no
-matter what the caller passes.
+the capability's own bound action, applied to the capability's own bound target,
+using the capability's own SIGNED parameters (audit-2 F7). There is no
+parameter through which a caller can supply a callable, redirect a target, or
+choose a different slot at execution time.
 """
 
 from __future__ import annotations
@@ -50,6 +49,13 @@ from enum import Enum
 
 from .contracts import Disposition, FailureCategory, VouchFailure
 from .corpus import Corpus
+from .issuance import (
+    PROOF_VERSION,
+    IssuanceAuthority,
+    IssuanceViolation,
+)
+from .issuance import authority as _claim_issuance_authority
+from .issuance import verify as verify_proof
 from .lifecycle import EventLog, EventType, utcnow
 from .reconcile import POLICY_VERSION
 
@@ -75,9 +81,16 @@ class TargetType(str, Enum):
 class CapabilityRecord:
     """Server-controlled authority to perform exactly one mutation, once.
 
-    `issuer_proof` is what makes forgery fail: it is an HMAC-style digest over
-    the record's binding fields keyed by a secret only the Policy Engine holds.
-    A hand-constructed record cannot produce a valid one.
+    `issuer_proof` is an HMAC over the COMPLETE binding — including
+    `parameters` (audit-2 F7) — produced by the `issuance` module's private
+    key. The capability store can check it and cannot produce it, so a record
+    hand-constructed by any caller, however syntactically correct, fails
+    verification.
+
+    `parameters` carries the action-specific values the Policy Engine committed
+    to at authorization time: the target slot for a resequence, the readiness
+    state for a readiness transition. They are signed, and consumption reads
+    them from HERE rather than from anything the caller passes.
     """
 
     capability_id: str
@@ -90,48 +103,54 @@ class CapabilityRecord:
     expires_at: str
     nonce: str
     issuer_proof: str
-    #: Which authorized issuer created this row (P0-1). Recorded in the ledger
-    #: so an auditor can see authority never originated outside the Policy
-    #: Engine.
+    #: Which authorized issuer created this row. Covered by the signature, so
+    #: it is trustworthy provenance rather than a self-asserted label.
     issuer_identity: str = ""
+    #: Signed, immutable action parameters (audit-2 F7).
+    parameters: tuple[tuple[str, str], ...] = ()
     used: bool = False
     consumed_at: str = ""
 
-    def binding(self) -> str:
-        return "|".join(
-            [
-                self.capability_id, self.decision_record_id, self.target_type.value,
-                self.target_id, self.action.value, str(self.observed_state_version),
-                self.policy_version, self.expires_at, self.nonce,
-                self.issuer_identity,
-            ]
-        )
+    def binding(self) -> dict:
+        """Everything the proof covers.
+
+        A dict rather than a delimiter-joined string: joining on "|" means a
+        value containing "|" could shift a field boundary, and adding a field
+        to a positional string is a silent compatibility break. Keys are
+        explicit and the canonical form is sorted JSON.
+        """
+        return {
+            "v": PROOF_VERSION,
+            "capability_id": self.capability_id,
+            "decision_record_id": self.decision_record_id,
+            "target_type": self.target_type.value,
+            "target_id": self.target_id,
+            "action": self.action.value,
+            "observed_state_version": self.observed_state_version,
+            "policy_version": self.policy_version,
+            "expires_at": self.expires_at,
+            "nonce": self.nonce,
+            "issuer_identity": self.issuer_identity,
+            "parameters": dict(self.parameters),
+        }
+
+    @property
+    def params(self) -> dict[str, str]:
+        """The signed parameters as a plain dict."""
+        return dict(self.parameters)
 
     def is_expired(self, now: datetime | None = None) -> bool:
         now = now or datetime.now(timezone.utc)
         return now > datetime.fromisoformat(self.expires_at)
 
 
+def freeze_parameters(params: dict | None) -> tuple[tuple[str, str], ...]:
+    """Normalize action parameters into a hashable, signable, ordered form."""
+    return tuple(sorted((str(k), str(v)) for k, v in (params or {}).items()))
+
+
 class IssuerViolation(PermissionError):
     """Something other than an authorized issuer tried to create authority."""
-
-
-@dataclass(frozen=True)
-class Issuer:
-    """Proof that the holder is permitted to create authority (P0-1).
-
-    This is the local-mode model of the production boundary: in DynamoDB the
-    right to write a capability row belongs to the Policy Engine's IAM
-    principal, and no other component's credentials can perform that PutItem.
-    Here the same boundary is a credential object the store recognizes.
-
-    It is deliberately NOT constructible into a valid state by an outsider:
-    `secret` must equal the store's own issuer secret, which is never exposed.
-    `PolicyEngine` receives one at construction and nothing else does.
-    """
-
-    identity: str
-    secret: bytes = field(repr=False, default=b"")
 
 
 class CapabilityStore:
@@ -140,6 +159,10 @@ class CapabilityStore:
     The lock is what DynamoDB's ConditionExpression provides in production; the
     semantics proven here are identical. `consume` is the single place a
     capability is spent, and it is the single place state mutates.
+
+    This class holds **no signing key and no minting method** (audit-2 F1). It
+    imports `issuance.verify` and nothing else, so possession of a store is
+    possession of a verifier — never of an issuer.
 
     ponytail: threading.Lock, not a distributed lock. Single-process semantics
     match the conditional-write guarantee; the DynamoDB adapter (aws.py) swaps
@@ -150,54 +173,29 @@ class CapabilityStore:
         self._rows: dict[str, CapabilityRecord] = {}
         self._lock = threading.RLock()
         self._ledger: list[dict] = []
-        # Process-local issuer secret. Never persisted, never exposed. Rotating
-        # it invalidates outstanding capabilities, which is correct.
-        self._issuer_secret = secrets.token_bytes(32)
-
-    # -- issuer boundary ---------------------------------------------------
-    def _mint_issuer(self, identity: str) -> Issuer:
-        """Create an issuer credential. Called ONLY by PolicyEngine.__init__.
-
-        This is a private method by name, but the enforcement does not rest on
-        that: the credential it returns carries the store's secret, and
-        `issue()` compares against that secret. A caller that constructs
-        `Issuer("policy-engine", b"guess")` fails the comparison.
-        """
-        return Issuer(identity=identity, secret=self._issuer_secret)
-
-    def _authorized_issuer(self, issuer: Issuer | None) -> bool:
-        return (
-            isinstance(issuer, Issuer)
-            and bool(issuer.secret)
-            and secrets.compare_digest(issuer.secret, self._issuer_secret)
-        )
 
     # -- issuance (authorized issuers only) --------------------------------
-    def _proof(self, binding: str) -> str:
-        return hashlib.blake2b(
-            binding.encode(), key=self._issuer_secret, digest_size=32
-        ).hexdigest()
-
-    def _authentic(self, record: CapabilityRecord) -> bool:
-        return secrets.compare_digest(record.issuer_proof, self._proof(record.binding()))
-
     def issue(
         self,
-        issuer: Issuer,
+        issuer: IssuanceAuthority,
         *,
         decision_record_id: str,
         target_type: TargetType,
         target_id: str,
         action: Action,
         observed_state_version: int,
+        parameters: dict | None = None,
         ttl_seconds: int = CAPABILITY_TTL_SECONDS,
     ) -> CapabilityRecord:
-        """Write a capability row. Requires an authorized issuer credential.
+        """Write a capability row. Requires a real `IssuanceAuthority`.
 
-        `issuer` is positional and mandatory, so a caller cannot omit it: an
-        `issue(...)` call without it raises TypeError before any row exists.
+        The store does not decide whether the issuer is legitimate by looking
+        at a name it was handed; it asks the issuer to SIGN, then verifies that
+        signature with the public verifier. Only the Policy Engine's authority
+        can produce a signature that verifies, so an impostor's row is refused
+        before it is ever stored.
         """
-        if not self._authorized_issuer(issuer):
+        if not isinstance(issuer, IssuanceAuthority):
             identity = getattr(issuer, "identity", type(issuer).__name__)
             raise IssuerViolation(
                 f"{identity!r} is not authorized to issue capabilities; "
@@ -220,14 +218,28 @@ class CapabilityStore:
             nonce=secrets.token_hex(16),
             issuer_proof="",
             issuer_identity=issuer.identity,
+            parameters=freeze_parameters(parameters),
         )
-        record = replace(skeleton, issuer_proof=self._proof(skeleton.binding()))
+        record = replace(skeleton, issuer_proof=issuer.sign(skeleton.binding()))
+
+        # Verify before storing. A forged authority object whose `sign` returns
+        # junk gets its row rejected here rather than at consume time, so an
+        # unauthorized path produces ZERO capability rows (F1 pass condition).
+        if not verify_proof(record.binding(), record.issuer_proof):
+            raise IssuerViolation(
+                f"{issuer.identity!r} produced an invalid issuer proof; "
+                "refusing to store a capability"
+            )
+
         with self._lock:
             self._rows[capability_id] = record
         return record
 
     def get(self, capability_id: str) -> CapabilityRecord | None:
         return self._rows.get(capability_id)
+
+    def _authentic(self, record: CapabilityRecord) -> bool:
+        return verify_proof(record.binding(), record.issuer_proof)
 
     # -- consumption -------------------------------------------------------
     def consume(
@@ -239,10 +251,12 @@ class CapabilityStore:
     ) -> dict:
         """The ONLY path to a state mutation (P0-2).
 
-        Takes an ID and a parameter dict — never a callable. The mutation is
-        resolved from the closed `MUTATIONS` table using the STORED record's
-        own action, and applied to the STORED record's own target. A caller
-        cannot supply, substitute, or redirect the operation.
+        Takes an ID — never a callable, and never execution parameters that
+        matter. The mutation is resolved from the closed `MUTATIONS` table
+        using the STORED record's own action, applied to the STORED record's
+        own target, with the STORED record's own SIGNED parameters (F7). The
+        `params` argument is accepted only for interface symmetry with callers
+        that pass nothing meaningful; it is discarded.
 
         Every check happens inside the lock, together with the transition and
         the ledger append. There is no window between validating and acting.
@@ -282,14 +296,23 @@ class CapabilityStore:
                     f"no mutation is bound to {stored.action.value}; refusing",
                 )
 
-            # 5. the bound target must exist and be of the bound type
+            # 5. action must be legal for the bound target TYPE (F6). A lot
+            #    action against an order target is refused independently of
+            #    whatever the mutation function would have done.
+            if stored.action not in ACTION_TARGET_TYPES.get(stored.target_type, frozenset()):
+                raise VouchFailure(
+                    FailureCategory.POLICY_REFUSAL,
+                    f"{stored.action.value} is not a {stored.target_type.value} action",
+                )
+
+            # 6. the bound target must exist and be of the bound type
             if corpus.get(stored.target_type.value, stored.target_id) is None:
                 raise VouchFailure(
                     FailureCategory.STATE_CONFLICT,
                     f"{stored.target_type.value} {stored.target_id} does not exist",
                 )
 
-            # 6. state-version binding — kills TOCTOU
+            # 7. state-version binding — kills TOCTOU
             current_version = corpus.version_of(stored.target_type.value, stored.target_id)
             if current_version != stored.observed_state_version:
                 raise VouchFailure(
@@ -298,10 +321,17 @@ class CapabilityStore:
                     f"{stored.observed_state_version} to {current_version}; re-evaluate",
                 )
 
-            # 7. transition + consume + ledger, atomically
+            # 8. legal source-state transition, checked HERE and not only at
+            #    authorization time (F6): state may have moved, and the gate
+            #    that mutates is the gate that must be sure.
+            before_state = _state_of(corpus, stored.target_type, stored.target_id)
+            _assert_legal_transition(corpus, stored)
+
+            # 9. transition + consume + ledger, atomically
             before = current_version
-            outcome = apply_change(corpus, stored, dict(params or {}))
+            outcome = apply_change(corpus, stored)
             after = corpus.version_of(stored.target_type.value, stored.target_id)
+            after_state = _state_of(corpus, stored.target_type, stored.target_id)
 
             self._rows[stored.capability_id] = replace(
                 stored, used=True, consumed_at=utcnow()
@@ -315,10 +345,18 @@ class CapabilityStore:
                 "action": stored.action.value,
                 "target_type": stored.target_type.value,
                 "target_id": stored.target_id,
+                "parameters": stored.params,
                 "before_version": before,
                 "after_version": after,
+                # F6: the ledger records the ACTUAL before/after domain state,
+                # not only opaque version numbers.
+                "before_state": before_state,
+                "after_state": after_state,
                 "result": outcome.get("result", ""),
                 "inventory_delta": outcome.get("inventory_delta", 0.0),
+                "inventory_before": outcome.get("inventory_before"),
+                "inventory_after": outcome.get("inventory_after"),
+                "side_effects": outcome.get("side_effects", {}),
                 "at": utcnow(),
             }
             self._ledger.append(entry)
@@ -327,6 +365,25 @@ class CapabilityStore:
     @property
     def ledger(self) -> list[dict]:
         return list(self._ledger)
+
+
+def _state_of(corpus: Corpus, target_type: TargetType, target_id: str) -> dict:
+    """A snapshot of the authoritative fields an action can change (F6)."""
+    obj = corpus.get(target_type.value, target_id)
+    if obj is None:
+        return {}
+    snapshot = {
+        "status": getattr(obj, "status", ""),
+        "state_version": getattr(obj, "state_version", 0),
+    }
+    if target_type is TargetType.PRODUCTION_ORDER:
+        snapshot["planned_slot"] = getattr(obj, "planned_slot", "")
+    else:
+        inventory = corpus.get("inventory", target_id)
+        if inventory is not None:
+            snapshot["inventory_usable"] = inventory.usable
+            snapshot["inventory_quantity"] = inventory.quantity
+    return snapshot
 
 
 # ==========================================================================
@@ -375,13 +432,14 @@ class PolicyEngine:
 
     IDENTITY = "vouch.policy-engine"
 
-    def __init__(self, corpus: Corpus, capabilities: CapabilityStore) -> None:
+    def __init__(self, corpus: Corpus, capabilities) -> None:
         self._corpus = corpus
         self._capabilities = capabilities
-        # The single issuer credential in the system. Nothing else obtains one:
-        # `_mint_issuer` is reached only from here, and the credential carries
-        # the store's secret rather than a name anyone could assert.
-        self._issuer = capabilities._mint_issuer(self.IDENTITY)
+        # The single issuance authority in the system (audit-2 F1). It comes
+        # from the `issuance` module, NOT from the store: the store cannot mint
+        # one, so holding the store grants nothing. The claim is by class
+        # identity and is one-shot per process.
+        self._issuer = _claim_issuance_authority(PolicyEngine, self.IDENTITY)
 
     def evaluate_lot_disposition(
         self,
@@ -459,6 +517,7 @@ class PolicyEngine:
             target_id=lot_id,
             action=action,
             observed_state_version=observed_state_version,
+            parameters={},
         )
         events.emit(
             EventType.POLICY_EVALUATED, decision_record_id,
@@ -479,8 +538,16 @@ class PolicyEngine:
         action: Action,
         observed_state_version: int,
         events: EventLog,
+        parameters: dict | None = None,
     ) -> PolicyDecision:
-        """Order-side authority (hold / resequence). Same deny-by-default shape."""
+        """Order-side authority (hold / resequence / readiness).
+
+        Same deny-by-default shape. Action-specific parameters are validated
+        HERE and then SIGNED into the capability (audit-2 F7), so the caller
+        that spends the capability cannot choose a different slot or a
+        different readiness state than the one policy approved.
+        """
+        parameters = dict(parameters or {})
         order = self._corpus.order(order_id)
 
         def refuse(reason: str) -> PolicyDecision:
@@ -500,17 +567,44 @@ class PolicyEngine:
                 f"to {current_version}"
             )
 
+        if action not in ACTION_TARGET_TYPES[TargetType.PRODUCTION_ORDER]:
+            return refuse(f"{action.value} is not an order action")
+
         if action is Action.HOLD_PRODUCTION_ORDER:
             if "BLOCKED" not in ORDER_TRANSITIONS.get(order.status, set()):
                 return refuse(f"transition {order.status} -> BLOCKED is not permitted")
         elif action is Action.SET_ORDER_READINESS:
-            # Legality of the specific target state is re-checked at consume
-            # time against the value bound in params; here we only confirm the
-            # order is in a state that can transition at all.
-            if not ORDER_TRANSITIONS.get(order.status, set()):
-                return refuse(f"order in {order.status} cannot transition")
-        elif action is not Action.RESEQUENCE_PRODUCTION_ORDER:
-            return refuse(f"{action.value} is not an order action")
+            # F7: the readiness state is decided HERE and signed in, not chosen
+            # by whoever consumes the capability.
+            readiness = str(parameters.get("readiness", ""))
+            if readiness not in ORDER_TRANSITIONS:
+                return refuse(f"{readiness!r} is not a readiness state")
+            if readiness not in ORDER_TRANSITIONS.get(order.status, set()):
+                return refuse(
+                    f"transition {order.status} -> {readiness} is not permitted"
+                )
+        elif action is Action.RESEQUENCE_PRODUCTION_ORDER:
+            # F7: both the slot the order moves TO and the slot it moves FROM
+            # are part of the authorization and are signed into the capability.
+            target_slot = str(parameters.get("target_slot", ""))
+            if not target_slot:
+                return refuse("resequence requires a target_slot to authorize")
+            if target_slot == order.planned_slot:
+                return refuse(f"order {order_id} is already in slot {target_slot}")
+            occupied = [
+                o
+                for o in self._corpus.all("production_order")
+                if o.order_id != order_id
+                and o.resource == order.resource
+                and o.planned_slot == target_slot
+                and o.status != "BLOCKED"
+            ]
+            if occupied:
+                return refuse(
+                    f"slot {target_slot} on {order.resource} is occupied by "
+                    f"{occupied[0].order_id}"
+                )
+            parameters["from_slot"] = order.planned_slot
 
         capability = self._capabilities.issue(
             self._issuer,
@@ -519,6 +613,7 @@ class PolicyEngine:
             target_id=order_id,
             action=action,
             observed_state_version=observed_state_version,
+            parameters=parameters,
         )
         events.emit(
             EventType.POLICY_EVALUATED, decision_record_id,
@@ -537,29 +632,47 @@ class PolicyEngine:
 # ==========================================================================
 
 
-def _set_inventory_usable(corpus: Corpus, lot_id: str, usable: bool) -> float:
+def _set_inventory_usable(corpus: Corpus, lot_id: str, usable: bool) -> tuple[float, dict, dict]:
+    """Flip usability of a lot's inventory. Returns (delta, before, after).
+
+    F6: the caller records the actual before/after inventory facts in the
+    ledger, so a mutation is auditable against real quantities rather than an
+    unexplained delta.
+    """
     record = corpus.get("inventory", lot_id)
     if record is None:
-        return 0.0
+        return 0.0, {}, {}
+    before = {"usable": record.usable, "quantity": record.quantity}
     if record.usable == usable:
-        return 0.0
+        return 0.0, before, dict(before)
     corpus.put("inventory", lot_id, replace(record, usable=usable))
-    return record.quantity if usable else -record.quantity
+    after = {"usable": usable, "quantity": record.quantity}
+    return (record.quantity if usable else -record.quantity), before, after
 
 
-def apply_release(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+def apply_release(corpus: Corpus, capability: CapabilityRecord) -> dict:
     corpus.bump("lot", capability.target_id, status="RELEASED")
-    delta = _set_inventory_usable(corpus, capability.target_id, True)
-    return {"result": f"lot {capability.target_id} RELEASED", "inventory_delta": delta}
+    delta, before, after = _set_inventory_usable(corpus, capability.target_id, True)
+    return {
+        "result": f"lot {capability.target_id} RELEASED",
+        "inventory_delta": delta,
+        "inventory_before": before,
+        "inventory_after": after,
+    }
 
 
-def apply_quarantine(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+def apply_quarantine(corpus: Corpus, capability: CapabilityRecord) -> dict:
     corpus.bump("lot", capability.target_id, status="QUARANTINED")
-    delta = _set_inventory_usable(corpus, capability.target_id, False)
-    return {"result": f"lot {capability.target_id} QUARANTINED", "inventory_delta": delta}
+    delta, before, after = _set_inventory_usable(corpus, capability.target_id, False)
+    return {
+        "result": f"lot {capability.target_id} QUARANTINED",
+        "inventory_delta": delta,
+        "inventory_before": before,
+        "inventory_after": after,
+    }
 
 
-def apply_qa_review(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+def apply_qa_review(corpus: Corpus, capability: CapabilityRecord) -> dict:
     """Escalation, not a defect finding. A lot pending QA is not defective."""
     lot = corpus.lot(capability.target_id)
     if lot is not None and lot.status == "RECEIVED":
@@ -575,31 +688,51 @@ def apply_qa_review(corpus: Corpus, capability: CapabilityRecord, params: dict) 
             "created_at": utcnow(),
         },
     )
-    return {"result": f"QA review {review_id} created", "inventory_delta": 0.0}
+    return {
+        "result": f"QA review {review_id} created",
+        "inventory_delta": 0.0,
+        "side_effects": {"qa_review_id": review_id},
+    }
 
 
-def apply_hold(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+def apply_hold(corpus: Corpus, capability: CapabilityRecord) -> dict:
     corpus.bump("production_order", capability.target_id, status="BLOCKED")
     return {"result": f"order {capability.target_id} BLOCKED", "inventory_delta": 0.0}
 
 
-def apply_resequence(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
-    """Resequence the bound order into its bound target slot (P1-7).
+def apply_resequence(corpus: Corpus, capability: CapabilityRecord) -> dict:
+    """Resequence the bound order into its SIGNED target slot (audit-2 F7).
+
+    The slot comes from the capability's authenticated binding, never from an
+    execution parameter, so a caller who obtained a legitimate capability for
+    slot B cannot spend it on slot C.
 
     The slot is re-verified HERE, at execution, not merely when the recovery
-    option was enumerated: another order may have taken the slot in between.
-    A conflict is a STATE_CONFLICT, not a silent overwrite.
+    option was enumerated: another order may have taken it in between. A
+    conflict is a STATE_CONFLICT, not a silent overwrite.
     """
-    target_slot = str(params.get("target_slot", ""))
+    bound = capability.params
+    target_slot = bound.get("target_slot", "")
     if not target_slot:
         raise VouchFailure(
-            FailureCategory.POLICY_REFUSAL, "resequence requires a target_slot"
+            FailureCategory.POLICY_REFUSAL,
+            "resequence capability carries no bound target_slot",
         )
 
     order = corpus.order(capability.target_id)
     if order is None:
         raise VouchFailure(
             FailureCategory.STATE_CONFLICT, f"order {capability.target_id} does not exist"
+        )
+
+    # F7: the slot the order is moving FROM is also bound. If it changed since
+    # authorization, this is not the move that was authorized.
+    from_slot = bound.get("from_slot", "")
+    if from_slot and order.planned_slot != from_slot:
+        raise VouchFailure(
+            FailureCategory.STATE_CONFLICT,
+            f"order {capability.target_id} is in slot {order.planned_slot}, "
+            f"not the authorized {from_slot}; re-evaluate",
         )
 
     conflict = [
@@ -617,26 +750,27 @@ def apply_resequence(corpus: Corpus, capability: CapabilityRecord, params: dict)
             f"{conflict[0].order_id}; refusing to resequence",
         )
 
-    from_slot = order.planned_slot
     corpus.bump("production_order", capability.target_id, planned_slot=target_slot)
     return {
         "result": (
-            f"order {capability.target_id} resequenced from {from_slot} to {target_slot}"
+            f"order {capability.target_id} resequenced from {order.planned_slot} "
+            f"to {target_slot}"
         ),
         "inventory_delta": 0.0,
-        "from_slot": from_slot,
+        "from_slot": order.planned_slot,
         "target_slot": target_slot,
     }
 
 
-def apply_set_readiness(corpus: Corpus, capability: CapabilityRecord, params: dict) -> dict:
+def apply_set_readiness(corpus: Corpus, capability: CapabilityRecord) -> dict:
     """Persist a deterministically-computed readiness state (P1-6).
 
     Readiness is not a view. A recomputation that changes it performs a real,
     authorized, version-checked transition through this path like any other
-    mutation, so the order's status and state_version actually move.
+    mutation. The target state is SIGNED into the capability (F7).
     """
-    to_status = str(params.get("readiness", ""))
+    bound = capability.params
+    to_status = bound.get("readiness", "")
     if to_status not in ORDER_TRANSITIONS:
         raise VouchFailure(
             FailureCategory.POLICY_REFUSAL, f"{to_status!r} is not a readiness state"
@@ -646,11 +780,6 @@ def apply_set_readiness(corpus: Corpus, capability: CapabilityRecord, params: di
         raise VouchFailure(
             FailureCategory.STATE_CONFLICT, f"order {capability.target_id} does not exist"
         )
-    if to_status not in ORDER_TRANSITIONS.get(order.status, set()):
-        raise VouchFailure(
-            FailureCategory.POLICY_REFUSAL,
-            f"transition {order.status} -> {to_status} is not permitted",
-        )
     from_status = order.status
     corpus.bump("production_order", capability.target_id, status=to_status)
     return {
@@ -658,7 +787,7 @@ def apply_set_readiness(corpus: Corpus, capability: CapabilityRecord, params: di
         "inventory_delta": 0.0,
         "from_status": from_status,
         "to_status": to_status,
-        "caused_by": params.get("caused_by", {}),
+        "caused_by": bound.get("caused_by", ""),
     }
 
 
@@ -675,20 +804,82 @@ MUTATIONS = {
 }
 
 
+#: Which actions may target which entity type (audit-2 F6). Enforced in
+#: `consume` independently of the mutation function, so a capability whose
+#: action and target type disagree is refused before anything runs.
+ACTION_TARGET_TYPES: dict[TargetType, frozenset[Action]] = {
+    TargetType.LOT: frozenset(
+        {Action.RELEASE_LOT, Action.QUARANTINE_LOT, Action.CREATE_QA_REVIEW}
+    ),
+    TargetType.PRODUCTION_ORDER: frozenset(
+        {
+            Action.HOLD_PRODUCTION_ORDER,
+            Action.RESEQUENCE_PRODUCTION_ORDER,
+            Action.SET_ORDER_READINESS,
+        }
+    ),
+}
+
+
+def target_status_for(capability: CapabilityRecord) -> str:
+    """The status this capability's action moves its target to, if any.
+
+    Returns "" for actions that do not change status (resequence moves a slot).
+    """
+    if capability.target_type is TargetType.LOT:
+        return _ACTION_TARGET_STATUS.get(capability.action, "")
+    if capability.action is Action.HOLD_PRODUCTION_ORDER:
+        return "BLOCKED"
+    if capability.action is Action.SET_ORDER_READINESS:
+        return capability.params.get("readiness", "")
+    return ""
+
+
+def _assert_legal_transition(corpus: Corpus, capability: CapabilityRecord) -> None:
+    """Refuse a capability whose transition is illegal from CURRENT state (F6).
+
+    Authorization already checked this, but authorization happened earlier.
+    Checking again inside the consume lock is what makes the guarantee hold
+    when state moved in between — and it is cheap.
+
+    CREATE_QA_REVIEW is the one action that legitimately applies to a lot in a
+    state it does not move (a PENDING_QA lot stays PENDING_QA); it is exempt
+    from the transition table but not from the type check above.
+    """
+    to_status = target_status_for(capability)
+    if not to_status:
+        return
+    obj = corpus.get(capability.target_type.value, capability.target_id)
+    current = getattr(obj, "status", "")
+    if capability.action is Action.CREATE_QA_REVIEW and current == to_status:
+        return
+    table = (
+        LOT_TRANSITIONS
+        if capability.target_type is TargetType.LOT
+        else ORDER_TRANSITIONS
+    )
+    if to_status not in table.get(current, set()):
+        raise VouchFailure(
+            FailureCategory.POLICY_REFUSAL,
+            f"transition {current} -> {to_status} is not permitted for "
+            f"{capability.target_id}",
+        )
+
+
 def execute(
     capability: CapabilityRecord,
     corpus: Corpus,
-    capabilities: CapabilityStore,
+    capabilities,
     events: EventLog,
-    *,
-    params: dict | None = None,
 ) -> dict:
     """Consume the capability and perform its bound mutation atomically.
 
-    Only the capability ID crosses into the store; the mutation is chosen there
-    from the stored record's own action.
+    Only the capability ID crosses into the store. The mutation is chosen there
+    from the stored record's own action and driven by the stored record's own
+    SIGNED parameters — there is no execution-parameter channel at all
+    (audit-2 F7).
     """
-    entry = capabilities.consume(capability.capability_id, corpus, params=params)
+    entry = capabilities.consume(capability.capability_id, corpus)
     events.emit(
         EventType.MUTATION_COMPLETED, capability.decision_record_id,
         before_version=entry["before_version"], after_version=entry["after_version"],
@@ -698,12 +889,16 @@ def execute(
 
 
 __all__ = [
+    "ACTION_TARGET_TYPES",
     "Action",
     "CAPABILITY_TTL_SECONDS",
     "CapabilityRecord",
     "CapabilityStore",
-    "Issuer",
+    "IssuanceAuthority",
+    "IssuanceViolation",
     "IssuerViolation",
+    "freeze_parameters",
+    "target_status_for",
     "LOT_TRANSITIONS",
     "MUTATIONS",
     "ORDER_TRANSITIONS",

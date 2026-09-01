@@ -43,6 +43,12 @@ class EvidenceSegment:
     object_versions: list[str] = field(default_factory=list)
     #: P0-4: what each artifact claimed about itself.
     claimed_identities: list[dict] = field(default_factory=list)
+    #: audit-2 F8: the canonical claims themselves, so a resumed case
+    #: reconstructs the evidence it already had after a process restart.
+    canonical_claims: list[dict] = field(default_factory=list)
+    #: audit-2 F3: per-artifact binding status. An artifact that stated no
+    #: identity is UNBOUND — neither a mismatch nor a successful binding.
+    binding_statuses: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -64,6 +70,10 @@ class SecuritySegment:
     #: P0-4: contradictions between document identity and requested target.
     binding_mismatches: list[str] = field(default_factory=list)
     rejected_artifact_ids: list[str] = field(default_factory=list)
+    #: audit-2 F3/F4: artifacts that could not be affirmatively bound (stated
+    #: no identity) or that contradicted themselves (conflicting identities).
+    unbound_artifact_ids: list[str] = field(default_factory=list)
+    identity_conflicts: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -177,6 +187,9 @@ class StorageSegment:
     record_store: str = ""
     record_ref: str = ""
     event_count: int = 0
+    #: audit-2 F8: the highest durable event sequence, so a resumed run can be
+    #: shown to have EXTENDED history rather than restarted it.
+    last_event_sequence: int = 0
 
 
 @dataclass
@@ -250,47 +263,292 @@ class DecisionRecord:
         payload.pop("events", None)
         return content_hash(payload)
 
+    # ------------------------------------------------------------------
+    # completeness (audit-2 F9)
+    # ------------------------------------------------------------------
+    @property
+    def decision_type(self) -> str:
+        """What kind of decision this record represents.
+
+        Completeness is not one rule (audit-2 F9). An autonomous RELEASE must
+        carry an authority chain and a mutation; an abstention must carry an
+        escalation and must NOT claim a mutation; a technical failure cannot be
+        required to carry a brief the model never produced. Asking one flat
+        question of all three is how the old check stayed true after critical
+        components were removed.
+        """
+        if self.mutation.action == "create_qa_review":
+            # An abstention that DID mutate: the QA review is a real,
+            # gate-authorized state change, but the lot's disposition was not
+            # decided. It requires the full authority chain AND the escalation.
+            return "AUTHORIZED_ESCALATION"
+        if self.mutation.action:
+            return "AUTONOMOUS_MUTATION"
+        if self.failure_category:
+            return "ESCALATED"
+        return "INCOMPLETE"
+
+    def _missing(self) -> list[str]:
+        """Every required component this record does not have.
+
+        Returned as a list rather than a bool so a failing assertion says WHICH
+        link is missing. Each entry is checked against what that decision type
+        actually requires, and aligned arrays are checked for alignment rather
+        than merely for being non-empty — a record with three evidence hashes
+        and one storage ref cannot re-fetch two of its own artifacts.
+        """
+        missing: list[str] = []
+
+        def need(condition: bool, name: str) -> None:
+            if not condition:
+                missing.append(name)
+
+        # -- identity, always -------------------------------------------
+        need(bool(self.record_id), "record_id")
+        need(bool(self.identity.record_id), "identity.record_id")
+        need(bool(self.identity.lot_id), "identity.lot_id")
+        need(bool(self.policy.policy_version), "policy.policy_version")
+        need(bool(self.storage.record_ref), "storage.record_ref")
+
+        kind = self.decision_type
+        if kind == "INCOMPLETE":
+            missing.append("neither a mutation nor a failure category")
+            return missing
+
+        # -- evidence provenance ----------------------------------------
+        # A record with no artifacts at all is legitimate (an abstention for
+        # missing paperwork), but a record whose decision RESTED on claims must
+        # be able to re-fetch every artifact those claims came from.
+        hashes = self.evidence.source_artifact_hashes
+        if self.extraction.per_claim or self.evidence.canonical_claims:
+            need(bool(hashes), "evidence.source_artifact_hashes")
+            need(bool(self.evidence.storage_refs), "evidence.storage_refs")
+            need(bool(self.evidence.object_versions), "evidence.object_versions")
+            need(
+                bool(self.evidence.document_identities),
+                "evidence.document_identities",
+            )
+        if hashes:
+            aligned = (
+                len(self.evidence.storage_refs),
+                len(self.evidence.object_versions),
+                len(self.evidence.document_identities),
+                len(self.evidence.receipt_timestamps),
+                len(self.evidence.claimed_identities),
+            )
+            need(
+                all(count == len(hashes) for count in aligned),
+                "evidence arrays are not aligned with source_artifact_hashes",
+            )
+            need(all(bool(h) for h in hashes), "evidence.source_artifact_hashes values")
+            need(all(bool(r) for r in self.evidence.storage_refs), "evidence.storage_refs values")
+            need(
+                all(bool(v) for v in self.evidence.object_versions),
+                "evidence.object_versions values",
+            )
+            need(
+                all(bool(d) for d in self.evidence.document_identities),
+                "evidence.document_identities values",
+            )
+            need(
+                len(self.evidence.binding_statuses) == len(hashes),
+                "evidence.binding_statuses",
+            )
+
+        # -- per-claim extraction provenance ----------------------------
+        for claim_id, meta in self.extraction.per_claim.items():
+            for field_name in ("method", "version", "locator", "source_hash"):
+                need(bool(meta.get(field_name)), f"extraction.per_claim[{claim_id}].{field_name}")
+
+        # -- snapshot ----------------------------------------------------
+        need(bool(self.snapshot.claim_set_hash), "snapshot.claim_set_hash")
+
+        # -- agent segments ----------------------------------------------
+        # A model that never ran cannot be required to have produced a brief —
+        # but it MUST have recorded why, and the model identity is required
+        # either way so an auditor knows which model was asked.
+        for label, segment in (("investigator", self.investigator), ("verifier", self.verifier)):
+            if segment.failure_category:
+                need(bool(segment.failure), f"{label}.failure detail")
+                continue
+            if kind == "ESCALATED" and not segment.model_id:
+                # The pipeline exited before this agent ran at all (e.g. an
+                # evidence-binding refusal). Nothing to require.
+                continue
+            need(bool(segment.model_id), f"{label}.model_id")
+            need(bool(segment.prompt_version), f"{label}.prompt_version")
+            need(bool(segment.prompt_hash), f"{label}.prompt_hash")
+            need(segment.temperature is not None, f"{label}.temperature")
+            need(bool(segment.brief), f"{label}.brief")
+            need(bool(segment.brief_hash), f"{label}.brief_hash")
+            need(
+                segment.input_claim_set_hash == self.snapshot.claim_set_hash,
+                f"{label}.input_claim_set_hash does not match the snapshot",
+            )
+            for index, event in enumerate(segment.tool_events):
+                need(bool(event.get("tool")), f"{label}.tool_events[{index}].tool")
+                need(
+                    "arguments" in event or bool(event.get("arguments_ref")),
+                    f"{label}.tool_events[{index}].arguments",
+                )
+                need(
+                    "result" in event or bool(event.get("result_ref")),
+                    f"{label}.tool_events[{index}].result",
+                )
+
+        # -- reconciliation ----------------------------------------------
+        if self.investigator.brief and self.verifier.brief:
+            need(bool(self.reconciliation.outcome), "reconciliation.outcome")
+            if self.reconciliation.differing_fields:
+                # F9: a disagreement must record what each side actually said.
+                need(
+                    bool(self.reconciliation.investigator_values),
+                    "reconciliation.investigator_values",
+                )
+                need(
+                    bool(self.reconciliation.verifier_values),
+                    "reconciliation.verifier_values",
+                )
+                need(
+                    set(self.reconciliation.differing_fields)
+                    <= set(self.reconciliation.investigator_values)
+                    and set(self.reconciliation.differing_fields)
+                    <= set(self.reconciliation.verifier_values),
+                    "reconciliation values do not cover every differing field",
+                )
+
+        # -- corpus and basis --------------------------------------------
+        if kind == "AUTONOMOUS_MUTATION" or self.basis.spec_id:
+            need(bool(self.corpus.objects), "corpus.objects")
+            need(bool(self.corpus.corpus_hash), "corpus.corpus_hash")
+            need(
+                self.corpus.corpus_hash == content_hash(self.corpus.objects),
+                "corpus.corpus_hash does not match corpus.objects",
+            )
+            for object_id, meta in self.corpus.objects.items():
+                need(bool(meta.get("kind")), f"corpus.objects[{object_id}].kind")
+                if meta.get("kind") == "spec_revision":
+                    need(
+                        bool(meta.get("revision")),
+                        f"corpus.objects[{object_id}].revision",
+                    )
+
+        # -- policy -------------------------------------------------------
+        need(bool(self.policy.gate_decision), "policy.gate_decision")
+
+        if kind in ("ESCALATED", "AUTHORIZED_ESCALATION"):
+            # An escalation must actually escalate: a human has to be able to
+            # find the open question.
+            need(bool(self.human.review_id), "human.review_id")
+            need(bool(self.human.review_status), "human.review_status")
+
+        if kind == "ESCALATED":
+            # No mutation happened, so the record must not claim one.
+            need(bool(self.failure_category), "failure_category")
+            need(not self.mutation.action, "escalated record claims a mutation")
+            need(
+                not self.capability.consumed,
+                "escalated record claims a consumed capability",
+            )
+            return missing
+
+        if kind == "AUTHORIZED_ESCALATION":
+            # The QA review IS a gate-authorized mutation, so the authority
+            # chain is required exactly as it is for a release — but the
+            # DISPOSITION is an abstention, so no basis pass is claimed.
+            need(bool(self.disposition.disposition), "disposition.disposition")
+            need(bool(self.disposition.reason), "disposition.reason")
+            need(self.policy.gate_decision == "ALLOWED", "policy gate did not allow")
+            need(bool(self.capability.capability_id), "capability.capability_id")
+            need(self.capability.issued, "capability.issued")
+            need(self.capability.consumed, "capability.consumed")
+            need(bool(self.mutation.target_type), "mutation.target_type")
+            need(bool(self.mutation.target_id), "mutation.target_id")
+            need(bool(self.mutation.result), "mutation.result")
+            need(self.mutation.ledger_sequence != 0, "mutation.ledger_sequence")
+            need(
+                self.mutation.inventory_delta == 0.0,
+                "an escalation must not move usable inventory",
+            )
+            return missing
+
+        # -- AUTONOMOUS_MUTATION: the full authority chain ----------------
+        need(bool(self.disposition.disposition), "disposition.disposition")
+        need(bool(self.disposition.reason), "disposition.reason")
+        need(self.basis.checks_passed, "basis.checks_passed")
+        need(bool(self.basis.spec_id), "basis.spec_id")
+        need(bool(self.basis.revision), "basis.revision")
+        need(self.policy.gate_decision == "ALLOWED", "policy gate did not allow")
+        need(bool(self.capability.capability_id), "capability.capability_id")
+        need(self.capability.issued, "capability.issued")
+        need(self.capability.consumed, "capability.consumed")
+        need(bool(self.mutation.target_type), "mutation.target_type")
+        need(bool(self.mutation.target_id), "mutation.target_id")
+        need(
+            self.mutation.target_id == self.identity.lot_id
+            or self.mutation.target_type == "production_order",
+            "mutation target does not match the record's subject",
+        )
+        need(bool(self.mutation.result), "mutation.result")
+        need(self.mutation.ledger_sequence != 0, "mutation.ledger_sequence")
+        need(
+            self.mutation.after_version > self.mutation.before_version,
+            "mutation before/after state versions",
+        )
+        need(
+            self.mutation.before_version == self.snapshot.lot_state_version
+            or self.mutation.target_type == "production_order",
+            "mutation.before_version does not match the observed snapshot version",
+        )
+        # Inventory: a release or quarantine of a lot moves usable inventory.
+        if self.mutation.action in ("release_lot", "quarantine_lot"):
+            need(
+                self.mutation.inventory_delta != 0.0,
+                "mutation.inventory_delta for a release/quarantine",
+            )
+        # Consequences: a mutation that changed usable inventory must record
+        # what it did to coverage and readiness, and any recovery it triggered.
+        if self.mutation.inventory_delta:
+            need(bool(self.consequences.caused_by), "consequences.caused_by")
+        for change in self.consequences.readiness_changes:
+            if change.get("to") == "BLOCKED":
+                need(
+                    bool(self.consequences.recovery),
+                    "consequences.recovery for a blocked order",
+                )
+
+        return missing
+
+    def missing_components(self) -> list[str]:
+        """Public: exactly which required components are absent."""
+        return self._missing()
+
     def is_reconstructable(self) -> bool:
         """The D13 completeness claim, checked rather than asserted.
 
-        Every link in the chain must be present for an auditor to re-derive the
-        decision. Absence of any one of these means the record cannot support
-        the audit story, so we would rather fail a test than ship the claim.
+        audit-2 F9: decision-type-aware. The old version was a flat list of
+        nine truthiness checks and stayed True after storage refs, object
+        versions, prompt hashes, tool arguments, capability bindings and
+        mutation facts were removed one at a time. Every one of those is now
+        required where the decision type requires it.
         """
-        required = [
-            self.identity.record_id,
-            self.identity.lot_id,
-            self.snapshot.claim_set_hash,
-            self.investigator.model_id,
-            self.investigator.prompt_version,
-            self.verifier.model_id,
-            self.reconciliation.outcome,
-            self.disposition.disposition or self.failure_category,
-            self.policy.policy_version,
-        ]
-        return all(bool(x) for x in required)
+        return not self._missing()
 
     def is_re_derivable(self) -> bool:
         """P1-1: could an auditor rebuild this decision from what is stored?
 
-        Stronger than `is_reconstructable`: that checks the chain is present,
-        this checks the INPUTS are recorded — the exact evidence bytes
-        (storage ref + hash), the corpus objects and versions consulted, the
-        prompt versions, and both complete briefs. Same inputs + same versions
-        reproduce the brief; that is what re-derivability means (contract D13).
+        Re-derivability is reconstructability plus verifiable hashes: the same
+        evidence bytes and corpus versions must reproduce the same claim set
+        and corpus hash, so a record whose stored hash does not match its own
+        stored contents is not re-derivable no matter how complete it looks.
         """
-        return all(
-            [
-                bool(self.evidence.source_artifact_hashes),
-                bool(self.evidence.storage_refs),
-                bool(self.snapshot.claim_set_hash),
-                bool(self.corpus.objects),
-                bool(self.investigator.prompt_hash),
-                bool(self.investigator.brief or self.investigator.failure_category),
-                bool(self.verifier.brief or self.verifier.failure_category),
-                bool(self.storage.record_ref),
-            ]
-        )
+        if self._missing():
+            return False
+        if self.corpus.objects and self.corpus.corpus_hash != content_hash(
+            self.corpus.objects
+        ):
+            return False
+        return True
 
 
 __all__ = [

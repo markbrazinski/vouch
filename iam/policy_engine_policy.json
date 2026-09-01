@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "IssueCapabilities",
+      "Effect": "Allow",
+      "Action": ["dynamodb:PutItem"],
+      "Resource": "${TABLE_ARN}",
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "dynamodb:LeadingKeys": ["CAP#*"]
+        }
+      }
+    },
+    {
+      "Sid": "ConsumeCapabilitiesTransactionally",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:TransactWriteItems",
+        "dynamodb:UpdateItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "${TABLE_ARN}"
+    },
+    {
+      "Sid": "ReadIssuanceKey",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue", "kms:Decrypt"],
+      "Resource": "${ISSUANCE_KEY_ARN}"
+    }
+  ]
+}

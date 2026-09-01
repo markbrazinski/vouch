@@ -37,14 +37,20 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .authority import (
+    ACTION_TARGET_TYPES,
     CAPABILITY_TTL_SECONDS,
+    LOT_TRANSITIONS,
     MUTATIONS,
+    ORDER_TRANSITIONS,
     Action,
     CapabilityRecord,
-    Issuer,
     IssuerViolation,
     TargetType,
+    freeze_parameters,
 )
+from .issuance import IssuanceAuthority
+from .issuance import verify as verify_proof
+from .state import corpus_item, corpus_pk
 from .contracts import FailureCategory, GuardrailOutcome, ScanStatus, VouchFailure
 from .corpus import Corpus
 from .lifecycle import utcnow
@@ -279,14 +285,46 @@ class ClamAVScanner:
 # P0-3 — transactional capability consumption
 # ==========================================================================
 
-#: Which corpus field each action writes, and to what value. The DynamoDB
-#: transaction needs to express the mutation as a conditional update, so the
-#: closed dispatch table (P0-2) is mirrored here as data rather than code.
+#: Which status each lot action writes. The DynamoDB transaction expresses the
+#: mutation as a conditional update, so the closed dispatch table (P0-2) is
+#: mirrored here as data rather than code.
 _LOT_STATUS = {
     Action.RELEASE_LOT: "RELEASED",
     Action.QUARANTINE_LOT: "QUARANTINED",
     Action.CREATE_QA_REVIEW: "PENDING_QA",
 }
+
+#: Which lot statuses each action may legally transition FROM (audit-2 F6).
+#: Derived from the same LOT_TRANSITIONS table the local store enforces, so
+#: the two paths cannot drift.
+_LEGAL_SOURCE_STATES: dict[Action, frozenset[str]] = {
+    action: frozenset(
+        source for source, targets in LOT_TRANSITIONS.items() if status in targets
+    )
+    for action, status in _LOT_STATUS.items()
+}
+#: A lot already PENDING_QA may receive another QA review without transitioning.
+_LEGAL_SOURCE_STATES[Action.CREATE_QA_REVIEW] = frozenset(
+    _LEGAL_SOURCE_STATES[Action.CREATE_QA_REVIEW] | {"PENDING_QA"}
+)
+_LEGAL_SOURCE_STATES[Action.HOLD_PRODUCTION_ORDER] = frozenset(
+    source for source, targets in ORDER_TRANSITIONS.items() if "BLOCKED" in targets
+)
+
+
+def corpus_key(kind: str, key: str) -> dict:
+    """The DynamoDB key of one corpus object. One representation, shared."""
+    return {"pk": {"S": corpus_pk(kind)}, "sk": {"S": key}}
+
+
+def _in_list(values: set[str], prefix: str) -> tuple[str, dict]:
+    """An `IN (...)` fragment plus its expression values, sorted for stability."""
+    ordered = sorted(values)
+    names = [f":{prefix}{i}" for i in range(len(ordered))]
+    return (
+        "(" + ", ".join(names) + ")",
+        {name: {"S": value} for name, value in zip(names, ordered)},
+    )
 
 
 class DynamoCapabilityStore:
@@ -294,22 +332,71 @@ class DynamoCapabilityStore:
 
     Table layout (single-table, pk/sk — matches the provisioned table):
 
-        CAP#<capability_id>   / META          capability row
-        LOT#<lot_id>          / STATE         lot state + state_version
-        ORDER#<order_id>      / STATE         order state + state_version
-        LEDGER#<record_id>    / SEQ#<n>       append-only authority ledger
+        CAP#<capability_id>    / META          capability row (+ issuer proof)
+        CORPUS#lot             / <lot_id>      the lot: document + live status,
+                                               state_version
+        CORPUS#inventory       / <lot_id>      usable flag + quantity
+        CORPUS#production_order/ <order_id>    order: status, planned_slot,
+                                               state_version
+        CORPUS#qa_review       / QA-<record>   QA review created by escalation
+        SLOT#<resource>#<slot> / RESERVATION   exclusive schedule-slot holder
+        LEDGER#<record_id>     / SEQ#<n>       append-only authority ledger
 
-    Consumption is ONE `TransactWriteItems` containing:
+    Note that the mutation targets are the SAME `CORPUS#` items `DynamoCorpus`
+    reads (audit-2 F5): there is one authoritative representation of a lot, not
+    a corpus copy and a separate authority copy that could disagree. The fields
+    the transaction conditions on and sets are top-level attributes, because a
+    `ConditionExpression` cannot reach inside a JSON document.
 
-      1. Update capability   ConditionExpression: exists AND unused AND unexpired
-                                                  AND target/action/record match
-      2. Update target       ConditionExpression: state_version = bound version
-      3. Put ledger entry    ConditionExpression: attribute_not_exists(pk)
+    ## The trust boundary (audit-2 F2)
 
-    All three commit together or none do. There is no window, and no sequence
-    of ordinary writes pretending to be atomic. A `TransactionCanceledException`
-    carries per-item reasons, which are mapped back to the specific refusal so
-    the caller learns WHY (stale state vs already consumed vs expired).
+    The audit's finding was that ANY code under the runtime role could `PutItem`
+    a syntactically correct `CAP#` row and have `consume()` honour it, because
+    consume read the row's own fields and validated nothing an attacker could
+    not also write.
+
+    The correction has two independent halves, and the code is honest about
+    which one is enforced where:
+
+    1. **Cryptographic (enforced by this code, unconditionally).** Every
+       capability row carries `issuer_proof`, an HMAC over the complete binding
+       produced by the `issuance` module's private key. `consume()` recomputes
+       and verifies that proof BEFORE building any transaction. A forged row —
+       correct target, correct action, correct version, `used=false`,
+       `issuer_identity="vouch.policy-engine"` — has no valid proof and is
+       refused. Tampering with any bound field, including the signed action
+       parameters, invalidates the proof. This holds even when the attacker has
+       full `PutItem` on the table, which is precisely the audited condition.
+
+    2. **IAM (enforced by deployment, verified by a static policy test).** The
+       runtime policy denies `dynamodb:PutItem`/`UpdateItem`/`DeleteItem` on
+       `CAP#*` items to the agent/tool execution identity via a
+       `dynamodb:LeadingKeys` condition, so decision-agent code cannot write a
+       capability row at all. See `iam/` for the policy documents and
+       `test_iam_policy.py` for the test that asserts them.
+
+    Half 1 is the load-bearing one: it does not depend on the deployment being
+    correct. Half 2 is defence in depth. The key is process-local to whichever
+    process runs the Policy Engine; where actor and Policy Engine share one
+    runtime, the honest statement is that agent code cannot *reach* the signer
+    (no exported minting path) but is not memory-isolated from it. That
+    limitation is documented rather than papered over.
+
+    ## The transaction (audit-2 F6)
+
+    Consumption is ONE `TransactWriteItems` whose contents are derived from the
+    STORED, AUTHENTICATED capability and contain EVERY authoritative item the
+    action changes:
+
+      * consume the capability   — exists, unused, unexpired, binding matches
+      * mutate the target        — state_version matches AND source state legal
+      * update inventory         — release/quarantine flip usability
+      * reserve the slot         — resequence takes the slot exclusively
+      * create the QA review     — escalation writes its review item
+      * append the ledger        — complete before/after facts, idempotent
+
+    All items commit together or none do. `TransactionCanceledException`
+    carries per-item reasons, mapped back to the specific refusal.
     """
 
     kind = "AWS_DYNAMODB"
@@ -325,7 +412,6 @@ class DynamoCapabilityStore:
             )
         self._region = region
         self._ddb = None
-        self._issuer_secret = os.urandom(32)
 
     @property
     def ddb(self):
@@ -333,38 +419,29 @@ class DynamoCapabilityStore:
             self._ddb = _client("dynamodb", self._region)
         return self._ddb
 
-    # -- issuer boundary (P0-1) -------------------------------------------
-    def _mint_issuer(self, identity: str) -> Issuer:
-        return Issuer(identity=identity, secret=self._issuer_secret)
-
-    def _authorized_issuer(self, issuer: Issuer | None) -> bool:
-        import secrets as _secrets
-
-        return (
-            isinstance(issuer, Issuer)
-            and bool(issuer.secret)
-            and _secrets.compare_digest(issuer.secret, self._issuer_secret)
-        )
+    # -- issuance (audit-2 F1/F2) ------------------------------------------
+    # There is deliberately NO `_mint_issuer` here, under any name. This class
+    # holds no key material; it can verify a proof and cannot create one.
 
     def issue(
         self,
-        issuer: Issuer,
+        issuer: IssuanceAuthority,
         *,
         decision_record_id: str,
         target_type: TargetType,
         target_id: str,
         action: Action,
         observed_state_version: int,
+        parameters: dict | None = None,
         ttl_seconds: int = CAPABILITY_TTL_SECONDS,
     ) -> CapabilityRecord:
-        """Write the capability row.
+        """Write the capability row, signed by the Policy Engine's authority.
 
-        In production the IAM policy on this table restricts
-        `dynamodb:PutItem` on `pk=CAP#*` to the Policy Engine's task role, so
-        the boundary is enforced by AWS and not only by this process. The
-        credential check below is the in-process half of the same boundary.
+        The signature is verified before the row is written, so an
+        unauthorized caller produces ZERO rows rather than a row that would be
+        rejected later.
         """
-        if not self._authorized_issuer(issuer):
+        if not isinstance(issuer, IssuanceAuthority):
             identity = getattr(issuer, "identity", type(issuer).__name__)
             raise IssuerViolation(
                 f"{identity!r} is not authorized to issue capabilities"
@@ -374,7 +451,7 @@ class DynamoCapabilityStore:
         expires_at = (
             datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
         ).isoformat()
-        record = CapabilityRecord(
+        skeleton = CapabilityRecord(
             capability_id=capability_id,
             decision_record_id=decision_record_id,
             target_type=target_type,
@@ -386,7 +463,15 @@ class DynamoCapabilityStore:
             nonce=uuid.uuid4().hex,
             issuer_proof="",
             issuer_identity=issuer.identity,
+            parameters=freeze_parameters(parameters),
         )
+        record = replace(skeleton, issuer_proof=issuer.sign(skeleton.binding()))
+        if not verify_proof(record.binding(), record.issuer_proof):
+            raise IssuerViolation(
+                f"{issuer.identity!r} produced an invalid issuer proof; "
+                "refusing to write a capability row"
+            )
+
         try:
             self.ddb.put_item(
                 TableName=self.table,
@@ -404,12 +489,18 @@ class DynamoCapabilityStore:
                     "expires_at": {"S": expires_at},
                     "nonce": {"S": record.nonce},
                     "issuer_identity": {"S": issuer.identity},
+                    # F7: the signed, immutable action parameters travel WITH
+                    # the row. Consumption reads the slot/readiness from here.
+                    "parameters": {"S": json.dumps(dict(record.parameters), sort_keys=True)},
+                    "issuer_proof": {"S": record.issuer_proof},
                     "used": {"BOOL": False},
                     # TTL attribute so consumed/expired rows self-clean.
                     "ttl": {"N": str(int(datetime.now(timezone.utc).timestamp()) + 86400)},
                 },
                 ConditionExpression="attribute_not_exists(pk)",
             )
+        except IssuerViolation:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise VouchFailure(
                 FailureCategory.PERSISTENCE_FAILURE, f"capability put failed: {exc}"
@@ -423,7 +514,30 @@ class DynamoCapabilityStore:
         )
         return response.get("Item")
 
-    # -- consumption (P0-3) ------------------------------------------------
+    @staticmethod
+    def _record_from_row(row: dict) -> CapabilityRecord:
+        """Rebuild the signed record exactly as issued, for verification."""
+        raw_params = row.get("parameters", {}).get("S", "{}")
+        try:
+            parameters = json.loads(raw_params) if raw_params else {}
+        except json.JSONDecodeError:
+            parameters = {}
+        return CapabilityRecord(
+            capability_id=row["capability_id"]["S"],
+            decision_record_id=row["decision_record_id"]["S"],
+            target_type=TargetType(row["target_type"]["S"]),
+            target_id=row["target_id"]["S"],
+            action=Action(row["action"]["S"]),
+            observed_state_version=int(row["observed_state_version"]["N"]),
+            policy_version=row.get("policy_version", {}).get("S", ""),
+            expires_at=row["expires_at"]["S"],
+            nonce=row.get("nonce", {}).get("S", ""),
+            issuer_proof=row.get("issuer_proof", {}).get("S", ""),
+            issuer_identity=row.get("issuer_identity", {}).get("S", ""),
+            parameters=freeze_parameters(parameters),
+        )
+
+    # -- consumption (P0-3, audit-2 F2/F6/F7) ------------------------------
     def consume(
         self,
         capability_id: str,
@@ -431,11 +545,12 @@ class DynamoCapabilityStore:
         *,
         params: dict | None = None,
     ) -> dict:
-        """Atomically validate, consume, mutate and append to the ledger.
+        """Atomically authenticate, validate, consume, mutate and ledger.
 
         `corpus` is accepted for interface symmetry with the local store but is
-        NOT the source of truth here — DynamoDB is. State is read from and
-        written to the table.
+        NOT the source of truth here — DynamoDB is. `params` is accepted for
+        the same reason and is DISCARDED: every parameter that matters is read
+        from the capability's signed binding (F7).
         """
         row = self.get(capability_id)
         if row is None:
@@ -444,11 +559,27 @@ class DynamoCapabilityStore:
                 "no Policy-Engine-issued capability for this id",
             )
 
-        action = Action(row["action"]["S"])
-        target_type = TargetType(row["target_type"]["S"])
-        target_id = row["target_id"]["S"]
-        record_id = row["decision_record_id"]["S"]
-        bound_version = int(row["observed_state_version"]["N"])
+        # F2. Authenticate the row BEFORE trusting a single field on it. A
+        # forged PutItem with syntactically perfect contents dies here.
+        try:
+            capability = self._record_from_row(row)
+        except (KeyError, ValueError) as exc:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                f"capability row is malformed: {exc}",
+            ) from exc
+        if not verify_proof(capability.binding(), capability.issuer_proof):
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                "capability failed issuer authentication; not issued by the Policy Engine",
+            )
+
+        action = capability.action
+        target_type = capability.target_type
+        target_id = capability.target_id
+        record_id = capability.decision_record_id
+        bound_version = capability.observed_state_version
+        bound = capability.params
         now = datetime.now(timezone.utc).isoformat()
 
         if action not in MUTATIONS:
@@ -456,182 +587,467 @@ class DynamoCapabilityStore:
                 FailureCategory.POLICY_REFUSAL,
                 f"no mutation is bound to {action.value}; refusing",
             )
+        # F6: action/target-type compatibility, enforced independently.
+        if action not in ACTION_TARGET_TYPES.get(target_type, frozenset()):
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                f"{action.value} is not a {target_type.value} action",
+            )
 
-        target_pk = (
-            f"LOT#{target_id}" if target_type is TargetType.LOT else f"ORDER#{target_id}"
-        )
+        plan = self._plan(capability, bound, now)
+
+        try:
+            self.ddb.transact_write_items(TransactItems=plan["items"])
+        except Exception as exc:  # noqa: BLE001
+            raise self._explain(
+                exc, capability_id, target_id, bound_version, plan["labels"]
+            ) from exc
+
+        return {
+            "sequence": plan["sequence"],
+            "capability_id": capability_id,
+            "decision_record_id": record_id,
+            "issuer_identity": capability.issuer_identity,
+            "action": action.value,
+            "target_type": target_type.value,
+            "target_id": target_id,
+            "parameters": bound,
+            "before_version": bound_version,
+            "after_version": bound_version + 1,
+            "before_state": plan["before_state"],
+            "after_state": plan["after_state"],
+            "result": plan["result"],
+            "inventory_delta": plan["inventory_delta"],
+            "at": now,
+        }
+
+    # -- transactional plans (audit-2 F6) ----------------------------------
+    def _plan(self, capability: CapabilityRecord, bound: dict, now: str) -> dict:
+        """Build the COMPLETE transaction for one authenticated capability.
+
+        Derived only from the signed capability, never from caller input. Every
+        authoritative item the action changes is in the plan, each with the
+        condition that makes the change safe. Deny by default: an action with
+        no plan raises rather than falling through to a partial write.
+        """
+        action = capability.action
+        target_id = capability.target_id
+        record_id = capability.decision_record_id
+        bound_version = capability.observed_state_version
         new_version = bound_version + 1
-        sequence = f"{record_id}#{capability_id}"
+        sequence = f"{record_id}#{capability.capability_id}"
 
-        # What this action writes on the target.
-        if target_type is TargetType.LOT:
-            status = _LOT_STATUS.get(action)
-            if status is None:
+        items: list[dict] = [self._consume_item(capability, now)]
+        labels = ["capability"]
+        before_state: dict = {}
+        after_state: dict = {}
+        inventory_delta = 0.0
+        result = ""
+
+        if capability.target_type is TargetType.LOT:
+            status = _LOT_STATUS[action]
+            legal = _LEGAL_SOURCE_STATES[action]
+            source_fragment, source_values = _in_list(legal, "src")
+            items.append(
+                {
+                    "Update": {
+                        "TableName": self.table,
+                        "Key": corpus_key("lot", target_id),
+                        "UpdateExpression": "SET #s = :status, state_version = :new",
+                        # F6: version binding AND legal source-state transition,
+                        # both as conditions inside the same transaction.
+                        "ConditionExpression": (
+                            f"state_version = :bound AND #s IN {source_fragment}"
+                        ),
+                        "ExpressionAttributeNames": {"#s": "status"},
+                        "ExpressionAttributeValues": {
+                            ":status": {"S": status},
+                            ":new": {"N": str(new_version)},
+                            ":bound": {"N": str(bound_version)},
+                            **source_values,
+                        },
+                    }
+                }
+            )
+            labels.append("lot_state")
+            before_state = {"kind": "lot", "state_version": bound_version}
+            after_state = {"kind": "lot", "status": status, "state_version": new_version}
+            result = f"lot {target_id} {status}"
+
+            if action in (Action.RELEASE_LOT, Action.QUARANTINE_LOT):
+                # F6: inventory is part of the SAME transaction. A released lot
+                # whose inventory did not become usable is a partial mutation,
+                # and a partial mutation is exactly what atomicity must exclude.
+                usable = action is Action.RELEASE_LOT
+                items.append(
+                    {
+                        "Update": {
+                            "TableName": self.table,
+                            "Key": corpus_key("inventory", target_id),
+                            "UpdateExpression": (
+                                "SET usable = :usable, state_version = :new"
+                            ),
+                            # Idempotency: the inventory row must still be at
+                            # the bound version, so a replay cannot re-apply
+                            # the delta.
+                            "ConditionExpression": (
+                                "attribute_exists(sk) AND state_version = :bound"
+                            ),
+                            "ExpressionAttributeValues": {
+                                ":usable": {"BOOL": usable},
+                                ":new": {"N": str(new_version)},
+                                ":bound": {"N": str(bound_version)},
+                            },
+                        }
+                    }
+                )
+                labels.append("inventory")
+                inventory_delta = float(bound.get("quantity", 0.0) or 0.0)
+                if not usable:
+                    inventory_delta = -inventory_delta
+                after_state["inventory_usable"] = usable
+
+            elif action is Action.CREATE_QA_REVIEW:
+                # F6: the QA action must actually create the QA record.
+                review_id = f"QA-{record_id}"
+                items.append(
+                    {
+                        "Put": {
+                            "TableName": self.table,
+                            "Item": {
+                                **corpus_key("qa_review", review_id),
+                                "kind": {"S": "qa_review"},
+                                "document": {
+                                    "S": json.dumps(
+                                        {
+                                            "review_id": review_id,
+                                            "decision_record_id": record_id,
+                                            "lot_id": target_id,
+                                            "status": "OPEN",
+                                            "created_at": now,
+                                        },
+                                        sort_keys=True,
+                                    )
+                                },
+                            },
+                            "ConditionExpression": "attribute_not_exists(sk)",
+                        }
+                    }
+                )
+                labels.append("qa_review")
+                after_state["qa_review_id"] = review_id
+                result = f"QA review {review_id} created"
+
+        elif action is Action.RESEQUENCE_PRODUCTION_ORDER:
+            # F7: the slot comes from the SIGNED binding, never from a caller.
+            target_slot = bound.get("target_slot", "")
+            from_slot = bound.get("from_slot", "")
+            resource = bound.get("resource", "")
+            if not target_slot:
                 raise VouchFailure(
                     FailureCategory.POLICY_REFUSAL,
-                    f"{action.value} is not a lot action",
+                    "resequence capability carries no bound target_slot",
                 )
-            target_update = "SET #s = :status, state_version = :new"
-            target_values = {":status": {"S": status}, ":new": {"N": str(new_version)}}
+            order_condition = "state_version = :bound"
+            order_values: dict = {
+                ":slot": {"S": target_slot},
+                ":new": {"N": str(new_version)},
+                ":bound": {"N": str(bound_version)},
+            }
+            if from_slot:
+                # F7: the slot the order moves FROM is bound too.
+                order_condition += " AND planned_slot = :from"
+                order_values[":from"] = {"S": from_slot}
+            items.append(
+                {
+                    "Update": {
+                        "TableName": self.table,
+                        "Key": corpus_key("production_order", target_id),
+                        "UpdateExpression": "SET planned_slot = :slot, state_version = :new",
+                        "ConditionExpression": order_condition,
+                        "ExpressionAttributeValues": order_values,
+                    }
+                }
+            )
+            labels.append("order_state")
+            # F6: the slot is RESERVED atomically. Checking availability with a
+            # read and then writing is the TOCTOU the whole design exists to
+            # remove; an exclusive reservation item makes the check part of the
+            # transaction itself.
+            items.append(
+                {
+                    "Put": {
+                        "TableName": self.table,
+                        "Item": {
+                            "pk": {"S": f"SLOT#{resource}#{target_slot}"},
+                            "sk": {"S": "RESERVATION"},
+                            "order_id": {"S": target_id},
+                            "decision_record_id": {"S": record_id},
+                            "reserved_at": {"S": now},
+                        },
+                        "ConditionExpression": (
+                            "attribute_not_exists(pk) OR order_id = :order"
+                        ),
+                        "ExpressionAttributeValues": {":order": {"S": target_id}},
+                    }
+                }
+            )
+            labels.append("slot_reservation")
+            if from_slot and resource:
+                # Release the slot the order vacated, but only if this order
+                # actually holds it.
+                items.append(
+                    {
+                        "Delete": {
+                            "TableName": self.table,
+                            "Key": {
+                                "pk": {"S": f"SLOT#{resource}#{from_slot}"},
+                                "sk": {"S": "RESERVATION"},
+                            },
+                            "ConditionExpression": (
+                                "attribute_not_exists(pk) OR order_id = :order"
+                            ),
+                            "ExpressionAttributeValues": {":order": {"S": target_id}},
+                        }
+                    }
+                )
+                labels.append("slot_release")
+            before_state = {
+                "kind": "production_order",
+                "planned_slot": from_slot,
+                "state_version": bound_version,
+            }
+            after_state = {
+                "kind": "production_order",
+                "planned_slot": target_slot,
+                "state_version": new_version,
+            }
+            result = f"order {target_id} resequenced from {from_slot} to {target_slot}"
+
         else:
+            # HOLD_PRODUCTION_ORDER / SET_ORDER_READINESS
             if action is Action.HOLD_PRODUCTION_ORDER:
                 status = "BLOCKED"
-            elif action is Action.SET_ORDER_READINESS:
-                status = str((params or {}).get("readiness", ""))
+                legal = _LEGAL_SOURCE_STATES[Action.HOLD_PRODUCTION_ORDER]
             else:
-                status = ""
-            if action is Action.RESEQUENCE_PRODUCTION_ORDER:
-                slot = str((params or {}).get("target_slot", ""))
-                if not slot:
+                status = bound.get("readiness", "")
+                if status not in ORDER_TRANSITIONS:
                     raise VouchFailure(
-                        FailureCategory.POLICY_REFUSAL, "resequence requires a target_slot"
+                        FailureCategory.POLICY_REFUSAL,
+                        f"{status!r} is not a readiness state",
                     )
-                target_update = "SET planned_slot = :slot, state_version = :new"
-                target_values = {":slot": {"S": slot}, ":new": {"N": str(new_version)}}
-            else:
-                target_update = "SET #s = :status, state_version = :new"
-                target_values = {
-                    ":status": {"S": status},
-                    ":new": {"N": str(new_version)},
+                legal = frozenset(
+                    source
+                    for source, targets in ORDER_TRANSITIONS.items()
+                    if status in targets
+                )
+            if not legal:
+                raise VouchFailure(
+                    FailureCategory.POLICY_REFUSAL,
+                    f"no legal source state transitions to {status}",
+                )
+            source_fragment, source_values = _in_list(legal, "src")
+            items.append(
+                {
+                    "Update": {
+                        "TableName": self.table,
+                        "Key": corpus_key("production_order", target_id),
+                        "UpdateExpression": "SET #s = :status, state_version = :new",
+                        "ConditionExpression": (
+                            f"state_version = :bound AND #s IN {source_fragment}"
+                        ),
+                        "ExpressionAttributeNames": {"#s": "status"},
+                        "ExpressionAttributeValues": {
+                            ":status": {"S": status},
+                            ":new": {"N": str(new_version)},
+                            ":bound": {"N": str(bound_version)},
+                            **source_values,
+                        },
+                    }
                 }
+            )
+            labels.append("order_state")
+            before_state = {"kind": "production_order", "state_version": bound_version}
+            after_state = {
+                "kind": "production_order",
+                "status": status,
+                "state_version": new_version,
+            }
+            result = f"order {target_id} -> {status}"
 
-        transact = [
-            # 1. consume the capability — the single-use + expiry + binding gate
-            {
-                "Update": {
-                    "TableName": self.table,
-                    "Key": {"pk": {"S": f"CAP#{capability_id}"}, "sk": {"S": "META"}},
-                    "UpdateExpression": "SET used = :true, consumed_at = :now",
-                    "ConditionExpression": (
-                        "attribute_exists(pk) AND used = :false "
-                        "AND expires_at > :now "
-                        "AND target_id = :target AND #a = :action "
-                        "AND decision_record_id = :record "
-                        "AND observed_state_version = :bound"
-                    ),
-                    "ExpressionAttributeNames": {"#a": "action"},
-                    "ExpressionAttributeValues": {
-                        ":true": {"BOOL": True},
-                        ":false": {"BOOL": False},
-                        ":now": {"S": now},
-                        ":target": {"S": target_id},
-                        ":action": {"S": action.value},
-                        ":record": {"S": record_id},
-                        ":bound": {"N": str(bound_version)},
-                    },
-                }
-            },
-            # 2. mutate the target — optimistic concurrency on state_version
-            {
-                "Update": {
-                    "TableName": self.table,
-                    "Key": {"pk": {"S": target_pk}, "sk": {"S": "STATE"}},
-                    "UpdateExpression": target_update,
-                    "ConditionExpression": "state_version = :bound",
-                    "ExpressionAttributeNames": {"#s": "status"},
-                    "ExpressionAttributeValues": {
-                        **target_values,
-                        ":bound": {"N": str(bound_version)},
-                    },
-                }
-            },
-            # 3. append the authority ledger entry — idempotent by capability
+        # F6: the ledger carries the complete causal and factual record, and is
+        # idempotent by capability so a replay cannot append twice.
+        items.append(
             {
                 "Put": {
                     "TableName": self.table,
                     "Item": {
                         "pk": {"S": f"LEDGER#{record_id}"},
                         "sk": {"S": f"SEQ#{sequence}"},
-                        "capability_id": {"S": capability_id},
+                        "capability_id": {"S": capability.capability_id},
                         "decision_record_id": {"S": record_id},
-                        "issuer_identity": {"S": row.get("issuer_identity", {}).get("S", "")},
+                        "issuer_identity": {"S": capability.issuer_identity},
                         "action": {"S": action.value},
-                        "target_type": {"S": target_type.value},
+                        "target_type": {"S": capability.target_type.value},
                         "target_id": {"S": target_id},
+                        "parameters": {"S": json.dumps(bound, sort_keys=True)},
                         "before_version": {"N": str(bound_version)},
                         "after_version": {"N": str(new_version)},
+                        "before_state": {"S": json.dumps(before_state, sort_keys=True)},
+                        "after_state": {"S": json.dumps(after_state, sort_keys=True)},
+                        "inventory_delta": {"N": str(inventory_delta)},
+                        "result": {"S": result},
                         "at": {"S": now},
                     },
                     "ConditionExpression": "attribute_not_exists(pk)",
                 }
-            },
-        ]
-        if action is Action.RESEQUENCE_PRODUCTION_ORDER:
-            transact[1]["Update"].pop("ExpressionAttributeNames", None)
-
-        try:
-            self.ddb.transact_write_items(TransactItems=transact)
-        except Exception as exc:  # noqa: BLE001
-            raise self._explain(exc, capability_id, target_id, bound_version) from exc
+            }
+        )
+        labels.append("ledger")
 
         return {
+            "items": items,
+            "labels": labels,
             "sequence": sequence,
-            "capability_id": capability_id,
-            "decision_record_id": record_id,
-            "issuer_identity": row.get("issuer_identity", {}).get("S", ""),
-            "action": action.value,
-            "target_type": target_type.value,
-            "target_id": target_id,
-            "before_version": bound_version,
-            "after_version": new_version,
-            "result": f"{target_id} -> {action.value}",
-            "inventory_delta": 0.0,
-            "at": now,
+            "before_state": before_state,
+            "after_state": after_state,
+            "inventory_delta": inventory_delta,
+            "result": result,
+        }
+
+    def _consume_item(self, capability: CapabilityRecord, now: str) -> dict:
+        """The capability-consumption item: exists, unused, unexpired, bound."""
+        return {
+            "Update": {
+                "TableName": self.table,
+                "Key": {
+                    "pk": {"S": f"CAP#{capability.capability_id}"},
+                    "sk": {"S": "META"},
+                },
+                "UpdateExpression": "SET used = :true, consumed_at = :now",
+                "ConditionExpression": (
+                    "attribute_exists(sk) AND used = :false "
+                    "AND expires_at > :now "
+                    "AND target_id = :target AND #a = :action "
+                    "AND decision_record_id = :record "
+                    "AND observed_state_version = :bound "
+                    "AND issuer_proof = :proof"
+                ),
+                "ExpressionAttributeNames": {"#a": "action"},
+                "ExpressionAttributeValues": {
+                    ":true": {"BOOL": True},
+                    ":false": {"BOOL": False},
+                    ":now": {"S": now},
+                    ":target": {"S": capability.target_id},
+                    ":action": {"S": capability.action.value},
+                    ":record": {"S": capability.decision_record_id},
+                    ":bound": {"N": str(capability.observed_state_version)},
+                    # The proof verified in-process is also asserted in the
+                    # transaction, so a row swapped between read and write is
+                    # caught by the conditional itself.
+                    ":proof": {"S": capability.issuer_proof},
+                },
+            }
         }
 
     @staticmethod
     def _explain(
-        exc: Exception, capability_id: str, target_id: str, bound_version: int
+        exc: Exception,
+        capability_id: str,
+        target_id: str,
+        bound_version: int,
+        labels: list[str],
     ) -> VouchFailure:
         """Map per-item cancellation reasons back to a specific refusal.
 
         A bare "transaction cancelled" would tell an operator nothing about
         whether the capability was spent, expired, or the lot moved. Order
         matters (P1-3): when a capability was already consumed, the target
-        version has usually ALSO moved, so both item 0 and item 1 fail their
-        conditions. The capability check is the more specific cause and is
-        reported first — otherwise a replay is mislabeled a state conflict.
+        version has usually ALSO moved, so several items fail their conditions.
+        The capability check is the most specific cause and is reported first —
+        otherwise a replay is mislabeled a state conflict.
         """
         reasons = getattr(exc, "response", {}).get("CancellationReasons", [])
         codes = [r.get("Code", "") for r in reasons]
+        failed = [
+            labels[i] if i < len(labels) else f"item{i}"
+            for i, code in enumerate(codes)
+            if code == "ConditionalCheckFailed"
+        ]
+        if not failed:
+            return VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE, f"transaction failed: {exc}"
+            )
 
-        if codes and codes[0] == "ConditionalCheckFailed":
+        if "capability" in failed:
             return VouchFailure(
                 FailureCategory.POLICY_REFUSAL,
                 f"capability {capability_id} is consumed, expired, or mis-bound",
             )
-        if len(codes) >= 2 and codes[1] == "ConditionalCheckFailed":
-            return VouchFailure(
-                FailureCategory.STATE_CONFLICT,
-                f"{target_id} is no longer at version {bound_version}; re-evaluate",
-            )
-        if len(codes) >= 3 and codes[2] == "ConditionalCheckFailed":
+        if "ledger" in failed and len(failed) == 1:
             return VouchFailure(
                 FailureCategory.POLICY_REFUSAL,
                 f"ledger entry for {capability_id} already exists (replay)",
             )
+        if "slot_reservation" in failed:
+            return VouchFailure(
+                FailureCategory.STATE_CONFLICT,
+                "the target schedule slot is held by another order; refusing to resequence",
+            )
+        if "inventory" in failed:
+            return VouchFailure(
+                FailureCategory.STATE_CONFLICT,
+                f"inventory for {target_id} moved since version {bound_version}; re-evaluate",
+            )
         return VouchFailure(
-            FailureCategory.PERSISTENCE_FAILURE, f"transaction failed: {exc}"
+            FailureCategory.STATE_CONFLICT,
+            f"{target_id} is no longer at version {bound_version} or its source "
+            f"state is not legal for this action; re-evaluate ({', '.join(failed)})",
         )
 
     # -- state helpers -----------------------------------------------------
-    def put_state(self, kind: str, key: str, status: str, state_version: int = 1) -> None:
-        """Seed an entity's authoritative state row."""
-        pk = f"LOT#{key}" if kind == "lot" else f"ORDER#{key}"
-        self.ddb.put_item(
-            TableName=self.table,
-            Item={
-                "pk": {"S": pk},
-                "sk": {"S": "STATE"},
-                "status": {"S": status},
-                "state_version": {"N": str(state_version)},
-            },
-        )
+    def put_state(
+        self,
+        kind: str,
+        key: str,
+        status: str,
+        state_version: int = 1,
+        *,
+        planned_slot: str = "",
+        quantity: float = 0.0,
+        usable: bool = False,
+    ) -> None:
+        """Seed an entity's authoritative corpus item (and its inventory item).
+
+        Test/provisioning helper. The runtime seeds through `DynamoCorpus.seed`;
+        this exists so adapter-level tests can create a target without building
+        a whole corpus.
+        """
+        from .corpus import InventoryRecord, Lot, ProductionOrder
+
+        if kind == "lot":
+            value = Lot(
+                lot_id=key, supplier_id="", material_id="", po_reference="",
+                quantity=quantity, status=status, state_version=state_version,
+            )
+        else:
+            value = ProductionOrder(
+                order_id=key, product="", quantity=0.0, requirements=(),
+                resource="", planned_slot=planned_slot, status=status,
+                state_version=state_version,
+            )
+        self.ddb.put_item(TableName=self.table, Item=corpus_item(kind, key, value))
+        if kind == "lot":
+            inventory = InventoryRecord(
+                material_id="", lot_id=key, quantity=quantity, usable=usable
+            )
+            item = corpus_item("inventory", key, inventory)
+            item["state_version"] = {"N": str(state_version)}
+            self.ddb.put_item(TableName=self.table, Item=item)
 
     def get_state(self, kind: str, key: str) -> dict | None:
-        pk = f"LOT#{key}" if kind == "lot" else f"ORDER#{key}"
         item = self.ddb.get_item(
-            TableName=self.table, Key={"pk": {"S": pk}, "sk": {"S": "STATE"}}
+            TableName=self.table, Key=corpus_key(kind, key)
         ).get("Item")
         if item is None:
             return None
@@ -640,6 +1056,28 @@ class DynamoCapabilityStore:
             "planned_slot": item.get("planned_slot", {}).get("S", ""),
             "state_version": int(item.get("state_version", {}).get("N", "0")),
         }
+
+    def get_inventory(self, lot_id: str) -> dict | None:
+        item = self.ddb.get_item(
+            TableName=self.table, Key=corpus_key("inventory", lot_id)
+        ).get("Item")
+        if item is None:
+            return None
+        document = json.loads(item.get("document", {}).get("S", "{}"))
+        return {
+            "quantity": float(document.get("quantity", 0.0)),
+            "usable": item.get("usable", {}).get("BOOL", document.get("usable", False)),
+            "state_version": int(item.get("state_version", {}).get("N", "0")),
+        }
+
+    def get_qa_review(self, decision_record_id: str) -> dict | None:
+        item = self.ddb.get_item(
+            TableName=self.table,
+            Key=corpus_key("qa_review", f"QA-{decision_record_id}"),
+        ).get("Item")
+        if item is None:
+            return None
+        return json.loads(item["document"]["S"])
 
     def ledger_for(self, decision_record_id: str) -> list[dict]:
         """Every authority entry for one DecisionRecord, in order."""
@@ -655,6 +1093,10 @@ class DynamoCapabilityStore:
                 "target_id": i["target_id"]["S"],
                 "before_version": int(i["before_version"]["N"]),
                 "after_version": int(i["after_version"]["N"]),
+                "before_state": json.loads(i.get("before_state", {}).get("S", "{}")),
+                "after_state": json.loads(i.get("after_state", {}).get("S", "{}")),
+                "inventory_delta": float(i.get("inventory_delta", {}).get("N", "0")),
+                "parameters": json.loads(i.get("parameters", {}).get("S", "{}")),
                 "at": i["at"]["S"],
             }
             for i in response.get("Items", [])
@@ -663,6 +1105,7 @@ class DynamoCapabilityStore:
 
 __all__ = [
     "BedrockGuardrailDetector",
+    "corpus_key",
     "ClamAVScanner",
     "DynamoCapabilityStore",
     "S3EvidenceStore",

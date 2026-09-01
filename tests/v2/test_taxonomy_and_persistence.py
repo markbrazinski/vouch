@@ -306,12 +306,16 @@ def test_recovery_reverifies_the_slot_at_execution(vouch):
     assert selected.candidate_id == "C-418"
 
     candidate = corpus.order("C-418")
+    # F7: the slot is part of the AUTHORIZATION and is signed into the
+    # capability, so there is no execution-time slot parameter to pass.
     decision = v.policy.authorize_order_action(
         decision_record_id="DR-1", order_id="C-418",
         action=Action.RESEQUENCE_PRODUCTION_ORDER,
         observed_state_version=candidate.state_version, events=events,
+        parameters={"target_slot": target_slot},
     )
     assert decision.allowed
+    assert decision.capability.params["target_slot"] == target_slot
 
     # ...and only NOW someone else parks an order in that slot.
     c419 = corpus.order("C-419")
@@ -321,10 +325,7 @@ def test_recovery_reverifies_the_slot_at_execution(vouch):
     )
 
     with pytest.raises(VouchFailure) as exc:
-        execute(
-            decision.capability, corpus, v.capabilities, events,
-            params={"target_slot": target_slot},
-        )
+        execute(decision.capability, corpus, v.capabilities, events)
     assert exc.value.category is FailureCategory.STATE_CONFLICT
     assert "occupied" in exc.value.detail
     assert corpus.order("C-418").planned_slot == "2026-08-15T14:00"  # unmoved

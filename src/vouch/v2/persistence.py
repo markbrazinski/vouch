@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 
@@ -46,6 +46,8 @@ class RecordStore(Protocol):
 
 class EventStore(Protocol):
     def append(self, event: LifecycleEvent, sequence: int) -> None: ...
+    def append_all(self, events: Iterable[LifecycleEvent], start: int | None = None) -> int: ...
+    def next_sequence(self, decision_record_id: str) -> int: ...
     def events_for(self, decision_record_id: str) -> list[dict]: ...
 
 
@@ -125,12 +127,22 @@ class JsonRecordStore:
             with self._events_path(event.decision_record_id).open("a") as handle:
                 handle.write(json.dumps(row, default=str) + "\n")
 
-    def append_all(self, events: Iterable[LifecycleEvent]) -> int:
-        count = 0
-        for index, event in enumerate(events, start=1):
+    def next_sequence(self, decision_record_id: str) -> int:
+        existing = self.events_for(decision_record_id)
+        return (existing[-1]["sequence"] + 1) if existing else 1
+
+    def append_all(self, events: Iterable[LifecycleEvent], start: int | None = None) -> int:
+        events = list(events)
+        if not events:
+            return 0
+        index = (
+            start if start is not None
+            else self.next_sequence(events[0].decision_record_id)
+        )
+        for event in events:
             self.append(event, index)
-            count += 1
-        return count
+            index += 1
+        return len(events)
 
     def events_for(self, decision_record_id: str) -> list[dict]:
         path = self._events_path(decision_record_id)
@@ -231,15 +243,48 @@ class DynamoRecordStore:
             ConditionExpression="attribute_not_exists(sk)",
         )
 
-    def append_all(self, events: Iterable[LifecycleEvent]) -> int:
+    def next_sequence(self, decision_record_id: str) -> int:
+        """One past the highest event sequence already stored (audit-2 F8).
+
+        Numbering restarting at 1 on a new process was silently DISCARDING
+        continuation events: `append` is conditional on the sort key being
+        absent, so every event of run 2 collided with run 1 and was swallowed
+        as a duplicate. A resumed case must extend history, never overwrite or
+        vanish into it.
+
+        A descending query limited to one item is O(1); it does not read the
+        whole event history.
+        """
+        response = self.ddb.query(
+            TableName=self.table,
+            KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
+            ExpressionAttributeValues={
+                ":pk": {"S": f"RECORD#{decision_record_id}"},
+                ":prefix": {"S": "EVENT#"},
+            },
+            ScanIndexForward=False,
+            Limit=1,
+        )
+        items = response.get("Items", [])
+        if not items:
+            return 1
+        return int(items[0]["sk"]["S"].split("#")[1]) + 1
+
+    def append_all(self, events: Iterable[LifecycleEvent], start: int | None = None) -> int:
+        events = list(events)
+        if not events:
+            return 0
+        record_id = events[0].decision_record_id
+        index = start if start is not None else self.next_sequence(record_id)
         count = 0
-        for index, event in enumerate(events, start=1):
+        for event in events:
             try:
                 self.append(event, index)
                 count += 1
             except Exception as exc:  # noqa: BLE001
                 if "ConditionalCheckFailed" not in str(exc):
                     raise
+            index += 1
         return count
 
     def events_for(self, decision_record_id: str) -> list[dict]:
@@ -295,17 +340,77 @@ class InMemoryRecordStore:
             _event_row(event, sequence, event.decision_record_id)
         )
 
-    def append_all(self, events: Iterable[LifecycleEvent]) -> int:
-        count = 0
-        for index, event in enumerate(events, start=1):
+    def next_sequence(self, decision_record_id: str) -> int:
+        existing = self.events.get(decision_record_id, [])
+        return (max(r["sequence"] for r in existing) + 1) if existing else 1
+
+    def append_all(self, events: Iterable[LifecycleEvent], start: int | None = None) -> int:
+        events = list(events)
+        if not events:
+            return 0
+        index = (
+            start if start is not None
+            else self.next_sequence(events[0].decision_record_id)
+        )
+        for event in events:
             self.append(event, index)
-            count += 1
-        return count
+            index += 1
+        return len(events)
 
     def events_for(self, decision_record_id: str) -> list[dict]:
         return sorted(
             self.events.get(decision_record_id, []), key=lambda r: r["sequence"]
         )
+
+
+def hydrate_record(document: dict) -> DecisionRecord:
+    """Rebuild a DecisionRecord from its stored document (audit-2 F8).
+
+    Typed reconstruction, not a dict pretending to be a record: each segment is
+    rebuilt as its dataclass, so a resumed case has the same object the first
+    run had and every downstream `record.x.y` access keeps working.
+
+    Unknown keys are DROPPED rather than raising: a record written by an older
+    schema must still be resumable, and refusing to load history because a
+    field was added later would be its own kind of data loss.
+    """
+    from dataclasses import fields as dataclass_fields
+
+    def build(cls, payload):
+        if not isinstance(payload, dict):
+            return cls()
+        known = {f.name for f in dataclass_fields(cls)}
+        return cls(**{k: v for k, v in payload.items() if k in known})
+
+    record = DecisionRecord(record_id=document.get("record_id", ""))
+    for name in (f.name for f in dataclass_fields(DecisionRecord)):
+        value = document.get(name)
+        if value is None:
+            continue
+        current = getattr(record, name)
+        if is_dataclass(current):
+            setattr(record, name, build(type(current), value))
+        else:
+            setattr(record, name, value)
+    return record
+
+
+def hydrate_claims(document: dict) -> list:
+    """Rebuild the canonical claims stored alongside a record (audit-2 F8).
+
+    A claim that no longer validates is dropped rather than crashing the
+    resume: the record still carries its hash and storage ref, so the loss is
+    visible to an auditor instead of taking the whole case down.
+    """
+    from .contracts import CanonicalEvidenceClaim
+
+    rebuilt = []
+    for payload in (document.get("evidence") or {}).get("canonical_claims", []):
+        try:
+            rebuilt.append(CanonicalEvidenceClaim(**payload))
+        except Exception:  # noqa: BLE001
+            continue
+    return rebuilt
 
 
 __all__ = [
@@ -314,4 +419,6 @@ __all__ = [
     "InMemoryRecordStore",
     "JsonRecordStore",
     "RecordStore",
+    "hydrate_claims",
+    "hydrate_record",
 ]

@@ -11,15 +11,22 @@ Actions:
   {"action": "recovery",         "order_id": ...}
   {"action": "ledger"}
 
-Two things this entrypoint deliberately does NOT do:
+Three things this entrypoint deliberately does NOT do:
 
-  * It does not silently fall back to in-memory state and call it authoritative.
-    V1 did, logging an error and continuing — which means a runtime with an
-    unreachable table would report successful "authorized" mutations against
-    state that evaporates. Persistence failure is now a typed refusal.
+  * It does not silently fall back to in-memory state and call it authoritative
+    (audit-2 F5). The composition is built once by `vouch.v2.runtime.build()`,
+    which either returns a fully durable production stack or raises. There is
+    no `except: use memory` path here, because a runtime with an unreachable
+    table reporting successful "authorized" mutations is the worst possible
+    failure mode.
+  * It does not construct a fixture corpus in production mode. `build_corpus`
+    is not imported on the production path at all.
   * It exposes no fixture-specific evidence writer. V1 shipped `add_qa_evidence`
     as a runtime action; the human-continuation path takes caller-supplied
     content through the real ingestion boundary instead.
+
+Every response reports the ACTUAL backend for every authoritative component, so
+a caller can tell durability from simulation without trusting a summary word.
 """
 
 from __future__ import annotations
@@ -35,54 +42,46 @@ if _SRC.exists() and str(_SRC) not in sys.path:
 from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 
 from vouch.v2.consequences import compute_readiness, enumerate_recovery  # noqa: E402
-from vouch.v2.fixtures import build_corpus  # noqa: E402
+from vouch.v2.contracts import FailureCategory, VouchFailure  # noqa: E402
 from vouch.v2.lifecycle import EventLog  # noqa: E402
-from vouch.v2.workflow import VouchV2  # noqa: E402
+from vouch.v2.runtime import build  # noqa: E402
 
 app = BedrockAgentCoreApp()
 log = app.logger
 
-# The corpus itself is still the in-memory fixture world, and every response
-# says so. What IS durable now is the audit trail: DecisionRecords and lifecycle
-# events go to DynamoDB when a state table is configured, so a decision made by
-# this runtime survives it.
+# audit-2 F5: ONE composition, chosen in one place, and it does not mix a
+# fixture corpus with durable records. `build()` returns either a fully durable
+# production stack or an explicitly labeled local one — never a blend that a
+# response could describe as "the production backend".
 #
-# ponytail: fixture corpus, not an ERP integration. Swapping it is a data-source
-# change, not an architecture change — the pipeline reads through Corpus either
-# way.
-_CORPUS = build_corpus()
+# Composition failure is deliberately NOT caught here. A runtime that cannot
+# reach its authoritative state must fail to start rather than come up serving
+# memory: the previous behavior logged a warning and continued, which meant a
+# runtime with an unreachable table reported successful authorized mutations
+# against state that evaporated.
+_COMPOSITION = build()
+_VOUCH = _COMPOSITION.workflow
+_CORPUS = _COMPOSITION.corpus
+_BACKEND = _COMPOSITION.backend
+log.info("vouch v2 runtime %s", _BACKEND.describe())
 
 
-def _record_store():
-    """Durable record store where configured; explicit in-memory otherwise.
-
-    Never silently degrades: the backend actually in use is reported in every
-    response, so a caller can tell whether the audit trail persisted.
-    """
-    from vouch.config import load
-
-    if not load().state_table:
-        from vouch.v2.persistence import InMemoryRecordStore
-
-        return InMemoryRecordStore(), "memory"
-    try:
-        from vouch.v2.persistence import DynamoRecordStore
-
-        store = DynamoRecordStore()
-        return store, f"dynamodb:{store.table}"
-    except Exception as exc:  # noqa: BLE001
-        log.warning("record store unavailable, using memory: %s", exc)
-        from vouch.v2.persistence import InMemoryRecordStore
-
-        return InMemoryRecordStore(), "memory"
-
-
-_STORE, _RECORD_BACKEND = _record_store()
-_VOUCH = VouchV2(_CORPUS, record_store=_STORE)
-#: The CORPUS is in-memory; the audit trail may be durable. Reported separately
-#: so neither claim is inflated by the other.
-_BACKEND = f"corpus=memory record_store={_RECORD_BACKEND}"
-log.info("vouch v2 runtime backend=%s", _BACKEND)
+def _ledger(decision_record_id: str) -> list[dict]:
+    """Authority ledger entries, from whichever store is authoritative."""
+    store = _VOUCH.capabilities
+    if hasattr(store, "ledger_for"):
+        if not decision_record_id:
+            raise VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE,
+                "the durable ledger is queried by decision_record_id",
+            )
+        return store.ledger_for(decision_record_id)
+    entries = store.ledger
+    if decision_record_id:
+        entries = [
+            e for e in entries if e.get("decision_record_id") == decision_record_id
+        ]
+    return entries
 
 
 def _record_summary(record) -> dict:
@@ -153,7 +152,7 @@ def invoke(payload: dict, context=None) -> dict:
             return {
                 "ok": True,
                 "action": action,
-                "backend": _BACKEND,
+                "backend": _BACKEND.as_dict(),
                 "decision_record_id": outcome.decision_record_id,
                 "lot_id": outcome.lot_id,
                 "disposition": outcome.disposition,
@@ -176,7 +175,7 @@ def invoke(payload: dict, context=None) -> dict:
             return {
                 "ok": True,
                 "action": action,
-                "backend": _BACKEND,
+                "backend": _BACKEND.as_dict(),
                 "decision_record_id": outcome.decision_record_id,
                 "disposition": outcome.disposition,
                 "reason": outcome.reason,
@@ -188,7 +187,7 @@ def invoke(payload: dict, context=None) -> dict:
             return {
                 "ok": True,
                 "action": action,
-                "backend": _BACKEND,
+                "backend": _BACKEND.as_dict(),
                 **compute_readiness(_CORPUS, payload["order_id"]).as_dict(),
             }
 
@@ -197,7 +196,7 @@ def invoke(payload: dict, context=None) -> dict:
             return {
                 "ok": True,
                 "action": action,
-                "backend": _BACKEND,
+                "backend": _BACKEND.as_dict(),
                 "order_id": payload["order_id"],
                 # Deterministic. No "actor"/"verifier" keys — there is no
                 # recovery agent, and pretending otherwise reads as theatre.
@@ -210,12 +209,27 @@ def invoke(payload: dict, context=None) -> dict:
             return {
                 "ok": True,
                 "action": action,
-                "backend": _BACKEND,
-                "entries": _VOUCH.capabilities.ledger,
+                "backend": _BACKEND.as_dict(),
+                # The durable store answers by DecisionRecord; the in-memory
+                # one exposes a whole-process list. Neither is described as
+                # the other.
+                "entries": _ledger(payload.get("decision_record_id", "")),
             }
 
         return {"ok": False, "error": f"unknown action: {action}"}
 
+    except VouchFailure as failure:
+        # audit-2 F5: an unavailable authoritative dependency is a TYPED
+        # fail-closed result. It never degrades to an in-memory success.
+        log.error("vouch v2 typed failure: %s", failure)
+        return {
+            "ok": False,
+            "action": action,
+            "backend": _BACKEND.as_dict(),
+            "failure_category": failure.category.value,
+            "error": failure.detail,
+            "mutation": {},
+        }
     except KeyError as exc:
         return {"ok": False, "error": f"missing required field: {exc}"}
     except Exception as exc:  # noqa: BLE001

@@ -17,9 +17,10 @@ reach the model.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from .contracts import content_hash
 from .corpus import Corpus
 from .lifecycle import EventLog, EventType
 
@@ -44,6 +45,16 @@ class ToolEvent:
     object_refs: list[str]
     elapsed_ms: float
     status: str = "OK"
+    #: audit-2 F9: the ACTUAL arguments the agent passed. Without them a record
+    #: says a tool was called but not what was asked of it, so the call cannot
+    #: be replayed and the answer cannot be checked.
+    arguments: dict = field(default_factory=dict)
+    #: A durable reference to the result: its content hash. The full result is
+    #: recoverable by re-running the deterministic tool against the recorded
+    #: corpus versions, and the hash proves the recorded corpus reproduces it.
+    #: Storing megabytes of tool output in every record would be the
+    #: alternative, and it buys nothing an auditor cannot re-derive.
+    result_ref: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -51,6 +62,8 @@ class ToolEvent:
             "authority_class": self.authority_class, "result_count": self.result_count,
             "object_refs": self.object_refs[:20], "elapsed_ms": round(self.elapsed_ms, 2),
             "status": self.status,
+            "arguments": dict(self.arguments),
+            "result_ref": self.result_ref,
         }
 
 
@@ -107,12 +120,14 @@ class CorpusTools:
     # -- observability ----------------------------------------------------
     def _record(
         self, tool: str, category: str, authority: str, results: list, refs: list[str],
-        started: float,
+        started: float, arguments: dict | None = None,
     ) -> None:
         event = ToolEvent(
             agent=self._agent, tool=tool, category=category, authority_class=authority,
             result_count=len(results), object_refs=refs,
             elapsed_ms=(time.perf_counter() - started) * 1000,
+            arguments=dict(arguments or {}),
+            result_ref=content_hash(results),
         )
         self.tool_events.append(event)
         if self._events:
@@ -154,7 +169,7 @@ class CorpusTools:
         ]
         self._record(
             "get_evidence_snapshot", "evidence", ToolAuthority.FROZEN_CLAIMS,
-            out, [c["claim_id"] for c in out], started,
+            out, [c["claim_id"] for c in out], started, arguments={},
         )
         return out
 
@@ -191,6 +206,7 @@ class CorpusTools:
         self._record(
             "list_candidate_specs", "specification", ToolAuthority.AUTHORITATIVE,
             out, [f"{r.spec_id}:{r.revision}" for r in revisions], started,
+            arguments={"material_id": self._material_id},
         )
         return out
 
@@ -224,6 +240,7 @@ class CorpusTools:
         self._record(
             "get_spec_requirement", "specification", ToolAuthority.AUTHORITATIVE,
             out, [f"{spec_id}:{revision}"], started,
+            arguments={"spec_id": spec_id, "revision": revision},
         )
         return out
 
@@ -257,6 +274,7 @@ class CorpusTools:
         self._record(
             "list_applicable_deviations", "deviation", ToolAuthority.AUTHORITATIVE,
             out, [d.deviation_id for d in deviations], started,
+            arguments={"material_id": self._material_id},
         )
         return out
 
@@ -281,6 +299,7 @@ class CorpusTools:
         self._record(
             "list_equivalence_records", "equivalence", ToolAuthority.AUTHORITATIVE,
             out, [e.equivalence_id for e in equivalences], started,
+            arguments={"material_id": self._material_id},
         )
         return out
 
@@ -318,6 +337,7 @@ class CorpusTools:
         self._record(
             "get_supplier_qualification", "qualification", ToolAuthority.AUTHORITATIVE,
             [out], [out.get("qualification_id", "")], started,
+            arguments={"lot_id": self._lot_id, "material_id": self._material_id},
         )
         return out
 
@@ -335,7 +355,8 @@ class CorpusTools:
         started = time.perf_counter()
         out: list[dict] = []  # P1 stub: intentionally empty in Milestone 1
         self._record(
-            "find_relevant_precedents", "precedent", ToolAuthority.ADVISORY, out, [], started,
+            "find_relevant_precedents", "precedent", ToolAuthority.ADVISORY, out, [],
+            started, arguments={"ambiguity": ambiguity},
         )
         return out
 

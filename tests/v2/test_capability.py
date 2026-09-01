@@ -27,12 +27,13 @@ from vouch.v2.authority import (
     Action,
     CapabilityRecord,
     CapabilityStore,
-    Issuer,
     IssuerViolation,
     PolicyEngine,
     TargetType,
     execute,
+    freeze_parameters,
 )
+from vouch.v2.issuance import IssuanceAuthority, IssuanceViolation
 from vouch.v2.contracts import Disposition, FailureCategory, VouchFailure
 from vouch.v2.corpus import (
     Corpus,
@@ -62,21 +63,27 @@ def world():
     return corpus, capabilities, PolicyEngine(corpus, capabilities), EventLog()
 
 
-def _issue(world, action=Action.RELEASE_LOT, version=1, lot_id="LOT-1"):
+def _issue(world, action=Action.RELEASE_LOT, version=1, lot_id="LOT-1", **parameters):
     """Obtain a capability the only way the architecture allows: via policy.
 
-    `_grant` is the Policy Engine's own credential. Reaching into it here is
-    deliberate — these tests need capabilities with specific bindings that the
-    disposition path would not naturally produce (a quarantine capability for a
-    clean lot, an already-expired TTL). Every OTHER test in the suite obtains
-    capabilities through `evaluate_lot_disposition`, and the P0-1 tests below
-    prove no caller without this credential can do what this helper does.
+    `policy._issuer` is the Policy Engine's own `IssuanceAuthority`. Reaching
+    into it here is deliberate — these tests need capabilities with specific
+    bindings that the disposition path would not naturally produce (a
+    quarantine capability for a clean lot, an already-expired TTL). Every OTHER
+    test in the suite obtains capabilities through `evaluate_lot_disposition`,
+    and the F1 tests below prove no caller lacking that authority can do what
+    this helper does.
     """
     _, capabilities, policy, _ = world
+    target_type = (
+        TargetType.LOT
+        if action in (Action.RELEASE_LOT, Action.QUARANTINE_LOT, Action.CREATE_QA_REVIEW)
+        else TargetType.PRODUCTION_ORDER
+    )
     return capabilities.issue(
         policy._issuer,
-        decision_record_id="DR-1", target_type=TargetType.LOT, target_id=lot_id,
-        action=action, observed_state_version=version,
+        decision_record_id="DR-1", target_type=target_type, target_id=lot_id,
+        action=action, observed_state_version=version, parameters=parameters,
     )
 
 
@@ -117,23 +124,34 @@ def test_normal_application_caller_cannot_issue(world):
     assert capabilities.ledger == []
 
 
+class _FakeAuthority:
+    """A look-alike with the right shape and the right name, no real key."""
+
+    def __init__(self, identity: str = "vouch.policy-engine", proof: str = "deadbeef"):
+        self.identity = identity
+        self._proof = proof
+
+    def sign(self, binding: dict) -> str:
+        return self._proof
+
+
 @pytest.mark.parametrize(
     "impostor",
     [
-        Issuer(identity="investigator"),
-        Issuer(identity="verifier"),
-        Issuer(identity="vouch.policy-engine"),  # right NAME, no secret
-        Issuer(identity="vouch.policy-engine", secret=b"guessed-secret"),
-        Issuer(identity="arbitrary-caller", secret=b""),
+        _FakeAuthority("investigator"),
+        _FakeAuthority("verifier"),
+        _FakeAuthority("vouch.policy-engine"),  # right NAME, no key
+        _FakeAuthority("vouch.policy-engine", proof="a" * 64),  # plausible digest
+        _FakeAuthority("arbitrary-caller", proof=""),
     ],
-    ids=["investigator", "verifier", "name-only", "wrong-secret", "empty"],
+    ids=["investigator", "verifier", "name-only", "fake-proof", "empty-proof"],
 )
 def test_unauthorized_identities_cannot_issue(world, impostor):
-    """Asserting the Policy Engine's name is not the same as being it.
+    """Asserting the Policy Engine's name is not the same as being it (F1).
 
-    This is the test that must exercise authorization semantics rather than
-    method naming: the credential carries the store's secret, which is never
-    exposed, so no constructed Issuer passes.
+    Authorization rests on a signature the store cannot produce and the
+    impostor cannot forge — never on the identity string, which is recorded as
+    provenance only.
     """
     corpus, capabilities, _, _ = world
     with pytest.raises(IssuerViolation):
@@ -143,11 +161,12 @@ def test_unauthorized_identities_cannot_issue(world, impostor):
             target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
         )
     assert capabilities.ledger == []
+    assert capabilities._rows == {}
     assert corpus.lot("LOT-1").status == "RECEIVED"
 
 
 def test_arbitrary_direct_store_caller_cannot_issue(world):
-    """Even holding the store object itself grants nothing."""
+    """Even holding the store object itself grants nothing (F1)."""
     _, capabilities, _, _ = world
     for bogus in (None, object(), "vouch.policy-engine", 42):
         with pytest.raises((IssuerViolation, TypeError, AttributeError)):
@@ -158,25 +177,162 @@ def test_arbitrary_direct_store_caller_cannot_issue(world):
                 observed_state_version=1,
             )
     assert capabilities.ledger == []
+    assert capabilities._rows == {}
 
 
-def test_issuer_from_a_different_store_cannot_issue_here(world):
-    """Credentials are per-store; a valid issuer elsewhere is worthless here."""
+def test_store_has_no_minting_operation(world):
+    """The exact audit exploit (F1): `store._mint_issuer("arbitrary-caller")`.
+
+    The finding was not that the method was named with an underscore — it was
+    that the object which VALIDATES authority also VENDED it. There is now no
+    minting operation on the store under any name, and the store holds no key
+    material to mint from.
+    """
     _, capabilities, _, _ = world
-    other_store = CapabilityStore()
-    other_policy = PolicyEngine(Corpus(), other_store)
+    assert not hasattr(capabilities, "_mint_issuer")
+    # No attribute on the store returns anything that can sign.
+    for name in dir(capabilities):
+        attribute = getattr(capabilities, name, None)
+        assert not isinstance(attribute, IssuanceAuthority), (
+            f"{name} hands out issuance authority"
+        )
+    # And no attribute holds key bytes.
+    for name in vars(capabilities):
+        assert not isinstance(vars(capabilities)[name], (bytes, bytearray)), name
+
+
+def test_exact_audit_exploit_is_impossible(world):
+    """The verbatim exploit from the Iteration 2 audit, end to end (F1).
+
+        store = CapabilityStore()
+        issuer = store._mint_issuer("arbitrary-caller")
+        capability = store.issue(issuer, ..., action=RELEASE_LOT, ...)
+        store.consume(capability.capability_id, corpus)
+
+    Every step must fail, zero capability rows must exist, and LOT-X must not
+    become RELEASED.
+    """
+    corpus, _, _, _ = world
+    store = CapabilityStore()
+
+    with pytest.raises(AttributeError):
+        store._mint_issuer("arbitrary-caller")  # type: ignore[attr-defined]
+
+    # Even given the shape of the old credential, issuance refuses.
     with pytest.raises(IssuerViolation):
-        capabilities.issue(
-            other_policy._issuer,
+        store.issue(
+            _FakeAuthority("arbitrary-caller"),
             decision_record_id="DR-EVIL", target_type=TargetType.LOT,
             target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
         )
 
+    assert store._rows == {}
+    assert store.ledger == []
+    assert corpus.lot("LOT-1").status == "RECEIVED"
+    assert corpus.get("inventory", "LOT-1").usable is False
 
-def test_issuer_secret_is_not_exposed_by_repr(world):
-    """A credential must not leak through logs or tracebacks."""
+
+def test_investigator_and_verifier_cannot_obtain_issuance_authority():
+    """The decision agents cannot claim the issuance role (F1)."""
+    from vouch.v2 import issuance
+
+    class ApplicabilityInvestigator:  # look-alike defined outside the package
+        pass
+
+    class IndependentVerifier:
+        pass
+
+    for claimant in (ApplicabilityInvestigator, IndependentVerifier):
+        with pytest.raises(IssuanceViolation):
+            issuance.authority(claimant, "vouch.policy-engine")
+
+
+def test_fake_policy_engine_class_cannot_claim_authority():
+    """A class NAMED PolicyEngine, defined anywhere else, is refused (F1)."""
+    from vouch.v2 import issuance
+
+    class PolicyEngine:  # same qualname, different module
+        IDENTITY = "vouch.policy-engine"
+
+    with pytest.raises(IssuanceViolation):
+        issuance.authority(PolicyEngine, "vouch.policy-engine")
+
+
+def test_missing_issuer_is_a_type_error(world):
+    """Omitting the issuer entirely creates nothing (F1)."""
+    _, capabilities, _, _ = world
+    with pytest.raises(TypeError):
+        capabilities.issue(  # type: ignore[call-arg]
+            decision_record_id="DR-EVIL", target_type=TargetType.LOT,
+            target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
+        )
+    assert capabilities._rows == {}
+
+
+def test_copied_issuer_object_cannot_be_reconstructed(world):
+    """Copying the AUTHORITY object's visible fields yields nothing (F1).
+
+    An attacker who can see `policy._issuer` in a traceback learns its identity
+    string. Reconstructing a dataclass with that identity and any signing
+    callable they can write does not produce a verifiable proof.
+    """
+    from dataclasses import replace as dc_replace
+
+    _, capabilities, policy, _ = world
+    genuine = policy._issuer
+
+    # Reconstruct with the same identity but the attacker's own signer.
+    forged = IssuanceAuthority(identity=genuine.identity, _sign=lambda binding: "0" * 64)
+    with pytest.raises(IssuerViolation):
+        capabilities.issue(
+            forged,
+            decision_record_id="DR-EVIL", target_type=TargetType.LOT,
+            target_id="LOT-1", action=Action.RELEASE_LOT, observed_state_version=1,
+        )
+    assert capabilities._rows == {}
+
+    # A genuine copy is NOT an escalation: obtaining one in the first place is
+    # the guarded step, and it still signs exactly what policy already approved.
+    copied = dc_replace(genuine)
+    issued = capabilities.issue(
+        copied,
+        decision_record_id="DR-1", target_type=TargetType.LOT, target_id="LOT-1",
+        action=Action.RELEASE_LOT, observed_state_version=1,
+    )
+    assert issued.issuer_identity == PolicyEngine.IDENTITY
+
+
+def test_legitimate_policy_engine_issuance_succeeds(world):
+    """The one authorized path still works (F1 pass condition)."""
+    corpus, capabilities, _, events = world
+    decision = _authorize_release(world)
+    assert decision.allowed and decision.capability is not None
+    entry = execute(decision.capability, corpus, capabilities, events)
+    assert corpus.lot("LOT-1").status == "RELEASED"
+    assert entry["issuer_identity"] == PolicyEngine.IDENTITY
+    assert len(capabilities.ledger) == 1
+
+
+def test_issuer_identity_alone_does_not_authenticate(world):
+    """A stored row whose identity says policy-engine but whose proof is junk
+    is refused at consume (F1/F2)."""
+    corpus, capabilities, _, _ = world
+    capability = _issue(world)
+    capabilities._rows[capability.capability_id] = replace(
+        capability, issuer_proof="f" * 64
+    )
+    with pytest.raises(VouchFailure) as caught:
+        capabilities.consume(capability.capability_id, corpus)
+    assert caught.value.category is FailureCategory.POLICY_REFUSAL
+    assert corpus.lot("LOT-1").status == "RECEIVED"
+
+
+def test_issuer_authority_is_not_exposed_by_repr(world):
+    """The signing callable must not leak through logs or tracebacks."""
     _, _, policy, _ = world
-    assert "secret" not in repr(policy._issuer).lower() or "b'" not in repr(policy._issuer)
+    rendered = repr(policy._issuer)
+    assert "_sign" not in rendered
+    assert "lambda" not in rendered and "function" not in rendered
 
 
 # ==========================================================================

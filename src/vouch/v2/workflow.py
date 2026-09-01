@@ -50,11 +50,37 @@ from .evidence import (
     ingest,
 )
 from .lifecycle import EventLog, EventType, utcnow
-from .persistence import InMemoryRecordStore
+from .persistence import InMemoryRecordStore, hydrate_claims, hydrate_record
 from .local_reasoners import investigator_reasoner, verifier_reasoner
 from .reconcile import POLICY_VERSION, reconcile, run_basis_checks
 
 MAX_MODEL_ATTEMPTS = 2
+
+
+def _binding_reasons(artifact, inspection) -> list[str]:
+    """Why this artifact is not affirmatively bound, if it is not (F3/F4)."""
+    if artifact.binding_status == "MISMATCH":
+        return list(inspection.binding_mismatches)
+    if artifact.binding_status == "IDENTITY_CONFLICT":
+        identity = inspection.claimed_identity
+        conflicts = []
+        for label, key in (
+            ("lot", "claimed_lots"), ("material", "claimed_materials"),
+            ("supplier", "claimed_suppliers"), ("supplier_site", "claimed_supplier_sites"),
+        ):
+            values = identity.get(key, [])
+            if len(values) > 1:
+                conflicts.append(
+                    f"document asserts conflicting {label} identities: "
+                    + ", ".join(values)
+                )
+        return conflicts
+    if artifact.binding_status == "UNBOUND_NO_IDENTITY":
+        return [
+            "document states no lot, material or supplier identity, so it "
+            "cannot be affirmatively bound to the receiving record"
+        ]
+    return []
 
 
 @dataclass
@@ -113,8 +139,45 @@ class VouchV2:
             corpus, local_fn=verifier_reasoner
         )
 
+        # Process-local CACHE of the durable record, never the record itself
+        # (audit-2 F8). `_record_for` reads through to the store on a miss, so
+        # a fresh process resumes a case rather than failing to find it.
         self.records: dict[str, DecisionRecord] = {}
         self.claims: dict[str, list[CanonicalEvidenceClaim]] = {}
+
+    # ------------------------------------------------------------------
+    # durable hydration (audit-2 F8)
+    # ------------------------------------------------------------------
+    def _record_for(self, record_id: str) -> DecisionRecord | None:
+        """The DecisionRecord for this case, from memory or from the store.
+
+        The audit found `supply_human_evidence` reading only `self.records`, so
+        destroying the process destroyed the case: a persisted record could
+        never be continued. Reading through to the durable store is what makes
+        "the same case resumes" true across a restart rather than only within
+        one process.
+        """
+        cached = self.records.get(record_id)
+        if cached is not None:
+            return cached
+        stored = self.record_store.load(record_id)
+        if stored is None:
+            return None
+        record = hydrate_record(stored)
+        self.records[record_id] = record
+        self.claims.setdefault(record_id, hydrate_claims(stored))
+        return record
+
+    def resume(self, record_id: str) -> DecisionRecord | None:
+        """Public hydration entry point. Also refreshes corpus state.
+
+        A resumed case must judge against the CURRENT lot version, not the one
+        the previous run saw, so any cached corpus objects are dropped first.
+        """
+        refresh = getattr(self.corpus, "refresh", None)
+        if callable(refresh):
+            refresh()
+        return self._record_for(record_id)
 
     # ------------------------------------------------------------------
     # ingestion
@@ -170,6 +233,9 @@ class VouchV2:
             "status": artifact.status,
             "claimed_identity": inspection.claimed_identity,
             "binding_mismatches": list(inspection.binding_mismatches),
+            # audit-2 F3/F4: the explicit binding outcome and every reason.
+            "binding_status": artifact.binding_status,
+            "binding_reasons": _binding_reasons(artifact, inspection),
             "identity_stated": artifact.identity_stated,
         }
 
@@ -182,13 +248,23 @@ class VouchV2:
             summary["parse_error"] = artifact.parse_error
             return [], summary
 
-        if artifact.status is not ArtifactStatus.RECEIVED:
-            # Binding mismatch or security quarantine: no claims are produced,
-            # and nothing is rebound to the requested lot.
+        if artifact.status is ArtifactStatus.QUARANTINED_SECURITY:
+            # Hostile content never reaches extraction, let alone a model. The
+            # artifact is preserved for human review rather than dropped.
+            summary["extraction_method"] = "NONE"
+            summary["extraction_confidence"] = 0.0
+            summary["low_confidence"] = False
+            summary["parse_error"] = artifact.parse_error
             return [], summary
 
         # P0-8: the text comes from the content-type-aware parser used during
         # ingestion (a real PDF parser for PDFs), not a blind utf-8 decode.
+        #
+        # Extraction runs even for an artifact that is not affirmatively bound
+        # (audit-2 F3/F4), because "how much of this could we read" is a fact
+        # about the bytes and stays truthful either way. What the binding status
+        # controls is whether the resulting claims may be USED — an unbound or
+        # conflicted artifact returns none.
         candidates, method, confidence = extract(
             artifact, artifact.extraction_text, events, decision_record_id,
             self.model_fallback, parse_confidence=artifact.parse_confidence,
@@ -197,6 +273,12 @@ class VouchV2:
         summary["extraction_confidence"] = confidence
         summary["low_confidence"] = confidence < LOW_CONFIDENCE
         summary["parse_error"] = artifact.parse_error
+
+        if artifact.status is not ArtifactStatus.RECEIVED:
+            # F3/F4: mismatch, self-conflict or no identity at all. No claims
+            # enter the autonomous snapshot, and nothing is rebound to the
+            # requested lot.
+            return [], summary
 
         claims = canonicalize(candidates, artifact, method, trust_label)
         return claims, summary
@@ -215,7 +297,9 @@ class VouchV2:
         """Run the full pipeline for one lot."""
         record_id = decision_record_id or f"DR-{uuid.uuid4().hex[:12]}"
         events = events or EventLog()
-        record = self.records.get(record_id) or DecisionRecord(record_id=record_id)
+        # F8: a record id that already exists durably is CONTINUED, never
+        # replaced with a fresh object that would erase its prior runs.
+        record = self._record_for(record_id) or DecisionRecord(record_id=record_id)
         self.records[record_id] = record
 
         lot = self.corpus.lot(lot_id)
@@ -235,6 +319,8 @@ class VouchV2:
         record.policy.policy_version = POLICY_VERSION
 
         # -- 1. evidence -------------------------------------------------
+        # F8: prior claims come from the hydrated record when this process did
+        # not itself extract them.
         claims = list(self.claims.get(record_id, []))
         for document in documents or []:
             new_claims, summary = self.ingest_evidence(
@@ -261,11 +347,42 @@ class VouchV2:
             record.security.prompt_attack_detected |= inspection.prompt_attack_detected
             record.security.malware_found |= inspection.malware_found
 
+            record.evidence.binding_statuses.append(summary["binding_status"])
+
+            if summary.get("parse_error") or summary.get("low_confidence"):
+                # P0-8: the artifact could not be READ, or not read well enough
+                # to stand alone. That is an EXTRACTION failure, not an identity
+                # one. Checked before the binding branches because a document
+                # nobody could parse obviously states no identity too, and
+                # reporting it as "unbound" would point triage at the wrong
+                # problem (audit-2 F3 must not swallow P0-8).
+                record.extraction.low_confidence_routed_to_human = True
+                if not summary.get("parse_error"):
+                    # A readable-but-uncertain artifact may still have produced
+                    # claims; keep them out of an autonomous disposition but do
+                    # not discard the binding facts already recorded.
+                    pass
+                continue
+
             if summary["status"] is ArtifactStatus.EVIDENCE_BINDING_MISMATCH:
                 # P0-4. The artifact is preserved and reported; it is NOT
                 # rebound to the requested lot and produces no claims.
                 record.security.binding_mismatches.extend(summary["binding_mismatches"])
                 record.security.rejected_artifact_ids.append(summary["artifact_id"])
+                continue
+
+            if summary["status"] is ArtifactStatus.EVIDENCE_IDENTITY_CONFLICT:
+                # audit-2 F4. The artifact contradicts ITSELF. Preserved, no
+                # claims, explicit conflict recorded for human review.
+                record.security.identity_conflicts.extend(summary["binding_reasons"])
+                record.security.rejected_artifact_ids.append(summary["artifact_id"])
+                continue
+
+            if summary["status"] is ArtifactStatus.EVIDENCE_UNBOUND:
+                # audit-2 F3. The artifact states no identity, so it cannot be
+                # affirmatively bound. Preserved, no claims, human review — and
+                # explicitly NOT a defect finding about the lot.
+                record.security.unbound_artifact_ids.append(summary["artifact_id"])
                 continue
 
             if summary["status"] is ArtifactStatus.QUARANTINED_SECURITY:
@@ -308,6 +425,28 @@ class VouchV2:
                 record, events, lot_id,
                 FailureCategory.EXTRACTION_LOW_CONFIDENCE,
                 "extraction confidence below threshold; human review required",
+            )
+
+        # audit-2 F4. A self-contradictory artifact is its own category: the
+        # document is not about another lot, it cannot say which lot it is
+        # about at all.
+        if record.security.identity_conflicts and not claims:
+            return self._quality_decision(
+                record, events, lot_id,
+                FailureCategory.EVIDENCE_IDENTITY_CONFLICT,
+                "; ".join(record.security.identity_conflicts),
+            )
+
+        # audit-2 F3. Evidence that cannot be affirmatively bound to the
+        # receiving identity produces no autonomous disposition. The artifact
+        # is preserved and a human decides; the lot is NOT marked defective,
+        # because an unbindable document says nothing about its quality.
+        if record.security.unbound_artifact_ids and not claims:
+            return self._quality_decision(
+                record, events, lot_id,
+                FailureCategory.EVIDENCE_UNBOUND,
+                "evidence states no lot, material or supplier identity and "
+                "cannot be bound to this receipt; human review required",
             )
 
         # A security block with no usable evidence is a SECURITY_QUARANTINE,
@@ -585,22 +724,22 @@ class VouchV2:
             result["reason"] = "selected order disappeared"
             return result
 
+        # F7: the target slot is part of the AUTHORIZATION, signed into the
+        # capability. There is no execution-time slot parameter to substitute.
         decision = self.policy.authorize_order_action(
             decision_record_id=decision_record_id,
             order_id=candidate.order_id,
             action=Action.RESEQUENCE_PRODUCTION_ORDER,
             observed_state_version=candidate.state_version,
             events=events,
+            parameters={"target_slot": blocked.planned_slot},
         )
         if not decision.allowed or decision.capability is None:
             result["reason"] = decision.reason
             return result
 
         try:
-            entry = execute(
-                decision.capability, self.corpus, self.capabilities, events,
-                params={"target_slot": blocked.planned_slot},
-            )
+            entry = execute(decision.capability, self.corpus, self.capabilities, events)
         except VouchFailure as failure:
             # The slot was taken between enumeration and execution, or the
             # order moved. Refuse rather than overwrite.
@@ -642,7 +781,9 @@ class VouchV2:
         submitting twice does not duplicate claims or re-open a closed review.
         """
         events = events or EventLog()
-        record = self.records.get(decision_record_id)
+        # F8: hydrate from the durable store. A case survives the process that
+        # created it, so a new instance over the same stores can continue it.
+        record = self.resume(decision_record_id)
         if record is None:
             raise VouchFailure(
                 FailureCategory.PERSISTENCE_FAILURE,
@@ -670,6 +811,28 @@ class VouchV2:
         record.human.content_hashes.append(summary["content_hash"])
         record.human.authority_source = authority_source
         record.human.evidence_supplied.extend(c.claim_id for c in claims)
+
+        # F8: the human artifact's provenance belongs in the record's evidence
+        # segment like any other artifact. Recording it only under `human`
+        # meant a resumed decision could not re-fetch the very evidence that
+        # resolved it.
+        record.evidence.source_artifact_hashes.append(summary["content_hash"])
+        record.evidence.document_identities.append(summary["document_identity"])
+        record.evidence.receipt_timestamps.append(summary["received_at"])
+        record.evidence.storage_refs.append(summary["storage_ref"])
+        record.evidence.object_versions.append(summary["object_version"])
+        record.evidence.claimed_identities.append(summary["claimed_identity"])
+        record.evidence.binding_statuses.append(summary["binding_status"])
+        for claim in claims:
+            record.extraction.per_claim[claim.claim_id] = {
+                "method": claim.extraction_method.value,
+                "version": claim.extraction_version,
+                "confidence": claim.extraction_confidence,
+                "locator": claim.source_locator,
+                "source_hash": claim.source_hash,
+                "trust_label": claim.trust_label.value,
+            }
+
         record.rerun()
 
         existing = self.claims.get(decision_record_id, [])
@@ -790,9 +953,22 @@ class VouchV2:
         record.storage.record_store = getattr(
             self.record_store, "kind", type(self.record_store).__name__
         )
+        # F8: the canonical claims are part of the durable record, so a
+        # resumed case reconstructs the evidence it already had rather than
+        # starting from an empty claim set.
+        record.evidence.canonical_claims = [
+            claim.model_dump(mode="json") for claim in self.claims.get(record.record_id, [])
+        ]
         try:
             record.storage.record_ref = self.record_store.save(record)
-            record.storage.event_count = self.record_store.append_all(events.events)
+            # F8: append-only sequence allocation that CONTINUES after the
+            # existing maximum. Restarting at 1 collided with run 1's keys and
+            # silently dropped every continuation event.
+            appended = self.record_store.append_all(events.events)
+            record.storage.event_count += appended
+            record.storage.last_event_sequence = (
+                self.record_store.next_sequence(record.record_id) - 1
+            )
             # Re-save so the storage segment itself is part of the stored
             # document rather than only in memory.
             self.record_store.save(record)

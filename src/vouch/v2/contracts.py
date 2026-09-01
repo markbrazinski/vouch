@@ -138,6 +138,10 @@ class SecurityInspection(BaseModel):
     #: validation against the authoritative receiving record.
     claimed_identity: dict = Field(default_factory=dict)
     binding_mismatches: list[str] = Field(default_factory=list)
+    #: audit-2 F3/F4: the explicit binding outcome. "no mismatches" is NOT the
+    #: same as "bound", and conflating them is what let an identity-less COA
+    #: release a lot.
+    binding_status: str = "BOUND"
 
     @property
     def malware_found(self) -> bool:
@@ -145,7 +149,8 @@ class SecurityInspection(BaseModel):
 
     @property
     def binding_ok(self) -> bool:
-        return not self.binding_mismatches
+        """Affirmatively bound. Absence of contradiction is not enough (F3)."""
+        return self.binding_status == "BOUND" and not self.binding_mismatches
 
     @property
     def blocked(self) -> bool:
@@ -157,7 +162,6 @@ class SecurityInspection(BaseModel):
         return (
             self.malware_found
             or self.prompt_attack_detected
-            or bool(self.binding_mismatches)
             or not (self.file_type_ok and self.size_ok)
         )
 
@@ -168,6 +172,13 @@ class ArtifactStatus(str, Enum):
     #: P0-4. Distinct from a security quarantine: the artifact may be perfectly
     #: benign and simply belong to a different lot.
     EVIDENCE_BINDING_MISMATCH = "EVIDENCE_BINDING_MISMATCH"
+    #: audit-2 F3. The artifact states no identity, so it cannot be
+    #: affirmatively tied to the receiving record. Distinct from a mismatch:
+    #: nothing contradicts, but nothing binds either.
+    EVIDENCE_UNBOUND = "EVIDENCE_UNBOUND"
+    #: audit-2 F4. The artifact contradicts ITSELF — two different lots,
+    #: materials, suppliers or sites inside one document.
+    EVIDENCE_IDENTITY_CONFLICT = "EVIDENCE_IDENTITY_CONFLICT"
     EXTRACTED = "EXTRACTED"
     REJECTED = "REJECTED"
 
@@ -204,6 +215,8 @@ class ExternalEvidenceArtifact(BaseModel):
     #: P0-4: did the document state its own identity at all? A document that
     #: states nothing is a different case from one that states a contradiction.
     identity_stated: bool = False
+    #: audit-2 F3/F4: the reconciled binding outcome for this artifact.
+    binding_status: str = "BOUND"
     #: P0-8: text the deterministic parser recovered, how much of the artifact
     #: it could actually read, and why it failed if it did.
     extraction_text: str = ""
@@ -461,6 +474,11 @@ class FailureCategory(str, Enum):
     SECURITY_QUARANTINE = "SECURITY_QUARANTINE"
     #: P0-4. The artifact contradicts the target it was submitted for.
     EVIDENCE_BINDING_MISMATCH = "EVIDENCE_BINDING_MISMATCH"
+    #: audit-2 F3. The artifact states no identity at all, so it cannot be
+    #: affirmatively bound. Human review, NOT a defect finding.
+    EVIDENCE_UNBOUND = "EVIDENCE_UNBOUND"
+    #: audit-2 F4. The artifact asserts contradictory identities internally.
+    EVIDENCE_IDENTITY_CONFLICT = "EVIDENCE_IDENTITY_CONFLICT"
     #: P0-8. Extraction was too uncertain to support an autonomous decision.
     EXTRACTION_LOW_CONFIDENCE = "EXTRACTION_LOW_CONFIDENCE"
     PERSISTENCE_FAILURE = "PERSISTENCE_FAILURE"
