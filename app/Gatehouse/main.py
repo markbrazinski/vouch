@@ -133,6 +133,237 @@ def _record_summary(record) -> dict:
     }
 
 
+# ==========================================================================
+# read projections
+#
+# Every function below is READ-ONLY. None issues a capability, emits a
+# lifecycle event, mutates a DecisionRecord, or touches corpus state. That is
+# not a convention: an action that read the factory and changed it while doing
+# so would make the authority ledger an incomplete account of what happened.
+# ==========================================================================
+
+
+def _stored_record(decision_record_id: str) -> dict:
+    """The DecisionRecord document, straight from the durable store.
+
+    Deliberately NOT `_record_summary`: that projection drops evidence,
+    extraction, corpus versions, the archived runs and both reconciliation
+    value maps, which is most of what an audit surface exists to show. A
+    caller asking for a record should get the record.
+    """
+    if not decision_record_id:
+        raise VouchFailure(
+            FailureCategory.PERSISTENCE_FAILURE,
+            "decision_record_id is required",
+        )
+    document = _VOUCH.record_store.load(decision_record_id)
+    if document is None:
+        raise VouchFailure(
+            FailureCategory.PERSISTENCE_FAILURE,
+            f"no decision record {decision_record_id}",
+        )
+    return document
+
+
+def _artifacts_from_events(events: list[dict]) -> dict[str, dict]:
+    """Source-artifact metadata, assembled from the events that recorded it.
+
+    `EvidenceSegment` keeps hashes, refs and versions in index-aligned lists but
+    carries no artifact id, so the events are the only place the id and its
+    metadata appear together. Reading them here keeps that join in one function
+    rather than in every caller.
+
+    No `view_ref` is returned. Serving bytes to a browser needs a presigned URL
+    that does not exist yet, and inventing the field would be worse than
+    omitting it: a frontend would render a broken viewer instead of the honest
+    "source unavailable" state the contract asks for.
+    """
+    artifacts: dict[str, dict] = {}
+    for event in events:
+        artifact_id = event.get("artifact_id")
+        if not artifact_id:
+            continue
+        entry = artifacts.setdefault(
+            artifact_id,
+            {
+                "artifact_id": artifact_id,
+                "document_identity": "",
+                "content_type": "",
+                "trust_class": "",
+                "security_state": "PENDING",
+                "content_hash": "",
+                "object_version": "",
+                "storage_ref": "",
+                "binding_status": "",
+                "received_at": "",
+                "page_count": None,
+                "claim_count": None,
+                "excluded_from_decision_use": False,
+                "prompt_attack_detected": False,
+                "view_ref": None,
+            },
+        )
+        name = event.get("event")
+        if name == "EVIDENCE_RECEIVED":
+            entry["content_type"] = event.get("content_type", "")
+            entry["trust_class"] = event.get("trust_label", "")
+            entry["content_hash"] = event.get("content_hash", "")
+            entry["object_version"] = event.get("object_version", "")
+            entry["storage_ref"] = event.get("storage_ref", "")
+            entry["received_at"] = event.get("at", "")
+        elif name == "EVIDENCE_SECURITY_COMPLETED":
+            quarantined = bool(event.get("quarantined"))
+            entry["security_state"] = "QUARANTINED" if quarantined else "CLEARED"
+            entry["prompt_attack_detected"] = bool(event.get("prompt_attack_detected"))
+            entry["binding_status"] = event.get("binding_status", entry["binding_status"])
+        elif name == "EVIDENCE_BINDING_COMPLETED":
+            entry["binding_status"] = event.get("binding_status", "")
+        elif name == "EVIDENCE_EXTRACTED":
+            entry["claim_count"] = event.get("claim_count")
+        elif name == "HUMAN_EVIDENCE_RECEIVED":
+            entry["trust_class"] = event.get("trust_label", "")
+            entry["document_identity"] = event.get("document_identity", "")
+            entry["content_hash"] = event.get("content_hash", "")
+            entry["object_version"] = event.get("object_version", "")
+            entry["storage_ref"] = event.get("storage_ref", "")
+            entry["received_at"] = event.get("at", "")
+            entry["binding_status"] = event.get("binding_status", "")
+            entry["security_state"] = "CLEARED"
+    return artifacts
+
+
+def _apply_exclusions(artifacts: dict[str, dict], record: dict) -> None:
+    """Mark every artifact the decision was not allowed to reason from.
+
+    Security quarantine and the three binding failures are different reasons
+    with the same consequence, and the frontend needs the consequence stated
+    rather than inferred from which list an id happens to appear in.
+    """
+    security = record.get("security") or {}
+    excluded = set()
+    for key in (
+        "quarantined_artifact_ids",
+        "rejected_artifact_ids",
+        "unbound_artifact_ids",
+        "identity_conflicts",
+    ):
+        excluded.update(security.get(key) or [])
+    for artifact_id in excluded:
+        if artifact_id in artifacts:
+            artifacts[artifact_id]["excluded_from_decision_use"] = True
+
+
+def _decision_summaries(limit: int, cursor: dict | None) -> tuple[list[dict], dict | None]:
+    """One page of decisions, newest first.
+
+    The durable store answers through the decisions-by-recency index. The
+    in-memory store has no index and no recency, so it answers from what it
+    holds — labeled as itself by `backend`, never described as the other.
+    """
+    store = _VOUCH.record_store
+    if hasattr(store, "list_decisions"):
+        return store.list_decisions(limit, cursor)
+    rows = []
+    for record_id in store.list_ids():
+        document = store.load(record_id) or {}
+        rows.append(
+            {
+                "record_id": record_id,
+                "lot_id": (document.get("identity") or {}).get("lot_id", ""),
+                "disposition": (document.get("disposition") or {}).get("disposition", ""),
+                "failure_category": document.get("failure_category", ""),
+                "saved_at": document.get("saved_at", ""),
+            }
+        )
+    rows.sort(key=lambda row: row["saved_at"], reverse=True)
+    return rows[:limit], None
+
+
+def _incoming_row(summary: dict) -> dict:
+    """One Incoming row, from the indexed columns plus the lot it names.
+
+    `row_state` is computed here rather than left to the frontend: deriving it
+    from a disposition and a stage would be a heuristic, and two clients would
+    eventually disagree about what the same record means.
+    """
+    lot = _CORPUS.lot(summary.get("lot_id", "")) if summary.get("lot_id") else None
+    disposition = summary.get("disposition", "")
+    failure = summary.get("failure_category", "")
+
+    if failure == "SECURITY_QUARANTINE":
+        row_state = "SECURITY_HOLD"
+    elif disposition == "RELEASE":
+        row_state = "RELEASED"
+    elif disposition == "QUARANTINE":
+        row_state = "QUARANTINED"
+    elif disposition == "INSUFFICIENT_EVIDENCE" or failure:
+        row_state = "QUALITY_DECISION_REQUIRED"
+    else:
+        row_state = "EVIDENCE_RECEIVED"
+
+    return {
+        "decision_record_id": summary.get("record_id", ""),
+        "lot_id": summary.get("lot_id", ""),
+        "material_id": lot.material_id if lot else "",
+        "supplier_id": lot.supplier_id if lot else "",
+        "received_at": lot.received_at if lot else "",
+        "quantity": lot.quantity if lot else None,
+        "units": lot.units if lot else "",
+        "lot_status": lot.status if lot else "",
+        "disposition": disposition,
+        "failure_category": failure,
+        "row_state": row_state,
+        "attention_required": row_state in ("QUALITY_DECISION_REQUIRED", "SECURITY_HOLD"),
+        "decided_at": summary.get("saved_at", ""),
+    }
+
+
+def _today_plan() -> dict:
+    """Authoritative readiness for every order, grouped by resource.
+
+    Readiness is recomputed from live inventory by the same deterministic
+    function the decision path uses, so this cannot drift from what a decision
+    would conclude.
+
+    There is deliberately no before/after here. Which change to highlight is a
+    presentation question the frontend answers from `caused_by` links; a
+    backend that guessed at it would be inventing operational history.
+    """
+    lines: dict[str, list[dict]] = {}
+    counts = {"READY": 0, "AT_RISK": 0, "BLOCKED": 0, "COMPLETE": 0}
+    for order in _CORPUS.all("production_order"):
+        result = compute_readiness(_CORPUS, order.order_id)
+        readiness = result.readiness.value
+        counts[readiness] = counts.get(readiness, 0) + 1
+        lines.setdefault(order.resource, []).append(
+            {
+                "order_id": order.order_id,
+                "product": order.product,
+                "planned_slot": order.planned_slot,
+                "status": order.status,
+                "readiness": readiness,
+                "reason": result.reason,
+                "coverage": [line.as_dict() for line in result.coverage],
+                "requirements": [
+                    {"material_id": line.material_id, "quantity": line.quantity}
+                    for line in order.requirements
+                ],
+                "customer_committed": order.customer_committed,
+                "need_by": order.need_by,
+                "state_version": order.state_version,
+            }
+        )
+    for orders in lines.values():
+        orders.sort(key=lambda row: row["planned_slot"])
+    return {
+        "readiness_counts": counts,
+        "lines": [
+            {"line_id": resource, "orders": orders}
+            for resource, orders in sorted(lines.items())
+        ],
+    }
+
+
 def invoke(payload: dict, context=None) -> dict:
     """Typed invocation. Importable directly for runtime testing."""
     if not isinstance(payload, dict):
@@ -222,6 +453,113 @@ def invoke(payload: dict, context=None) -> dict:
                 # one exposes a whole-process list. Neither is described as
                 # the other.
                 "entries": _ledger(payload.get("decision_record_id", "")),
+            }
+
+        # ------------------------------------------------------------------
+        # read actions. None of these mutates anything.
+        # ------------------------------------------------------------------
+        if action == "list_decisions":
+            limit = int(payload.get("limit") or 50)
+            rows, cursor = _decision_summaries(limit, payload.get("cursor"))
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                "rows": [_incoming_row(row) for row in rows],
+                "cursor": cursor,
+                # Only counts with an authoritative meaning. There is
+                # deliberately no `in_progress`: invocation is synchronous, so
+                # no decision is ever persisted mid-flight and any number here
+                # would be fiction. `completed_by_vouch` is absent for the same
+                # reason — nothing in the model attributes a decision to Vouch
+                # rather than a human.
+                "counts": {"returned": len(rows)},
+            }
+
+        if action == "get_decision":
+            document = _stored_record(payload.get("decision_record_id", ""))
+            events = _VOUCH.record_store.events_for(document.get("record_id", ""))
+            artifacts = _artifacts_from_events(
+                [{**row["payload"], "event": row["event"], "at": row["at"]} for row in events]
+            )
+            _apply_exclusions(artifacts, document)
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                # The whole stored document, archived runs included. A caller
+                # reconstructing an audit needs the record, not a digest of it.
+                "record": document,
+                "sources": list(artifacts.values()),
+                "last_event_sequence": (document.get("storage") or {}).get(
+                    "last_event_sequence", 0
+                ),
+            }
+
+        if action == "get_events":
+            record_id = payload.get("decision_record_id", "")
+            if not record_id:
+                raise VouchFailure(
+                    FailureCategory.PERSISTENCE_FAILURE,
+                    "decision_record_id is required",
+                )
+            after = int(payload.get("after_sequence") or 0)
+            limit = payload.get("limit")
+            rows = _VOUCH.record_store.events_for(
+                record_id, after, int(limit) if limit else None
+            )
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                "decision_record_id": record_id,
+                # The PERSISTED shape: event_id and sequence included, payload
+                # nested. The in-process log flattens payload and has neither,
+                # and a cursor cannot be built on a shape with no sequence.
+                "events": rows,
+                "after_sequence": after,
+                "last_event_sequence": rows[-1]["sequence"] if rows else after,
+            }
+
+        if action == "get_source":
+            record_id = payload.get("decision_record_id", "")
+            document = _stored_record(record_id)
+            events = _VOUCH.record_store.events_for(document.get("record_id", ""))
+            artifacts = _artifacts_from_events(
+                [{**row["payload"], "event": row["event"], "at": row["at"]} for row in events]
+            )
+            _apply_exclusions(artifacts, document)
+
+            artifact_id = payload.get("artifact_id")
+            if artifact_id:
+                found = artifacts.get(artifact_id)
+                if found is None:
+                    raise VouchFailure(
+                        FailureCategory.PERSISTENCE_FAILURE,
+                        f"no artifact {artifact_id} on record {record_id}",
+                    )
+                sources = [found]
+            else:
+                sources = list(artifacts.values())
+
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                "decision_record_id": record_id,
+                "sources": sources,
+                # Stated, not implied. Every artifact currently reports
+                # view_ref=None, and a caller must render "source unavailable"
+                # rather than assume a retrieval route exists.
+                "retrieval_available": False,
+            }
+
+        if action == "get_today":
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                **_today_plan(),
             }
 
         return {"ok": False, "error": f"unknown action: {action}"}

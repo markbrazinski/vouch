@@ -38,13 +38,24 @@ reconciliation values, capability/mutation provenance, and human continuation.
 Chain-of-thought leakage is structurally impossible, not merely discouraged.
 
 What was missing was almost entirely the **read surface**. The AgentCore
-entrypoint is a synchronous typed-action RPC with no way to list decisions,
+entrypoint was a synchronous typed-action RPC with no way to list decisions,
 fetch one, read events after a cursor, or serve an evidence document to a
-browser. Those read paths exist as library calls and are simply unwired.
+browser. Those read paths existed as library calls and were simply unwired.
 
-Two genuine semantic gaps were found beyond the read surface, and both are
-closed by authorized bounded changes: events are persisted only at terminal exit
-(change A), and Run 2 overwrites Run 1's structured agent evidence (change B).
+Two genuine semantic gaps were found beyond the read surface: events were
+persisted only at terminal exit (change A), and Run 2 overwrote Run 1's
+structured agent evidence (change B).
+
+**Status at this revision.** Changes A and B have landed, and five read actions
+— `list_decisions`, `get_decision`, `get_events`, `get_source`, `get_today` —
+are shipped and strictly additive: 338 insertions to `app/Gatehouse/main.py`, no
+deletions, and no change to any decision-semantic module. Gaps 1–5 in the
+register are closed. What remains open is evidence content retrieval and PDF
+input (change C), browser transport (change D), and the demo reseed.
+
+`get_source` deliberately returns `view_ref: null` and
+`retrieval_available: false` until change C. That is the correct answer, not a
+placeholder — see D6.
 
 **Corrections to the two prior audits.** `BACKEND_MAPPING_AUDIT.md` (`ea4c61f`)
 and `BACKEND_CONTRACT_AUDIT_89d058a.md` (`89d058a`) predate the V2 rewrite and
@@ -99,9 +110,23 @@ datum) is an adapter obligation; the backend cannot enforce it.
 
 ### §2.1 IncomingOverview / IncomingDecisionSummary
 
-**`BACKEND_GAP` → SUPPORTED after the read API + GSI.**
+**`SUPPORTED_VIA_ADAPTER`** for the rows (`action: "list_decisions"`, shipped);
+**`FE_CHANGE_REQUIRED`** for two of the four counts.
 
-There is no exposed lot- or decision-list read path. `DynamoCorpus.all(kind)`
+`list_decisions` queries the decisions-by-recency index and returns one row per
+decision with `row_state` computed server-side, as §2.1 requires. Each row
+carries `decision_record_id`, `lot_id`, `material_id`, `supplier_id`,
+`received_at`, `quantity`, `units`, `lot_status`, `disposition`,
+`failure_category`, `row_state`, `attention_required`, `decided_at`.
+
+`counts` returns `{"returned": n}` only. `arrivedToday` is derivable from
+`Lot.received_at` and can be added; **`inProgress` and `completedByVouch` are
+not returned and must be removed from the FE contract** — invocation is
+synchronous, so nothing is ever persisted mid-flight, and the model attributes
+no decision to Vouch rather than a human. Any number for either would be fiction
+rendered as fact.
+
+Historical note — the gap this closed: `DynamoCorpus.all(kind)`
 exists (`state.py:264`) but `DynamoRecordStore.list_ids()` **raises by design**
 (`persistence.py:224-228`: "listing all records requires a GSI; query by record
 id"). Every per-row datum is otherwise backed:
@@ -128,6 +153,11 @@ not exist anywhere in the model. **Resolution: remove or rename both rather than
 inventing backend state.**
 
 ### §2.2 DecisionWorkspace — `SUPPORTED_VIA_ADAPTER`
+
+Served by `action: "get_decision"`, which returns the **whole stored document**
+— all 17 segments plus `run_count`, `terminal` and `archived_runs` — rather than
+the lossy `_record_summary`. It also returns `sources` (§2.5) and
+`last_event_sequence`, so a workspace load is one call.
 
 `lastEventSequence` is real and authoritative: `StorageSegment.last_event_sequence`
 (`decision_record.py:202`), written at `workflow.py:1141-1143` as
@@ -282,7 +312,19 @@ No precomputed outcome projection exists (answering D23 Q3: **compose FE-side**)
 All four `kind`s and their required `facts` are reachable from `disposition` +
 `failure_category` + `basis` + `consequences` + `security`.
 
-### §2.12 TodayPlan — `SUPPORTED_VIA_ADAPTER`
+### §2.12 TodayPlan — `SUPPORTED_VIA_ADAPTER` (`action: "get_today"`, shipped)
+
+`get_today` recomputes readiness for every order through the same
+`compute_readiness` the decision path uses, so the read cannot drift from what a
+decision would conclude (asserted by test). It returns `readiness_counts` and
+orders grouped by resource, each with `planned_slot`, `status`, `readiness`,
+`reason`, `coverage`, `requirements`, `customer_committed`, `need_by` and
+`state_version`.
+
+There is deliberately **no before/after and no change banner**. Which change to
+highlight is a presentation question the frontend answers from `caused_by`
+links; a backend that guessed would be inventing operational history. §2.12
+already classes that presentation as DERIVED_UI.
 
 `compute_readiness` (`consequences.py:78-105`) returns `{order_id, readiness,
 coverage, reason}` per order. `causedByDecisionRecordId` from
@@ -293,9 +335,14 @@ Gap: `action: "readiness"` is per-order; a board-level read needs `get_today`.
 
 ### §2.13 DecisionRecord (durable audit)
 
-**`BACKEND_GAP` → SUPPORTED after change B.**
+**`SUPPORTED_AS_IS`** (change B shipped; served by `get_decision`).
 
-The record is **flat single-run**: `investigator`, `verifier`, `reconciliation`
+`archived_runs` holds every completed run and `runs()` returns history plus the
+current run. Verified across a cold restart: a `JsonRecordStore` reopened in a
+fresh process returns Run 1's `INSUFFICIENT_EVIDENCE` brief alongside Run 2's
+`RELEASE`, with typed hydration (`ArchivedRun` → `AgentSegment`) intact.
+
+Historical note — the loss this closed. The record was **flat single-run**: `investigator`, `verifier`, `reconciliation`
 are singular segments (`decision_record.py:239-241`). `rerun()` (`:262-265`)
 increments `run_count` and appends a run id, but **Run 2 overwrites Run 1's
 brief, tool events and reconciliation values**. §2.13's `runs[]` is therefore not
@@ -417,7 +464,28 @@ recalculate, continue, next) is satisfied — no such action exists in `main.py`
 
 ## D6 — §5 Source-document retrieval
 
-**`BACKEND_GAP` → SUPPORTED after change C1.** Detail in D3 §2.5 above.
+**`SUPPORTED_VIA_ADAPTER`** for metadata (`action: "get_source"`, shipped);
+**`BACKEND_GAP`** for content retrieval (change C1).
+
+`get_source` returns every artifact on a record, or one by `artifact_id`, with
+`content_type`, `trust_class`, `security_state`, `content_hash`,
+`object_version`, `storage_ref`, `binding_status`, `received_at`, `claim_count`,
+`excluded_from_decision_use` and `prompt_attack_detected`.
+
+`view_ref` is `null` on every artifact and the response states
+`retrieval_available: false`. That is the correct answer at this checkpoint, not
+a placeholder: faking a reference would make a frontend render a broken viewer
+instead of §5's "source unavailable" state.
+
+**One implementation note the earlier audit missed.** `EvidenceSegment` carries
+hashes, refs and versions in index-aligned lists but **no `artifact_id`**. The id
+appears only in event payloads and the security exclusion sets, so `get_source`
+assembles artifacts from the event stream and joins exclusions by id. The
+metadata is all there; it simply is not on the segment.
+
+A quarantined artifact is returned, never omitted, with
+`excluded_from_decision_use: true` — verified against `COA_HOSTILE`. Detail in
+D3 §2.5 above.
 
 §5's fallback is already honored by design: when no frontend-safe retrieval
 exists the backend returns `viewRef` absent and the FE renders "source
@@ -433,7 +501,17 @@ dropped (`test_security_redteam.py:345-350`).
 
 ## D7 — §6 Data delivery
 
-**`BACKEND_GAP` → SUPPORTED after changes A + D and the read API.**
+**`SUPPORTED_VIA_ADAPTER`** for ordering, dedupe and cursor (shipped);
+**`BACKEND_GAP`** for browser transport only (change D).
+
+`action: "get_events"` serves the persisted row shape — `event_id`, `sequence`,
+`event`, `decision_record_id`, `at`, nested `payload` — with `after_sequence`
+and `limit`. Verified: strictly ascending and gapless across
+Run 1 → `DECISION_RESUMED` → Run 2 (33 → 67 events, run-1 prefix byte-identical),
+stable unique `event_id`s of the form `{record_id}#{sequence:06d}`, and a poll at
+the high-water mark returning `[]` without rewinding the cursor.
+
+Historical note — what this replaced.
 
 Today: invocation is a synchronous typed-action RPC (`main.py:248`); there is no
 `async`, generator, SSE or WebSocket anywhere in the repo; and **events are
@@ -607,19 +685,29 @@ deterministic result in `DispositionSegment`, factory impact in
 
 | # | Gap | Class | Closure |
 |---|---|---|---|
-| 1 | No decision/lot list read path | BACKEND_GAP | Read API + GSI |
-| 2 | No `get_decision` / `get_events` / `get_today` actions | BACKEND_GAP | Read API |
-| 3 | `events_for` has no cursor and no pagination | BACKEND_GAP | Read API |
-| 4 | Events persisted only at terminal exit | BACKEND_GAP | **Change A** |
-| 5 | Run 2 overwrites Run 1 agent evidence | BACKEND_GAP | **Change B** |
-| 6 | No presigned/browser-safe evidence retrieval | BACKEND_GAP | **Change C1** |
-| 7 | PDF unreachable from the runtime entrypoint | BACKEND_GAP | **Change C2** |
-| 8 | `documentType` not persisted at ingestion | BACKEND_GAP | **Change C2** |
-| 9 | No browser-safe transport (no CORS, SigV4 only) | BACKEND_GAP | **Change D** |
+| # | Gap | Class | Status |
+|---|---|---|---|
+| 1 | No decision/lot list read path | BACKEND_GAP | **CLOSED** — `list_decisions` on the GSI |
+| 2 | No `get_decision` / `get_events` / `get_today` actions | BACKEND_GAP | **CLOSED** — all three shipped |
+| 3 | `events_for` has no cursor and no pagination | BACKEND_GAP | **CLOSED** — `after_sequence`, `limit`, `LastEvaluatedKey` |
+| 4 | Events persisted only at terminal exit | BACKEND_GAP | **CLOSED** — change A |
+| 5 | Run 2 overwrites Run 1 agent evidence | BACKEND_GAP | **CLOSED** — change B |
+| 6 | No presigned/browser-safe evidence retrieval | BACKEND_GAP | open — change C1 |
+| 7 | PDF unreachable from the runtime entrypoint | BACKEND_GAP | open — change C2 |
+| 8 | `documentType` not persisted at ingestion | BACKEND_GAP | open — change C2 |
+| 9 | No browser-safe transport (no CORS, SigV4 only) | BACKEND_GAP | open — change D |
 | 10 | `hostileContentExcerpt` | FE_CHANGE_REQUIRED | Viewer opens retained source |
 | 11 | `KeepDecisionHeld` | FE_CHANGE_REQUIRED | UI-only |
-| 12 | `inProgress` / `completedByVouch` counts | FE_CHANGE_REQUIRED | Remove or rename |
-| 13 | Demo identifiers + two semantic mismatches | RESEED | Reseed; C-417 → 900.0 |
+| 12 | `inProgress` / `completedByVouch` counts | FE_CHANGE_REQUIRED | **Confirmed** — not returned by `list_decisions` |
+| 13 | Demo identifiers + two semantic mismatches | RESEED | open — reseed; C-417 → 900.0 |
+
+**Also found while implementing the read actions**, and worth recording because
+neither audit had it:
+
+| # | Finding | Where |
+|---|---|---|
+| 14 | `EvidenceSegment` carries no `artifact_id`; the id lives only in event payloads and the security exclusion sets | `decision_record.py:36-51` |
+| 15 | The staged runtime copy under `app/Gatehouse/src/` shadows `src/` on `sys.path` and was stale; the deployed runtime can silently serve older code | `main.py:37`, `scripts/stage_runtime.py` |
 
 Nothing in this register requires rearchitecting, and none of it touches agent
 prompts, decision semantics, disposition, authority or mutation.

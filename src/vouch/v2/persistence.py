@@ -464,6 +464,9 @@ class InMemoryRecordStore:
     def save(self, record: DecisionRecord) -> str:
         payload = record.to_dict()
         payload["audit_hash"] = record.audit_hash()
+        # The durable stores both stamp this; without it the in-memory store
+        # cannot sort by recency and every listed decision reports no time.
+        payload["saved_at"] = utcnow()
         self.records[record.record_id] = payload
         return f"memory://{record.record_id}"
 
