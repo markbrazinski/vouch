@@ -125,6 +125,11 @@ def test_verifier_never_receives_the_investigator_brief(vouch):
     assert "investigator" not in signature.parameters
     assert set(signature.parameters) - {"self"} == {
         "context", "claims", "events", "decision_record_id",
+        # The Verifier's OWN contract errors from its OWN previous attempt.
+        # Nothing here carries the Investigator's brief, rationale or basis —
+        # independence is about what the peer said, not about being told that
+        # your own citation is unsupported by the corpus.
+        "validation_errors",
     }
 
 
@@ -187,7 +192,15 @@ def test_missing_brief_is_technical_not_disagreement():
     assert result.outcome is ReconciliationOutcome.TECHNICAL_FAILURE
 
 
-def test_disagreement_blocks_mutation(vouch):
+def test_a_brief_citing_a_superseded_revision_blocks_mutation(vouch):
+    """Contract-invalid, not merely divergent.
+
+    Revision B ceased to govern before this lot's basis date, so this brief
+    contradicts the corpus rather than making a different defensible judgment.
+    Per-brief validation now names that specifically instead of reporting an
+    unattributed disagreement — a strictly better audit answer. What must not
+    change is the safety property: no mutation, lot untouched.
+    """
     corpus, _ = vouch
 
     class Divergent(IndependentVerifier):
@@ -195,6 +208,55 @@ def test_disagreement_blocks_mutation(vouch):
             from vouch.v2.agents import AgentRun
 
             return AgentRun(_brief(revision="B"), "m", "v", "h", [], True)
+
+    v = VouchV2(corpus, verifier=Divergent(corpus))
+    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+
+    assert outcome.failure_category == "BRIEF_CONTRACT_VIOLATION"
+    assert "SPEC-A7:B" in outcome.reason
+    assert not outcome.mutated
+    assert corpus.lot("LOT-1001").status == "RECEIVED"
+
+
+def test_genuine_disagreement_between_valid_briefs_still_fails_closed(vouch):
+    """Category C must survive the repair.
+
+    Both briefs here are contract-valid — the governing revision exists,
+    governs, and covers the material; the coverage rows are complete and
+    consistent with the claims. They differ only in sufficiency, which is a
+    judgment neither the validator nor the reconciler may resolve. The
+    pipeline must still refuse to mutate.
+    """
+    corpus, _ = vouch
+
+    class Divergent(IndependentVerifier):
+        def run(self, **kwargs):
+            from vouch.v2.agents import AgentRun
+            from vouch.v2.contracts import CoverageItem, RequiredTest
+
+            claims = kwargs["claims"]
+            by_test = {c.characteristic: c.claim_id for c in claims}
+            brief = EvidenceApplicabilityBrief(
+                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
+                required_tests=(
+                    RequiredTest(name="tensile_strength"),
+                    RequiredTest(name="hardness"),
+                ),
+                coverage=(
+                    CoverageItem(
+                        test="tensile_strength",
+                        evidence_ref=by_test.get("tensile_strength"),
+                        method_match=True,
+                    ),
+                    CoverageItem(
+                        test="hardness",
+                        evidence_ref=by_test.get("hardness"),
+                        method_match=True,
+                    ),
+                ),
+                sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+            )
+            return AgentRun(brief, "m", "v", "h", [], True)
 
     v = VouchV2(corpus, verifier=Divergent(corpus))
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])

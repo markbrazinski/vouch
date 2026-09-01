@@ -66,6 +66,7 @@ def _wrong_basis_investigator(corpus):
                 required_tests=[
                     RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
                 ],
+                coverage=_coverage_for(kwargs["claims"]),
                 sufficiency=Sufficiency.SUFFICIENT,
             )
             return AgentRun(brief, "test-double", "wrong-basis-v1", "h", [], True)
@@ -73,12 +74,30 @@ def _wrong_basis_investigator(corpus):
     return PlausibleButWrong(corpus)
 
 
+def _coverage_for(claims):
+    """Complete coverage rows, so the brief is well-formed apart from its basis."""
+    from vouch.v2.contracts import CoverageItem
+
+    by_test = {c.characteristic: c.claim_id for c in claims}
+    return [
+        CoverageItem(test=name, evidence_ref=by_test.get(name), method_match=True)
+        for name in ("tensile_strength", "hardness")
+    ]
+
+
 def test_verifier_catches_a_wrong_basis_through_the_normal_pipeline():
     """The required P1-9 scenario.
 
-    Investigator resolves a plausible but wrong basis; the REAL verifier
-    independently resolves the correct one; the normal pipeline produces
-    MATERIAL_DISAGREEMENT and mutates nothing.
+    Investigator resolves a plausible but wrong basis; the pipeline refuses and
+    mutates nothing.
+
+    The refusal is now attributed more precisely than it was. Revision B did
+    not merely differ from the Verifier's answer — it ceased to govern before
+    this lot's basis date, so per-brief validation names the superseded
+    revision instead of reporting an unattributed disagreement between two
+    briefs. Both are refusals; this one tells an auditor which brief was wrong
+    and why. What the scenario exists to prove is unchanged: a plausible wrong
+    basis cannot reach a mutation.
     """
     corpus = build_corpus()
     v = VouchV2(
@@ -88,14 +107,21 @@ def test_verifier_catches_a_wrong_basis_through_the_normal_pipeline():
     )
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
 
-    assert outcome.failure_category == "MATERIAL_DISAGREEMENT"
+    assert outcome.failure_category == "BRIEF_CONTRACT_VIOLATION"
+    assert "SPEC-A7:B" in outcome.reason
     assert not outcome.mutated
     assert corpus.lot("LOT-1001").status == "RECEIVED"
     assert v.capabilities.ledger == []
 
 
-def test_the_disagreement_is_fully_observable():
-    """P1-9: complete brief, selected basis, tool trail, differing values."""
+def test_the_refusal_is_fully_observable():
+    """P1-9: the record must say which brief was rejected and on what ground.
+
+    With per-brief validation the Investigator's wrong basis is rejected before
+    the Verifier is asked, so there is no two-sided disagreement to render —
+    there is a named, specific contract failure, which is strictly more
+    reviewable. The Investigator's complete brief is still persisted.
+    """
     corpus = build_corpus()
     v = VouchV2(
         corpus,
@@ -105,16 +131,50 @@ def test_the_disagreement_is_fully_observable():
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
     record = outcome.record
 
-    # The verifier travelled its ordinary contract: real tools, real brief.
-    assert record.verifier.brief
-    assert record.verifier.brief["governing_basis"]["revision"] == "C"
-    assert record.verifier.tool_events, "verifier must have called real tools"
-    assert record.verifier.model_id and record.verifier.prompt_version
+    assert record.investigator.brief
+    assert record.investigator.brief["governing_basis"]["revision"] == "B"
+    assert record.investigator.model_id and record.investigator.prompt_version
 
-    # The disagreement names both sides with actual values.
-    assert "revision" in record.reconciliation.differing_fields
-    assert record.reconciliation.investigator_values["revision"] == "B"
-    assert record.reconciliation.verifier_values["revision"] == "C"
+    assert outcome.failure_category == "BRIEF_CONTRACT_VIOLATION"
+    assert "ceased to govern" in outcome.reason
+
+
+def test_a_valid_but_divergent_verifier_still_produces_an_observable_disagreement():
+    """Category C stays observable: two contract-valid briefs, both recorded.
+
+    This is the case validation must NOT absorb — the seam the architecture
+    exists to expose.
+    """
+    corpus = build_corpus()
+
+    class DivergentSufficiency(IndependentVerifier):
+        def run(self, **kwargs):
+            brief = EvidenceApplicabilityBrief(
+                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
+                required_tests=[
+                    RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
+                ],
+                coverage=_coverage_for(kwargs["claims"]),
+                sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+            )
+            return AgentRun(brief, "test-double", "divergent-v1", "h", [], True)
+
+    v = VouchV2(
+        corpus,
+        verifier=DivergentSufficiency(corpus),
+        record_store=InMemoryRecordStore(),
+    )
+    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    record = outcome.record
+
+    assert outcome.failure_category == "MATERIAL_DISAGREEMENT"
+    assert "sufficiency" in record.reconciliation.differing_fields
+    assert record.reconciliation.investigator_values["sufficiency"] == "SUFFICIENT"
+    assert (
+        record.reconciliation.verifier_values["sufficiency"]
+        == "INSUFFICIENT_EVIDENCE"
+    )
+    assert not outcome.mutated
 
 
 def test_verifier_does_not_falsely_disagree_on_a_clean_case():

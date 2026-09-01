@@ -37,6 +37,10 @@ class EventType(str, Enum):
     TOOL_CALLED = "TOOL_CALLED"
     TOOL_RESULT_BOUND = "TOOL_RESULT_BOUND"
     APPLICABILITY_BRIEF_COMPLETED = "APPLICABILITY_BRIEF_COMPLETED"
+    #: A brief contradicted the authoritative corpus and was sent back to the
+    #: same agent with the specific errors. Observable because a silent retry
+    #: would hide how often the models produce unsupported claims.
+    BRIEF_VALIDATION_FAILED = "BRIEF_VALIDATION_FAILED"
     VERIFIER_STARTED = "VERIFIER_STARTED"
     VERIFIER_BRIEF_COMPLETED = "VERIFIER_BRIEF_COMPLETED"
     RECONCILIATION_COMPLETED = "RECONCILIATION_COMPLETED"

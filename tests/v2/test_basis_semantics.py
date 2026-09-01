@@ -18,6 +18,7 @@ import pytest
 
 from vouch.v2.contracts import (
     EvidenceApplicabilityBrief,
+    CoverageItem,
     GoverningBasis,
     RequiredTest,
     Sufficiency,
@@ -75,10 +76,21 @@ def _lot(corpus, lot_id, manufactured_at="", received_at=""):
     return lot_id
 
 
-def _brief(revision: str, tests=("tensile_strength",)):
+def _brief(revision: str, tests=("tensile_strength",), coverage=None):
+    """A brief for the BASIS tests below.
+
+    Coverage defaults to one null-evidence row per declared test: these cases
+    are about which revision governs, not about evidence, and a brief that
+    names a required test while saying nothing at all about it is now a
+    contract failure in its own right. A null evidence_ref is the brief
+    answering "no evidence applies to this test", which is a real answer.
+    """
+    if coverage is None:
+        coverage = [CoverageItem(test=t, evidence_ref=None) for t in tests]
     return EvidenceApplicabilityBrief(
         governing_basis=GoverningBasis(spec_id="SPEC-X", revision=revision),
         required_tests=[RequiredTest(name=t) for t in tests],
+        coverage=coverage,
         sufficiency=Sufficiency.SUFFICIENT,
     )
 

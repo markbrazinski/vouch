@@ -109,6 +109,8 @@ class AgentSegment:
     #: P1-3: the ACTUAL category, not a blanket schema failure.
     failure_category: str = ""
     attempts: int = 1
+    #: The brief was produced and then REFUSED for contradicting the corpus.
+    brief_rejected: bool = False
     #: P1-1/P1-9: the complete brief, so a reviewer can see what was actually
     #: asserted rather than only its hash.
     brief: dict = field(default_factory=dict)

@@ -119,6 +119,16 @@ def reconcile(
     return result
 
 
+def _normalize_method(value: str | None) -> str:
+    """Case/whitespace-insensitive form of a method or condition identifier.
+
+    Only for deciding whether two identifiers are THE SAME. It never maps one
+    identifier onto another — that is the equivalence question, and it belongs
+    to the model and to the authoritative equivalence records.
+    """
+    return (value or "").strip().upper().replace(" ", "").replace("_", "")
+
+
 @dataclass
 class BasisCheckResult:
     passed: bool
@@ -293,6 +303,58 @@ def run_basis_checks(
             # V1 joined evidence by material and silently pulled in other lots.
             failures.append(
                 f"evidence {item.evidence_ref} belongs to lot {claim.lot_id}, not {lot_id}"
+            )
+
+    # -- coverage completeness (category B) -------------------------------
+    # A brief that names a required test and then reports no coverage row for
+    # it has not answered the question it was asked. This is a CONTRACT check,
+    # not an applicability judgment: it says the row must exist and be
+    # accounted for, never what its verdict should be. A test whose evidence is
+    # genuinely absent is stated as a null evidence_ref or listed in
+    # missing_evidence — both are answers; silence is not.
+    covered = {item.test for item in brief.coverage}
+    declared_missing = set(getattr(brief, "missing_evidence", ()) or ())
+    for requirement in resolved:
+        if requirement.characteristic in covered:
+            continue
+        if requirement.characteristic in declared_missing:
+            continue
+        failures.append(
+            f"required test {requirement.characteristic} has no coverage entry "
+            f"and is not listed as missing evidence; the brief does not say "
+            f"whether any evidence applies to it"
+        )
+
+    # -- method_match must match the structured facts (category B) --------
+    # Whether two method identifiers are EQUAL is a string comparison against
+    # authoritative tool output, not an interpretation. Deciding whether a
+    # DIFFERENT method is nonetheless acceptable stays with the model — that is
+    # the equivalence question, and this check deliberately does not touch it.
+    for item in brief.coverage:
+        if item.evidence_ref is None:
+            continue
+        claim = claims_by_id.get(item.evidence_ref)
+        requirement = next(
+            (r for r in resolved if r.characteristic == item.test), None
+        )
+        if claim is None or requirement is None:
+            continue
+        identical = (
+            _normalize_method(claim.method) == _normalize_method(requirement.method)
+            and _normalize_method(claim.condition)
+            == _normalize_method(requirement.condition)
+        )
+        if identical and not item.method_match:
+            failures.append(
+                f"{item.test}: method_match is false, but the evidence used "
+                f"{claim.method}/{claim.condition} and the requirement asks for "
+                f"{requirement.method}/{requirement.condition} — they are the same"
+            )
+        elif not identical and item.method_match:
+            failures.append(
+                f"{item.test}: method_match is true, but the evidence used "
+                f"{claim.method}/{claim.condition} and the requirement asks for "
+                f"{requirement.method}/{requirement.condition} — they differ"
             )
 
     return BasisCheckResult(not failures, failures, resolved)

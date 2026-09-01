@@ -489,8 +489,24 @@ class VouchV2:
         }
 
         # -- 3. two independent briefs -----------------------------------
+        # Each brief is validated against the authoritative corpus BEFORE the
+        # two are compared (audit blocker 2). Validation was already written —
+        # `run_basis_checks` catches an out-of-scope equivalence, a
+        # non-existent object, evidence from another lot — but it only ran
+        # after reconciliation, so a contract-INVALID brief and a valid one
+        # reconciled to MATERIAL_DISAGREEMENT and the pipeline stopped before
+        # the check that would have named the invalid one.
+        #
+        # Live Nova runs showed exactly that: both agents reasoned identically
+        # and correctly, then one recorded an equivalence it had itself
+        # rejected. Validating first turns that into a retryable, machine-
+        # readable contract error instead of a false disagreement.
+        claims_by_id = {c.claim_id: c for c in claims}
         investigation = self._run_with_retry(
-            self.investigator, context, claims, events, record_id
+            self.investigator, context, claims, events, record_id,
+            validate=lambda brief: self._brief_contract_errors(
+                brief, lot_id, claims_by_id
+            ),
         )
         record.investigator = self._agent_segment(investigation, snapshot)
 
@@ -505,7 +521,10 @@ class VouchV2:
             )
 
         verification = self._run_with_retry(
-            self.verifier, context, claims, events, record_id
+            self.verifier, context, claims, events, record_id,
+            validate=lambda brief: self._brief_contract_errors(
+                brief, lot_id, claims_by_id
+            ),
         )
         record.verifier = self._agent_segment(verification, snapshot)
 
@@ -551,7 +570,6 @@ class VouchV2:
 
         # -- 5. basis checks (always) -------------------------------------
         brief = investigation.brief
-        claims_by_id = {c.claim_id: c for c in claims}
         checks = run_basis_checks(
             brief, self.corpus, lot_id=lot_id, claims_by_id=claims_by_id
         )
@@ -907,24 +925,83 @@ class VouchV2:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-    def _run_with_retry(self, agent, context, claims, events, record_id):
+    def _brief_contract_errors(self, brief, lot_id, claims_by_id) -> list[str]:
+        """Objective contract violations in one brief, as machine-readable text.
+
+        This is `run_basis_checks` — the SAME deterministic validator the
+        pipeline already applied after reconciliation — asked one brief at a
+        time, so an invalid brief is caught before it can masquerade as a
+        disagreement.
+
+        It answers only questions with a structured answer: does the cited
+        object exist, is the evidence in this snapshot and on this lot, is the
+        requirement set complete, is a cited equivalence or deviation within
+        its own recorded scope, are two method identifiers the same string.
+
+        It does NOT decide which candidate spec governs, whether ambiguous
+        evidence applies, or whether an equivalence is appropriate. Those stay
+        with the model: a brief that answers them differently from its
+        counterpart is a genuine disagreement and must still fail closed.
+        """
+        checks = run_basis_checks(
+            brief, self.corpus, lot_id=lot_id, claims_by_id=claims_by_id
+        )
+        return list(checks.failures)
+
+    def _run_with_retry(
+        self, agent, context, claims, events, record_id, validate=None
+    ):
         """Retry within budget, and ONLY for categories a retry could clear.
 
         P1-3: not every failure is retried identically. A schema failure may
         clear on a re-ask; a throttle deserves the attempt; an AccessDenied or a
         validation error will produce the identical result every time, so
         retrying it just burns budget and delays the escalation.
+
+        `validate` adds one more retryable condition: a brief that came back
+        structurally fine but contradicts the authoritative corpus. The errors
+        are handed back to the SAME agent through the existing budget — the
+        validator never edits a brief or supplies the answer, it only says
+        which claim is not supported. If the budget runs out the run fails
+        closed, exactly as an unusable brief already did.
         """
         run = None
+        # Held ACROSS iterations: `run` is rebound by each attempt, so the
+        # previous attempt's errors have to live outside it or the feedback
+        # silently never reaches the model.
+        pending_errors: tuple = ()
         for attempt in range(1, MAX_MODEL_ATTEMPTS + 1):
             run = agent.run(
                 context=context, claims=claims, events=events,
                 decision_record_id=record_id,
+                validation_errors=pending_errors,
             )
             run.attempts = attempt
-            if run.brief is not None:
+            if run.brief is None:
+                if not run.retryable:
+                    break
+                continue
+            errors = validate(run.brief) if validate else []
+            if not errors:
                 return run
-            if not run.retryable:
+            pending_errors = tuple(errors)
+            run.validation_errors = pending_errors
+            events.emit(
+                EventType.BRIEF_VALIDATION_FAILED, record_id,
+                agent=agent.role, attempt=attempt, errors=list(errors),
+            )
+            if attempt >= MAX_MODEL_ATTEMPTS:
+                # Budget spent on a brief that still contradicts the corpus.
+                # The brief is retained on the run so the record can show WHAT
+                # was rejected; only the usable-brief slot is cleared, which is
+                # what stops it reaching reconciliation or a mutation.
+                run.rejected_brief = run.brief
+                run.brief = None
+                run.failure = (
+                    f"{agent.role} brief contradicts the authoritative corpus "
+                    f"after {attempt} attempts: {'; '.join(errors)}"
+                )
+                run.failure_category = FailureCategory.BRIEF_CONTRACT_VIOLATION
                 break
         return run
 
@@ -1042,7 +1119,9 @@ class VouchV2:
             prompt_hash=run.prompt_hash,
             temperature=0.0,
             input_claim_set_hash=snapshot.claim_set_hash,
-            brief_hash=run.brief.brief_hash() if run.brief else "",
+            brief_hash=(run.brief or run.rejected_brief).brief_hash()
+            if (run.brief or run.rejected_brief)
+            else "",
             tool_events=run.tool_events,
             schema_valid=run.schema_valid,
             precedent_consulted=list(run.brief.precedent_consulted) if run.brief else [],
@@ -1051,7 +1130,12 @@ class VouchV2:
                 run.failure_category.value if run.failure_category else ""
             ),
             attempts=run.attempts,
-            brief=run.brief.model_dump(mode="json") if run.brief else {},
+            # A rejected brief is still persisted: an auditor must see the
+            # claim that was refused, not merely that something was.
+            brief=(run.brief or run.rejected_brief).model_dump(mode="json")
+            if (run.brief or run.rejected_brief)
+            else {},
+            brief_rejected=run.brief is None and run.rejected_brief is not None,
         )
 
     def _quality_decision(

@@ -174,6 +174,12 @@ class AgentRun:
     failure: str = ""
     failure_category: FailureCategory | None = None
     attempts: int = 1
+    #: Contract errors from the previous attempt, fed back to the same agent.
+    validation_errors: tuple = ()
+    #: A brief that was produced but REJECTED as contradicting the corpus. Kept
+    #: so the DecisionRecord shows what was rejected — "the brief was invalid"
+    #: is not reviewable without the brief.
+    rejected_brief: EvidenceApplicabilityBrief | None = None
 
     @property
     def retryable(self) -> bool:
@@ -226,6 +232,7 @@ class BriefProducer:
         claims: list,
         events: EventLog,
         decision_record_id: str,
+        validation_errors: tuple = (),
     ) -> AgentRun:
         """Invoke the agent. Bedrock when configured, scripted otherwise.
 
@@ -247,8 +254,10 @@ class BriefProducer:
         )
 
         try:
-            if _bedrock_enabled():
-                brief = self._run_bedrock(tools, context, model)
+            if bedrock_enabled():
+                brief = self._run_bedrock(
+                    tools, context, model, validation_errors=validation_errors
+                )
             else:
                 if self._local_fn is None:
                     raise VouchFailure(
@@ -293,7 +302,11 @@ class BriefProducer:
 
     # -- bedrock ----------------------------------------------------------
     def _run_bedrock(
-        self, tools: CorpusTools, context: dict, model: str
+        self,
+        tools: CorpusTools,
+        context: dict,
+        model: str,
+        validation_errors: tuple = (),
     ) -> EvidenceApplicabilityBrief:
         """Real Strands agent with real registered tools and structured output.
 
@@ -334,6 +347,19 @@ class BriefProducer:
             f"customer_id: {context.get('customer_id', '')}\n"
             f"po_reference: {context.get('po_reference', '')}\n"
         )
+
+        # A retry after contract validation. The errors state which specific
+        # claim the corpus does not support; they never state what the answer
+        # should be, so the agent re-derives it rather than being told.
+        if validation_errors:
+            listed = "\n".join(f"- {e}" for e in validation_errors)
+            task += (
+                "\n\nYour previous brief was rejected because it contradicts the "
+                "authoritative records:\n"
+                f"{listed}\n"
+                "Re-examine those specific points with your tools and return a "
+                "corrected brief. Do not change anything the errors do not name."
+            )
 
         try:
             result = agent(task, structured_output_model=EvidenceApplicabilityBrief)

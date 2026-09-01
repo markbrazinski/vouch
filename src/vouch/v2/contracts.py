@@ -481,6 +481,11 @@ class FailureCategory(str, Enum):
     EVIDENCE_IDENTITY_CONFLICT = "EVIDENCE_IDENTITY_CONFLICT"
     #: P0-8. Extraction was too uncertain to support an autonomous decision.
     EXTRACTION_LOW_CONFIDENCE = "EXTRACTION_LOW_CONFIDENCE"
+    #: The brief was well-formed but contradicts the authoritative corpus, and
+    #: still did after the bounded retry. Distinct from a SCHEMA failure (the
+    #: shape was fine) and from a DISAGREEMENT (this is one brief against the
+    #: corpus, not two briefs against each other).
+    BRIEF_CONTRACT_VIOLATION = "BRIEF_CONTRACT_VIOLATION"
     PERSISTENCE_FAILURE = "PERSISTENCE_FAILURE"
     STATE_CONFLICT = "STATE_CONFLICT"
     POLICY_REFUSAL = "POLICY_REFUSAL"

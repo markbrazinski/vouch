@@ -200,23 +200,48 @@ def test_disagreement_records_the_actual_differing_values(vouch):
 
     corpus, _ = vouch
 
-    class WrongBasis(IndependentVerifier):
+    from vouch.v2.contracts import CoverageItem
+
+    class DivergentSufficiency(IndependentVerifier):
+        """Contract-valid and divergent.
+
+        The basis is the governing one and the coverage is complete, so nothing
+        here contradicts the corpus — the two briefs simply reach different
+        sufficiency judgments. That is the disagreement the record must render
+        with real values; a brief citing a superseded revision is refused
+        earlier now, as its own named contract failure.
+        """
+
         def run(self, **kwargs):
+            by_test = {c.characteristic: c.claim_id for c in kwargs["claims"]}
             brief = EvidenceApplicabilityBrief(
-                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="B"),
-                required_tests=[RequiredTest(name="tensile_strength")],
-                sufficiency=Sufficiency.SUFFICIENT,
+                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
+                required_tests=[
+                    RequiredTest(name="tensile_strength"),
+                    RequiredTest(name="hardness"),
+                ],
+                coverage=[
+                    CoverageItem(
+                        test=name, evidence_ref=by_test.get(name), method_match=True
+                    )
+                    for name in ("tensile_strength", "hardness")
+                ],
+                sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
             )
             return AgentRun(brief, "m", "v", "h", [], True)
 
-    v = VouchV2(corpus, verifier=WrongBasis(corpus), record_store=InMemoryRecordStore())
+    v = VouchV2(
+        corpus, verifier=DivergentSufficiency(corpus), record_store=InMemoryRecordStore()
+    )
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
 
     assert outcome.failure_category == "MATERIAL_DISAGREEMENT"
     reconciliation = outcome.record.reconciliation
-    assert "revision" in reconciliation.differing_fields
-    assert reconciliation.investigator_values["revision"] == "C"
-    assert reconciliation.verifier_values["revision"] == "B"
+    assert "sufficiency" in reconciliation.differing_fields
+    assert reconciliation.investigator_values["sufficiency"] == "SUFFICIENT"
+    assert (
+        reconciliation.verifier_values["sufficiency"] == "INSUFFICIENT_EVIDENCE"
+    )
 
 
 def test_record_reports_where_it_is_stored(vouch):
