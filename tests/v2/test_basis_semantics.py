@@ -286,3 +286,81 @@ def test_exact_requirement_set_passes(corpus):
         lot_id="LOT-NOW", claims_by_id={},
     )
     assert result.passed, result.failures
+
+
+# ==========================================================================
+# the validator's boundary
+#
+# It may REJECT a brief that contradicts the corpus. It may never supply the
+# applicability judgment itself — that is the seam the architecture exists to
+# expose, and a deterministic classifier hidden in the validator would erase it
+# while every test still passed.
+# ==========================================================================
+
+
+def test_validation_only_rejects_and_never_rewrites_a_brief():
+    """Structural: run_basis_checks returns failures, and the brief is frozen.
+
+    The brief is a frozen pydantic model, so a validator that tried to correct
+    one would raise rather than silently succeed. This asserts the shape of the
+    contract: errors out, no corrected brief.
+    """
+    import dataclasses
+
+    from vouch.v2.contracts import CoverageItem
+    from vouch.v2.reconcile import BasisCheckResult
+
+    fields = {f.name for f in dataclasses.fields(BasisCheckResult)}
+    assert fields == {"passed", "failures", "resolved_requirements"}, (
+        "BasisCheckResult must not carry a corrected brief; a validator that "
+        "returns an answer is a classifier"
+    )
+
+    assert CoverageItem.model_config.get("frozen") is True
+    assert EvidenceApplicabilityBrief.model_config.get("frozen") is True
+
+
+def test_validator_does_not_decide_which_candidate_revision_governs(corpus):
+    """Two revisions could plausibly be argued; the validator picks neither.
+
+    It only rejects a revision that could not have governed. Where a cited
+    revision genuinely governs, validation is silent — the choice stays with
+    the model even when another revision also exists.
+    """
+    _lot(corpus, "LOT-NOW", manufactured_at="2026-06-01")
+
+    result = run_basis_checks(
+        _brief("B"), corpus, lot_id="LOT-NOW", claims_by_id={}
+    )
+
+    # B is a real, governing revision for this lot: no opinion is offered about
+    # whether some other revision would have been the better citation.
+    assert result.passed, result.failures
+
+
+def test_validator_does_not_decide_whether_ambiguous_evidence_applies(corpus):
+    """A method that differs from the requirement is left to the model.
+
+    The validator says only that the identifiers differ, which is a string
+    comparison. Whether the difference is nonetheless acceptable is the
+    equivalence question, and it is not answered here.
+    """
+    from vouch.v2.contracts import CoverageItem
+
+    _lot(corpus, "LOT-NOW", manufactured_at="2026-06-01")
+    brief = _brief(
+        "B",
+        coverage=[
+            CoverageItem(
+                test="tensile_strength", evidence_ref=None, method_match=False
+            )
+        ],
+    )
+
+    result = run_basis_checks(
+        brief, corpus, lot_id="LOT-NOW", claims_by_id={}
+    )
+
+    # No evidence to compare against, so no method claim is contradicted and
+    # the validator offers no view on applicability.
+    assert result.passed, result.failures
