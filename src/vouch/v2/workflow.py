@@ -21,6 +21,8 @@ INSUFFICIENT_EVIDENCE, which made a broken model look like missing paperwork.
 
 from __future__ import annotations
 
+import time
+
 import uuid
 from dataclasses import dataclass, field
 
@@ -55,6 +57,18 @@ from .local_reasoners import investigator_reasoner, verifier_reasoner
 from .reconcile import POLICY_VERSION, reconcile, run_basis_checks
 
 MAX_MODEL_ATTEMPTS = 2
+
+#: Base backoff before retrying a throttled or timed-out model call, multiplied
+#: by the attempt number. Bedrock throttles under burst; retrying instantly just
+#: collides again. Read through `vouch.config.env_var` so a test suite or a
+#: local run can set it to 0 without patching the clock.
+def _throttle_backoff_seconds() -> float:
+    from ..config import env_var
+
+    try:
+        return float(env_var("THROTTLE_BACKOFF_SECONDS") or 3.0)
+    except ValueError:
+        return 3.0
 
 
 def _binding_reasons(artifact, inspection) -> list[str]:
@@ -980,6 +994,13 @@ class VouchV2:
             if run.brief is None:
                 if not run.retryable:
                     break
+                # A throttle retried immediately is a throttle made worse, and
+                # it spends the budget on a condition that only time clears.
+                # Backing off separates "the service was busy" from "the model
+                # cannot produce a valid brief", which are different failures
+                # that were otherwise indistinguishable in the record.
+                if run.failure_category is FailureCategory.MODEL_TIMEOUT:
+                    time.sleep(_throttle_backoff_seconds() * attempt)
                 continue
             errors = validate(run.brief) if validate else []
             if not errors:
