@@ -16,6 +16,8 @@ Disagreement is never resolved by another model.
 
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 
 from .contracts import (
@@ -129,6 +131,38 @@ def _normalize_method(value: str | None) -> str:
     return (value or "").strip().upper().replace(" ", "").replace("_", "")
 
 
+def resolve_test_name(name: str, characteristics: set[str]) -> str:
+    """Map a test label onto the authoritative characteristic it names.
+
+    Models sometimes write the whole requirement into the name field —
+    "viscosity at 25C using ASTM-D2196" for the characteristic `viscosity` —
+    because that is how the requirement reads in prose. The characteristic is
+    still stated; it is just carrying the method and condition with it, both of
+    which the brief has dedicated fields for.
+
+    Resolution is deterministic and refuses to guess: the label must contain
+    EXACTLY ONE authoritative characteristic as a whole word. Zero matches or
+    two are returned unchanged, so the caller reports the mismatch rather than
+    picking a winner. It never invents a characteristic, and it never decides
+    whether a test APPLIES — only which authoritative name a label spells.
+    """
+    if name in characteristics:
+        return name
+    haystack = _word_tokens(name)
+    matches = [c for c in characteristics if _word_tokens(c) <= haystack]
+    return matches[0] if len(matches) == 1 else name
+
+
+def _word_tokens(value: str) -> set[str]:
+    """Word-ish tokens, so `viscosity` matches inside a prose label.
+
+    Splitting on non-alphanumerics means `tensile_strength` and
+    "tensile strength" tokenize identically, and a bare substring like `vis`
+    can never match `viscosity`.
+    """
+    return {t for t in re.split(r"[^a-z0-9]+", value.lower()) if t}
+
+
 @dataclass
 class BasisCheckResult:
     passed: bool
@@ -210,8 +244,13 @@ def run_basis_checks(
     # required tests at all. An empty required_tests against a non-empty
     # authoritative set was the bypass: it silently satisfied the comparison and
     # let a brief that acknowledged no requirements proceed.
-    briefed = {t.name for t in brief.required_tests}
     actual = {r.characteristic for r in resolved}
+    # A label that spells out the whole requirement — "viscosity at 25C using
+    # ASTM-D2196" — still names the characteristic `viscosity`. Resolve it to
+    # the authoritative name before comparing, so the brief is judged on what
+    # it identified rather than on how verbosely it wrote it down. Ambiguous or
+    # unrecognised labels are left untouched and still fail the comparison.
+    briefed = {resolve_test_name(t.name, actual) for t in brief.required_tests}
 
     if actual and not briefed:
         failures.append(
@@ -247,7 +286,11 @@ def run_basis_checks(
             failures.append(f"cited equivalence {item.equivalence_record_id} does not exist")
             continue
         claim = claims_by_id.get(item.evidence_ref)
-        requirement = next((r for r in resolved if r.characteristic == item.test), None)
+        requirement = next(
+            (r for r in resolved
+             if r.characteristic == resolve_test_name(item.test, actual)),
+            None,
+        )
         if claim is None or requirement is None:
             failures.append(
                 f"equivalence {record.equivalence_id} cited without resolvable evidence"
@@ -317,12 +360,12 @@ def run_basis_checks(
     # accounted for, never what its verdict should be. A test whose evidence is
     # genuinely absent is stated as a null evidence_ref or listed in
     # missing_evidence — both are answers; silence is not.
-    covered = {item.test for item in brief.coverage}
+    covered = {resolve_test_name(item.test, actual) for item in brief.coverage}
     # `missing` is the brief's own vocabulary for "this required test has no
     # applicable evidence, and here is why". Naming the wrong field here would
     # close the only legitimate escape hatch and force the model to invent a
     # coverage row it does not believe in.
-    declared_missing = {item.test for item in brief.missing}
+    declared_missing = {resolve_test_name(item.test, actual) for item in brief.missing}
     for requirement in resolved:
         if requirement.characteristic in covered:
             continue
@@ -352,8 +395,9 @@ def run_basis_checks(
     # method or condition genuinely differs, the evidence may well not apply
     # and `missing` is correct, so those cases are left entirely alone.
     for item in brief.missing:
+        resolved_name = resolve_test_name(item.test, actual)
         requirement = next(
-            (r for r in resolved if r.characteristic == item.test), None
+            (r for r in resolved if r.characteristic == resolved_name), None
         )
         if requirement is None:
             continue
@@ -369,7 +413,8 @@ def run_basis_checks(
         # way, so it is normalized away below instead of refused.
         covering = next(
             (c for c in brief.coverage
-             if c.test == item.test and c.evidence_ref in claims_by_id),
+             if resolve_test_name(c.test, actual) == resolved_name
+             and c.evidence_ref in claims_by_id),
             None,
         )
         if covering is not None:
@@ -377,7 +422,7 @@ def run_basis_checks(
         matching = [
             claim
             for claim in claims_by_id.values()
-            if claim.characteristic == item.test
+            if claim.characteristic == resolved_name
             and claim.lot_id == lot_id
             and _normalize_method(claim.method) == _normalize_method(requirement.method)
             and _normalize_method(claim.condition)
@@ -403,7 +448,9 @@ def run_basis_checks(
             continue
         claim = claims_by_id.get(item.evidence_ref)
         requirement = next(
-            (r for r in resolved if r.characteristic == item.test), None
+            (r for r in resolved
+             if r.characteristic == resolve_test_name(item.test, actual)),
+            None,
         )
         if claim is None or requirement is None:
             continue

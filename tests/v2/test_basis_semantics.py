@@ -448,3 +448,76 @@ def test_a_genuinely_inapplicable_method_may_still_be_missing(corpus):
     )
 
     assert result.passed, result.failures
+
+
+# ==========================================================================
+# descriptive test labels (Hero B run 2)
+# ==========================================================================
+
+
+def test_a_label_spelling_out_the_requirement_resolves_to_its_characteristic():
+    """Nova wrote "viscosity at 25C using ASTM-D2196" for `viscosity`.
+
+    The characteristic is stated; it is just carrying the method and condition
+    with it, both of which the brief has dedicated fields for. Resolution is a
+    naming question, not an applicability one.
+    """
+    from vouch.v2.reconcile import resolve_test_name
+
+    assert (
+        resolve_test_name("viscosity at 25C using ASTM-D2196", {"viscosity"})
+        == "viscosity"
+    )
+    assert resolve_test_name("viscosity", {"viscosity"}) == "viscosity"
+    assert (
+        resolve_test_name("tensile strength", {"tensile_strength"})
+        == "tensile_strength"
+    )
+
+
+def test_resolution_refuses_to_guess_when_a_label_is_ambiguous():
+    """Two characteristics in one label is not a naming slip, and picking one
+    would be the validator deciding what the brief meant."""
+    from vouch.v2.reconcile import resolve_test_name
+
+    label = "tensile_strength and hardness"
+    assert (
+        resolve_test_name(label, {"tensile_strength", "hardness"}) == label
+    ), "an ambiguous label must be returned unchanged so the caller reports it"
+
+
+def test_resolution_never_matches_a_partial_word_or_invents_a_name():
+    from vouch.v2.reconcile import resolve_test_name
+
+    assert resolve_test_name("vis", {"viscosity"}) == "vis"
+    assert resolve_test_name("density", {"viscosity"}) == "density"
+    assert resolve_test_name("", {"viscosity"}) == ""
+
+
+def test_a_descriptive_label_does_not_fail_the_requirement_set_comparison(corpus):
+    """End to end: the Hero B run-2 shape is accepted, not refused as a brief
+    that both omitted and invented a required test."""
+    from vouch.v2.contracts import CoverageItem
+
+    _lot(corpus, "LOT-NOW", manufactured_at="2026-06-01")
+    claim = _claim(
+        "CLM-1", "LOT-NOW", "tensile_strength", method="ASTM-E8",
+        condition="room_temp", value=500.0,
+    )
+    brief = _brief(
+        "B",
+        tests=("tensile_strength measured by ASTM-E8 at room_temp",),
+        coverage=[
+            CoverageItem(
+                test="tensile_strength measured by ASTM-E8 at room_temp",
+                evidence_ref="CLM-1",
+                method_match=True,
+            )
+        ],
+    )
+
+    result = run_basis_checks(
+        brief, corpus, lot_id="LOT-NOW", claims_by_id={"CLM-1": claim}
+    )
+
+    assert result.passed, result.failures

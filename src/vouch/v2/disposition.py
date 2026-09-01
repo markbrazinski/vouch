@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .reconcile import resolve_test_name
 from .contracts import (
     CanonicalEvidenceClaim,
     Disposition,
@@ -51,7 +52,15 @@ def compute_disposition(
     lot = corpus.lot(lot_id)
     when = (lot.received_at or lot.manufactured_at) if lot else ""
 
-    coverage_by_test = {c.test: c for c in brief.coverage}
+    # Same resolution the basis checks apply: a coverage row labelled
+    # "viscosity at 25C using ASTM-D2196" is a row about `viscosity`. Keying on
+    # the raw label would silently find no row and treat a covered test as
+    # uncovered — the disposition would still be fail-safe, but for the wrong
+    # stated reason.
+    characteristics = {r.characteristic for r in requirements}
+    coverage_by_test = {
+        resolve_test_name(c.test, characteristics): c for c in brief.coverage
+    }
     missing: list[str] = []
     failing: list[str] = []
     reasons: list[str] = []
