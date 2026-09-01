@@ -222,6 +222,11 @@ class CorpusTools:
                 other = self._corpus.get("spec_revision", ref)
                 if other is not None:
                     requirements.extend(other.requirements)
+            # Canonical order, so a revision's own requirements and those it
+            # incorporates by reference always reach the model the same way.
+            # Concatenation order otherwise depends on traversal, which is not
+            # a fact about the specification.
+            requirements.sort(key=lambda q: (q.characteristic, q.requirement_id))
             out = [
                 {
                     "requirement_id": q.requirement_id,

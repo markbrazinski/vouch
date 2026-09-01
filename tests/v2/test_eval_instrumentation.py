@@ -17,6 +17,7 @@ import pytest
 
 from vouch.v2.agents import AgentRun, IndependentVerifier
 from vouch.v2.contracts import (
+    CoverageItem,
     EvidenceApplicabilityBrief,
     GoverningBasis,
     RequiredTest,
@@ -32,7 +33,7 @@ from vouch.v2.evaluation import (
     run_all,
     summarize,
 )
-from vouch.v2.fixtures import COA_CLEAN, build_corpus
+from vouch.v2.fixtures import COA_AMBIGUOUS, COA_CLEAN, build_corpus
 from vouch.v2.lifecycle import EventLog
 from vouch.v2.persistence import InMemoryRecordStore
 from vouch.v2.workflow import VouchV2
@@ -143,19 +144,27 @@ def test_a_valid_but_divergent_verifier_still_produces_an_observable_disagreemen
     """Category C stays observable: two contract-valid briefs, both recorded.
 
     This is the case validation must NOT absorb — the seam the architecture
-    exists to expose.
+    exists to expose. LOT-1003's viscosity claim was measured by ASTM-D445 at
+    40C against a requirement of ASTM-D2196 at 25C, with the only equivalence
+    scoped to 25C. Whether it still establishes the requirement is a genuine
+    judgment, so the two briefs below are both valid and honestly differ.
     """
     corpus = build_corpus()
 
     class DivergentSufficiency(IndependentVerifier):
         def run(self, **kwargs):
+            by_test = {c.characteristic: c.claim_id for c in kwargs["claims"]}
             brief = EvidenceApplicabilityBrief(
-                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
-                required_tests=[
-                    RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
+                governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+                required_tests=[RequiredTest(name="viscosity")],
+                coverage=[
+                    CoverageItem(
+                        test="viscosity",
+                        evidence_ref=by_test.get("viscosity"),
+                        method_match=False,
+                    )
                 ],
-                coverage=_coverage_for(kwargs["claims"]),
-                sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+                sufficiency=Sufficiency.SUFFICIENT,
             )
             return AgentRun(brief, "test-double", "divergent-v1", "h", [], True)
 
@@ -164,16 +173,16 @@ def test_a_valid_but_divergent_verifier_still_produces_an_observable_disagreemen
         verifier=DivergentSufficiency(corpus),
         record_store=InMemoryRecordStore(),
     )
-    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
     record = outcome.record
 
-    assert outcome.failure_category == "MATERIAL_DISAGREEMENT"
+    assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason
     assert "sufficiency" in record.reconciliation.differing_fields
-    assert record.reconciliation.investigator_values["sufficiency"] == "SUFFICIENT"
     assert (
-        record.reconciliation.verifier_values["sufficiency"]
+        record.reconciliation.investigator_values["sufficiency"]
         == "INSUFFICIENT_EVIDENCE"
     )
+    assert record.reconciliation.verifier_values["sufficiency"] == "SUFFICIENT"
     assert not outcome.mutated
 
 

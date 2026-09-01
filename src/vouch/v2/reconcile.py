@@ -163,6 +163,25 @@ def _word_tokens(value: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", value.lower()) if t}
 
 
+def _establishes(item, claim, requirement) -> bool:
+    """Does this coverage row present evidence that actually applies?
+
+    The same three conditions `compute_disposition` applies: the evidence
+    resolves, and either it used the required method at the required condition
+    or the row cites an equivalence (whose genuine scope is verified separately
+    above). Deliberately says NOTHING about the measured value — a failing
+    number is applicable evidence.
+    """
+    if claim is None:
+        return False
+    if item.equivalence_record_id is not None:
+        return True
+    return (
+        _normalize_method(claim.method) == _normalize_method(requirement.method)
+        and _normalize_method(claim.condition) == _normalize_method(requirement.condition)
+    )
+
+
 @dataclass
 class BasisCheckResult:
     passed: bool
@@ -493,6 +512,52 @@ def run_basis_checks(
                 f"{item.test}: method_match is true, but the evidence used "
                 f"{claim.method}/{claim.condition} and the requirement asks for "
                 f"{requirement.method}/{requirement.condition} — they differ"
+            )
+
+    # -- sufficiency must mean coverage, not conformance (commission §8) ---
+    # `sufficiency` answers exactly one question: does applicable evidence
+    # exist for every required test under the basis the brief chose? It does
+    # NOT say whether a value passed — the brief has no vocabulary for that,
+    # and `compute_disposition` computes it from the frozen claims.
+    #
+    # The Hero A instability that survived every other check was a brief which
+    # resolved evidence for every required test and then declared
+    # INSUFFICIENT_EVIDENCE because the measured value failed its limit. Paired
+    # with a counterpart that said SUFFICIENT over the identical facts, that
+    # reconciled to MATERIAL_DISAGREEMENT and failed closed — two models that
+    # agreed about the evidence, recorded as though they disagreed.
+    #
+    # This is not the validator deciding a fuzzy question. The brief
+    # contradicts ITSELF: it asserts evidence is absent for a test whose
+    # coverage row names resolvable evidence. Where any required test genuinely
+    # lacks applicable evidence, INSUFFICIENT_EVIDENCE is correct and untouched
+    # — so the abstention path stays fully open.
+    if brief.sufficiency is Sufficiency.INSUFFICIENT_EVIDENCE and resolved:
+        # "Covered" here must mean what the Disposition Engine means by it:
+        # evidence that resolves AND establishes the requirement. A claim
+        # measured by another method or at another condition, with no
+        # equivalence cited, resolves but does not apply — so a brief calling
+        # that insufficient is right, and must not be rejected.
+        uncovered = [
+            requirement.characteristic
+            for requirement in resolved
+            if not any(
+                resolve_test_name(item.test, actual) == requirement.characteristic
+                and _establishes(item, claims_by_id.get(item.evidence_ref), requirement)
+                for item in brief.coverage
+            )
+        ]
+        if not uncovered:
+            failures.append(
+                "sufficiency is INSUFFICIENT_EVIDENCE, but every required test "
+                f"({sorted(r.characteristic for r in resolved)}) has a coverage "
+                "row naming evidence that resolves in this snapshot, so no "
+                "required evidence is absent. sufficiency reports whether "
+                "applicable evidence EXISTS for every required test; whether a "
+                "measured value meets its limit is computed separately and is "
+                "not what this field states. If you meant that a value fails "
+                "its limit, leave sufficiency SUFFICIENT and report the "
+                "measurement in its coverage row."
             )
 
     return BasisCheckResult(not failures, failures, resolved)

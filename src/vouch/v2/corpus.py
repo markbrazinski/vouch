@@ -361,17 +361,29 @@ class Corpus:
             for r in self.all("spec_revision")
             if r.covers_material(material_id) and r.status in ("ACTIVE", "SUPERSEDED")
         ]
-        return sorted(out, key=lambda r: (r.spec_id, r.revision))
+        return sorted(out, key=lambda r: (r.effective_date, r.spec_id, r.revision))
 
+    # Every list below is sorted on a canonical key rather than returned in
+    # whatever order the backing store happened to yield. `DynamoCorpus.all`
+    # fills its cache from a query, and a prior `get` leaves that one object
+    # first, so identical corpora could present the model with differently
+    # ordered candidates between runs. Ordering is not supposed to carry
+    # meaning; sorting here is what makes that true instead of merely intended.
     def deviations_for(self, material_id: str) -> list[ApprovedDeviation]:
-        return [d for d in self.all("deviation") if d.material_id == material_id]
+        return sorted(
+            (d for d in self.all("deviation") if d.material_id == material_id),
+            key=lambda d: d.deviation_id,
+        )
 
     def equivalences_for(self, material_id: str) -> list[MethodEquivalence]:
-        return [
-            e
-            for e in self.all("equivalence")
-            if not e.material_scope or material_id in e.material_scope
-        ]
+        return sorted(
+            (
+                e
+                for e in self.all("equivalence")
+                if not e.material_scope or material_id in e.material_scope
+            ),
+            key=lambda e: e.equivalence_id,
+        )
 
     def qualification(self, supplier_id: str, material_id: str) -> SupplierQualification | None:
         for q in self.all("supplier_qualification"):
@@ -380,11 +392,14 @@ class Corpus:
         return None
 
     def overlays_for(self, material_id: str, customer_id: str) -> list[CustomerOverlay]:
-        return [
-            o
-            for o in self.all("customer_overlay")
-            if o.material_id == material_id and o.customer_id == customer_id
-        ]
+        return sorted(
+            (
+                o
+                for o in self.all("customer_overlay")
+                if o.material_id == material_id and o.customer_id == customer_id
+            ),
+            key=lambda o: o.overlay_id,
+        )
 
     def usable_inventory(self, material_id: str) -> float:
         return sum(

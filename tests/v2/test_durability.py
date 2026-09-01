@@ -205,43 +205,43 @@ def test_disagreement_records_the_actual_differing_values(vouch):
     class DivergentSufficiency(IndependentVerifier):
         """Contract-valid and divergent.
 
-        The basis is the governing one and the coverage is complete, so nothing
-        here contradicts the corpus — the two briefs simply reach different
-        sufficiency judgments. That is the disagreement the record must render
-        with real values; a brief citing a superseded revision is refused
-        earlier now, as its own named contract failure.
+        LOT-1003's viscosity claim was measured by ASTM-D445 at 40C where
+        SPEC-R3:A asks for ASTM-D2196 at 25C, and the only equivalence on
+        record is scoped to 25C. Whether that evidence still establishes the
+        requirement is a judgment the validator may not make, so this verifier
+        accepting it and the Investigator rejecting it is a real disagreement
+        between two valid briefs — the thing the record must render with
+        actual values.
         """
 
         def run(self, **kwargs):
             by_test = {c.characteristic: c.claim_id for c in kwargs["claims"]}
             brief = EvidenceApplicabilityBrief(
-                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
-                required_tests=[
-                    RequiredTest(name="tensile_strength"),
-                    RequiredTest(name="hardness"),
-                ],
+                governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+                required_tests=[RequiredTest(name="viscosity")],
                 coverage=[
                     CoverageItem(
-                        test=name, evidence_ref=by_test.get(name), method_match=True
+                        test="viscosity",
+                        evidence_ref=by_test.get("viscosity"),
+                        method_match=False,
                     )
-                    for name in ("tensile_strength", "hardness")
                 ],
-                sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+                sufficiency=Sufficiency.SUFFICIENT,
             )
             return AgentRun(brief, "m", "v", "h", [], True)
 
     v = VouchV2(
         corpus, verifier=DivergentSufficiency(corpus), record_store=InMemoryRecordStore()
     )
-    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
 
-    assert outcome.failure_category == "MATERIAL_DISAGREEMENT"
+    assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason
     reconciliation = outcome.record.reconciliation
     assert "sufficiency" in reconciliation.differing_fields
-    assert reconciliation.investigator_values["sufficiency"] == "SUFFICIENT"
     assert (
-        reconciliation.verifier_values["sufficiency"] == "INSUFFICIENT_EVIDENCE"
+        reconciliation.investigator_values["sufficiency"] == "INSUFFICIENT_EVIDENCE"
     )
+    assert reconciliation.verifier_values["sufficiency"] == "SUFFICIENT"
 
 
 def test_record_reports_where_it_is_stored(vouch):

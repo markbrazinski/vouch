@@ -221,11 +221,14 @@ def test_a_brief_citing_a_superseded_revision_blocks_mutation(vouch):
 def test_genuine_disagreement_between_valid_briefs_still_fails_closed(vouch):
     """Category C must survive the repair.
 
-    Both briefs here are contract-valid — the governing revision exists,
-    governs, and covers the material; the coverage rows are complete and
-    consistent with the claims. They differ only in sufficiency, which is a
-    judgment neither the validator nor the reconciler may resolve. The
-    pipeline must still refuse to mutate.
+    LOT-1003's only viscosity claim was measured by ASTM-D445 at 40C where
+    SPEC-R3:A requires ASTM-D2196 at 25C, and the single equivalence on record
+    is scoped to 25C so it cannot be cited. Whether that evidence nonetheless
+    establishes the requirement is precisely the fuzzy question reserved for
+    the model: the Investigator judges it does not, the verifier below judges
+    it does, and BOTH briefs are contract-valid — method_match is honestly
+    false and no authority is misused. Neither the validator nor the reconciler
+    may resolve it, so it must surface as a disagreement and refuse to mutate.
     """
     corpus, _ = vouch
 
@@ -234,36 +237,27 @@ def test_genuine_disagreement_between_valid_briefs_still_fails_closed(vouch):
             from vouch.v2.agents import AgentRun
             from vouch.v2.contracts import CoverageItem, RequiredTest
 
-            claims = kwargs["claims"]
-            by_test = {c.characteristic: c.claim_id for c in claims}
+            by_test = {c.characteristic: c.claim_id for c in kwargs["claims"]}
             brief = EvidenceApplicabilityBrief(
-                governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
-                required_tests=(
-                    RequiredTest(name="tensile_strength"),
-                    RequiredTest(name="hardness"),
-                ),
+                governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+                required_tests=(RequiredTest(name="viscosity"),),
                 coverage=(
                     CoverageItem(
-                        test="tensile_strength",
-                        evidence_ref=by_test.get("tensile_strength"),
-                        method_match=True,
-                    ),
-                    CoverageItem(
-                        test="hardness",
-                        evidence_ref=by_test.get("hardness"),
-                        method_match=True,
+                        test="viscosity",
+                        evidence_ref=by_test.get("viscosity"),
+                        method_match=False,
                     ),
                 ),
-                sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+                sufficiency=Sufficiency.SUFFICIENT,
             )
             return AgentRun(brief, "m", "v", "h", [], True)
 
     v = VouchV2(corpus, verifier=Divergent(corpus))
-    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
 
-    assert outcome.failure_category == "MATERIAL_DISAGREEMENT"
+    assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason
     assert not outcome.mutated
-    assert corpus.lot("LOT-1001").status == "RECEIVED"
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
 
 
 # -- consequences ----------------------------------------------------------
