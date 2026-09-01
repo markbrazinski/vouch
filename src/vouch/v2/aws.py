@@ -448,6 +448,23 @@ class DynamoCapabilityStore:
             )
 
         capability_id = f"CAP-{uuid.uuid4().hex[:16]}"
+
+        # A lot transition that moves inventory must also pin the inventory
+        # row's OWN version, because the two counters do not move in lockstep:
+        # an abstention takes the lot to PENDING_QA and leaves inventory alone.
+        # Binding it here — signed, at authorization time — keeps the race
+        # detection exact (a concurrent inventory write still invalidates this
+        # capability) without inheriting the lot's unrelated version drift.
+        if target_type is TargetType.LOT and action in (
+            Action.RELEASE_LOT,
+            Action.QUARANTINE_LOT,
+        ):
+            parameters = dict(parameters or {})
+            parameters.setdefault(
+                "observed_inventory_version",
+                str(int((self.get_inventory(target_id) or {}).get("state_version", 1))),
+            )
+
         expires_at = (
             datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
         ).isoformat()
@@ -683,24 +700,44 @@ class DynamoCapabilityStore:
                 # whose inventory did not become usable is a partial mutation,
                 # and a partial mutation is exactly what atomicity must exclude.
                 usable = action is Action.RELEASE_LOT
+
+                # The inventory row carries its OWN version, and the condition
+                # is written against that rather than against the lot's.
+                #
+                # Conditioning inventory on the lot's bound version assumed the
+                # two counters move in lockstep. They do not: any lot
+                # transition that leaves inventory alone — PENDING_QA on an
+                # abstention is the ordinary case — advances the lot and not
+                # the inventory row, after which every later release of that
+                # lot is refused as "inventory moved" when nothing moved at
+                # all. That is Hero B.
+                #
+                # Replay protection is unchanged, and is in fact now exact: a
+                # replayed consume still finds the inventory row at a version
+                # its condition no longer matches, because THIS transaction
+                # advanced it.
+                inventory_row = self.get_inventory(target_id) or {}
+                # The version this capability was AUTHORIZED against. Falls
+                # back to the lot's bound version only for capabilities issued
+                # before this field existed.
+                inventory_version = int(
+                    bound.get("observed_inventory_version", bound_version)
+                )
                 items.append(
                     {
                         "Update": {
                             "TableName": self.table,
                             "Key": corpus_key("inventory", target_id),
                             "UpdateExpression": (
-                                "SET usable = :usable, state_version = :new"
+                                "SET usable = :usable, state_version = :invnew"
                             ),
-                            # Idempotency: the inventory row must still be at
-                            # the bound version, so a replay cannot re-apply
-                            # the delta.
                             "ConditionExpression": (
-                                "attribute_exists(sk) AND state_version = :bound"
+                                "attribute_exists(sk) AND state_version = :invbound"
                             ),
                             "ExpressionAttributeValues": {
                                 ":usable": {"BOOL": usable},
-                                ":new": {"N": str(new_version)},
-                                ":bound": {"N": str(bound_version)},
+                                ":invnew": {"N": str(inventory_version + 1)},
+                                ":invbound": {"N": str(inventory_version)},
                             },
                         }
                     }
@@ -715,7 +752,6 @@ class DynamoCapabilityStore:
                 # inventory position was EVALUATED, so a zero-movement outcome
                 # (quarantining a lot that was never usable) is evidenced
                 # rather than indistinguishable from a step that never ran.
-                inventory_row = self.get_inventory(target_id) or {}
                 was_usable = bool(inventory_row.get("usable", False))
                 quantity = float(
                     inventory_row.get("quantity", bound.get("quantity", 0.0) or 0.0)
