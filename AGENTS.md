@@ -408,3 +408,141 @@ infrastructure before the core vertical passes.
   over the mirror.
 - `tests/test_agent_docs_sync.py` fails the suite when they diverge.
 - No change to this contract lands without both files updated together.
+
+---
+
+## 17. Major-gate feedback / build-journey protocol
+
+At the end of every **major gate**, the report MUST include a section titled
+exactly:
+
+```
+# BUILD JOURNEY / FEEDBACK NOTES
+```
+
+Major gates, when applicable: architecture gate · backend freeze ·
+reliability / anti-hard-coding gate · FE↔BE contract gate · read/integration API
+gate · Hero A E2E gate · Hero B E2E gate · hostile/security gate · frontend
+freeze · deployed demo qualification · film-ready gate · submission freeze.
+
+**Not** after every trivial commit or small implementation batch. A gate is a
+point where something material became proven or disproven.
+
+This exists for two reasons: the notes improve the next engineering decision
+while the reasoning is still fresh, and they preserve authentic evidence for the
+final write-up. Reconstructing them afterwards produces mythology, not evidence.
+
+### Template
+
+```
+# BUILD JOURNEY / FEEDBACK NOTES
+
+## Gate verdict
+PASS / PASS_WITH_BOUNDED_FIX / BLOCKED
+One sentence on what is now proven.
+
+## What changed
+The 3–7 most important things completed in this gate.
+
+## What worked better than expected
+Specific mechanisms, architecture choices, tools, UX decisions, or
+implementation patterns that proved strong.
+
+## What surprised us
+Unexpected model, SDK/runtime, AWS, or infrastructure behavior; a product
+insight; or an assumption that turned out to be wrong.
+
+## Defects / mistakes caught
+For each meaningful defect: what happened; whether it was pre-existing or
+introduced in this gate; how attribution was proved; how it was fixed or why it
+remains open.
+
+## Decisions and tradeoffs
+Important choices made and rejected alternatives, with brief rationale.
+
+## AWS / Strands proof
+What was genuinely load-bearing in this gate — Strands Agents SDK, Nova,
+AgentCore, Guardrails, DynamoDB, S3, AWS runtime/deployment. Record only
+technology that actually mattered; no sponsor-name stuffing.
+
+## Judge-facing evidence
+One concise proof point per criterion, or `N/A` when this gate adds none:
+Technological Implementation · Design · Potential Impact ·
+Creativity & Originality · Presentation.
+
+## Demo / story implication
+What became stronger, weaker, clearer, or riskier for the 5-minute demo.
+
+## Remaining risk
+Only unresolved material risks.
+
+## Cost / performance note
+Measured AWS spend, model/runtime latency, reliability rate, test counts.
+Never invent a measurement.
+
+## What we would tell another builder
+1–3 practical lessons worth sharing publicly.
+
+## Candidate builder.aws notes
+3–6 raw truthful bullets, NOT polished marketing copy: an architecture choice
+that changed, something learned from AWS or Strands, a failure or surprise that
+improved the build, a real test result, a design decision driven by
+implementation truth.
+
+## Next gate
+The exact next proof target.
+```
+
+### Self-correction is required
+
+If you discover that your own change caused a regression, that a prior report
+was incorrect, that an assumption was stale, that a test was vacuous, that a
+benchmark was biased, or that a shortcut weakened the product — say so
+explicitly in the gate report.
+
+Preferred pattern: **"I introduced X. I proved it was mine by Y. The bounded
+correction was Z."**
+
+Do not bury it in implementation detail. Attribution is engineering evidence,
+and a caught mistake is more useful build-journey material than a clean run.
+
+### Writing discipline
+
+Notes MUST be factual, specific, attributable to actual work or tests, honest
+about failures, free of invented metrics, and free of retrospective mythology.
+
+They SHOULD preserve moments like: a model choice that failed and why; an
+architectural assumption disproven by testing; a security boundary that held
+because it was structural rather than instructed; a regression introduced and
+caught; an AWS or Strands runtime behavior that changed the implementation; a
+UX decision that became clearer once backend truth was known.
+
+Do NOT draft the final public post during implementation. Accumulate evidence
+first — these notes are raw source material, not an article.
+
+### Near submission
+
+At gates close to submission, ask explicitly, as evidence questions rather than
+marketing prompts:
+
+- **Technological Implementation** — what proves genuine, non-trivial Strands
+  usage and a real working implementation?
+- **Design** — does this now feel like a coherent product rather than a
+  technical pipeline?
+- **Potential Impact** — is the professional problem and the user value visible
+  from the demonstrated workflow?
+- **Creativity & Originality** — what would be hard to reproduce convincingly
+  without this agent architecture?
+- **Presentation** — can a judge quickly understand what changed, why, what
+  Vouch did, and why a human did or did not need to intervene?
+
+### Reporting order
+
+A meaningful major-gate report returns, in order: verdict · tests/proof ·
+meaningful changes · regressions or incorrect assumptions caught · open risks ·
+`# BUILD JOURNEY / FEEDBACK NOTES` · next gate.
+
+This is the gate-level form of the same discipline §10 applies to the S0–S9
+smoke test and §14 applies to escalation; it does not replace either. Avoid
+dumping implementation trivia unless it affects correctness, risk, demo quality,
+or the next decision.
