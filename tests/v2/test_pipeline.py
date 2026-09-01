@@ -522,9 +522,13 @@ def test_a_coverage_row_for_an_already_missing_test_is_not_a_disagreement():
 
     Live Nova runs produced briefs that agreed on everything that matters —
     same governing basis, same required test, same `missing` entry, same
-    sufficiency — and differed only in whether they ALSO wrote a coverage row
-    for the test they had just declared missing. That is one assertion in two
-    vocabularies, not a disagreement about applicability.
+    sufficiency — and differed only in whether they ALSO wrote an empty
+    coverage row for the test they had just declared missing. That is one
+    assertion in two vocabularies, not a disagreement about applicability.
+
+    The row here resolves no evidence, which is what makes it redundant. A row
+    that NAMES evidence is load-bearing and is never dropped — see
+    test_normalization_keeps_a_coverage_row_that_names_evidence.
     """
     from vouch.v2.contracts import CoverageItem, MissingItem, RequiredTest
 
@@ -533,7 +537,7 @@ def test_a_coverage_row_for_an_already_missing_test_is_not_a_disagreement():
             governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
             required_tests=[RequiredTest(name="viscosity")],
             coverage=(
-                [CoverageItem(test="viscosity", evidence_ref="CLM-1", method_match=False)]
+                [CoverageItem(test="viscosity", evidence_ref=None, method_match=False)]
                 if with_redundant_row
                 else []
             ),
@@ -542,6 +546,33 @@ def test_a_coverage_row_for_an_already_missing_test_is_not_a_disagreement():
         )
 
     assert brief(True).material_fingerprint() == brief(False).material_fingerprint()
+
+
+def test_normalization_keeps_a_coverage_row_that_names_evidence():
+    """The boundary. Evidence cited for a test is never normalized away.
+
+    Two briefs that both declare a test missing but disagree on whether any
+    evidence was even found for it are making different claims, and must still
+    reconcile as a disagreement.
+    """
+    from vouch.v2.contracts import CoverageItem, MissingItem, RequiredTest
+
+    def brief(evidence_ref):
+        return EvidenceApplicabilityBrief(
+            governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+            required_tests=[RequiredTest(name="viscosity")],
+            coverage=[
+                CoverageItem(
+                    test="viscosity", evidence_ref=evidence_ref, method_match=False
+                )
+            ],
+            missing=[MissingItem(test="viscosity", reason="method not established")],
+            sufficiency=Sufficiency.INSUFFICIENT_EVIDENCE,
+        )
+
+    assert (
+        brief("CLM-1").material_fingerprint() != brief(None).material_fingerprint()
+    )
 
 
 def test_normalization_does_not_hide_a_real_coverage_disagreement():
@@ -581,3 +612,114 @@ def test_missing_itself_is_compared_so_it_cannot_become_invisible():
         )
 
     assert brief(True).material_fingerprint() != brief(False).material_fingerprint()
+
+
+def test_a_missing_note_beside_a_covered_test_is_not_a_contract_violation():
+    """The Hero A run-3 audit failure, exactly as Nova produced it.
+
+    The brief covered tensile_strength with resolvable evidence AND added a
+    `missing` entry saying the value fell below the minimum. That is redundant
+    prose beside the load-bearing coverage row, not a claim of absence: the
+    Disposition Engine reads `coverage` and recomputes the missing set from the
+    corpus, consulting `brief.missing` only for a display label. Rejecting the
+    brief failed a run whose judgment was correct and whose disposition was
+    QUARANTINE either way.
+    """
+    from vouch.v2.contracts import CoverageItem, MissingItem, RequiredTest
+    from vouch.v2.disposition import compute_disposition
+    from vouch.v2.reconcile import run_basis_checks
+
+    corpus = build_corpus()
+    vouch = VouchV2(corpus)
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    claims = {c.claim_id: c for c in vouch.claims[outcome.decision_record_id]}
+    by_test = {c.characteristic: c.claim_id for c in claims.values()}
+
+    brief = EvidenceApplicabilityBrief(
+        governing_basis=GoverningBasis(
+            spec_id="SPEC-A7", revision="C", reason="date of receipt"
+        ),
+        required_tests=[
+            RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
+        ],
+        coverage=[
+            CoverageItem(
+                test="tensile_strength",
+                evidence_ref=by_test["tensile_strength"],
+                method_match=True,
+            ),
+            CoverageItem(
+                test="hardness", evidence_ref=by_test["hardness"], method_match=True
+            ),
+        ],
+        missing=[
+            MissingItem(
+                test="tensile_strength",
+                reason="Value below required minimum and no applicable deviation",
+            )
+        ],
+        sufficiency=Sufficiency.SUFFICIENT,
+    )
+
+    checks = run_basis_checks(
+        brief, corpus, lot_id="LOT-1002", claims_by_id=claims
+    )
+    assert checks.passed, checks.failures
+
+    result = compute_disposition(
+        brief, checks.resolved_requirements, claims, corpus, lot_id="LOT-1002"
+    )
+    assert result.disposition.value == "QUARANTINE"
+    assert result.failing_tests == ["tensile_strength"]
+
+
+def test_the_redundant_missing_note_does_not_change_the_disposition():
+    """Why normalizing it is safe: the field decides nothing."""
+    from vouch.v2.contracts import CoverageItem, MissingItem, RequiredTest
+    from vouch.v2.disposition import compute_disposition
+    from vouch.v2.reconcile import run_basis_checks
+
+    corpus = build_corpus()
+    vouch = VouchV2(corpus)
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    claims = {c.claim_id: c for c in vouch.claims[outcome.decision_record_id]}
+    by_test = {c.characteristic: c.claim_id for c in claims.values()}
+
+    def build(with_note: bool):
+        return EvidenceApplicabilityBrief(
+            governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
+            required_tests=[
+                RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
+            ],
+            coverage=[
+                CoverageItem(
+                    test=name, evidence_ref=by_test[name], method_match=True
+                )
+                for name in ("tensile_strength", "hardness")
+            ],
+            missing=(
+                [MissingItem(test="tensile_strength", reason="value below minimum")]
+                if with_note
+                else []
+            ),
+            sufficiency=Sufficiency.SUFFICIENT,
+        )
+
+    checks = run_basis_checks(
+        build(False), corpus, lot_id="LOT-1002", claims_by_id=claims
+    )
+    outcomes = [
+        compute_disposition(
+            build(note), checks.resolved_requirements, claims, corpus,
+            lot_id="LOT-1002",
+        )
+        for note in (False, True)
+    ]
+
+    assert outcomes[0].disposition == outcomes[1].disposition
+    assert outcomes[0].failing_tests == outcomes[1].failing_tests
+    assert outcomes[0].missing_tests == outcomes[1].missing_tests
+    # And the two briefs reconcile rather than disagreeing.
+    assert (
+        build(False).material_fingerprint() == build(True).material_fingerprint()
+    )

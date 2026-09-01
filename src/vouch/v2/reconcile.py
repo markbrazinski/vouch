@@ -357,6 +357,23 @@ def run_basis_checks(
         )
         if requirement is None:
             continue
+        # A test the brief ALSO covers with resolvable evidence is not being
+        # asserted as absent — the coverage row is the load-bearing statement
+        # and `missing` here is the model restating, in prose, that the value
+        # fails its limit. That is redundant rather than contradictory: the
+        # Disposition Engine reads `coverage` and recomputes the missing set
+        # from the corpus itself, using `brief.missing` only as a display
+        # label when its own computed list is empty. Rejecting the brief over
+        # a field that decides nothing failed a run whose substantive judgment
+        # was correct and whose disposition would have been QUARANTINE either
+        # way, so it is normalized away below instead of refused.
+        covering = next(
+            (c for c in brief.coverage
+             if c.test == item.test and c.evidence_ref in claims_by_id),
+            None,
+        )
+        if covering is not None:
+            continue
         matching = [
             claim
             for claim in claims_by_id.values()
