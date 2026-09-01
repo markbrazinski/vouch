@@ -263,7 +263,10 @@ def run_basis_checks(
         ):
             failures.append(
                 f"equivalence {record.equivalence_id} does not cover "
-                f"{claim.method}->{requirement.method} for {item.test} at {claim.condition}"
+                f"{claim.method}->{requirement.method} for {item.test} at "
+                f"{claim.condition}, so it cannot be cited here. Remove the "
+                f"equivalence_record_id from this coverage row; whether the "
+                f"evidence still applies without it is yours to decide."
             )
 
     # -- cited deviations -------------------------------------------------
@@ -289,7 +292,9 @@ def run_basis_checks(
         ):
             failures.append(
                 f"deviation {deviation.deviation_id} is out of scope for this lot "
-                f"(site={lot.supplier_site}, po={lot.po_reference}, when={when})"
+                f"(site={lot.supplier_site}, po={lot.po_reference}, when={when}), "
+                f"so it cannot be cited here. Remove it from deviations_applied; "
+                f"what the evidence establishes without it is yours to decide."
             )
 
     # -- evidence refs must resolve, and to THIS lot ----------------------
