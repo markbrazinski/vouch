@@ -428,6 +428,21 @@ freeze · deployed demo qualification · film-ready gate · submission freeze.
 **Not** after every trivial commit or small implementation batch. A gate is a
 point where something material became proven or disproven.
 
+The same notes MUST also be appended to the canonical build journal:
+
+```
+docs/build-journey/BUILD-JOURNEY.md
+```
+
+A report scrolls out of a terminal; the journal is what survives. It stays
+gitignored under the existing `/docs/` policy — it is local working material,
+not a published artifact.
+
+Append under a heading naming the gate, with a date. **Append-only, except for
+factual corrections.** When a later gate disproves an earlier note, append the
+correction beneath it rather than rewriting history: which belief was wrong, and
+what disproved it, is the most useful thing the journal holds.
+
 This exists for two reasons: the notes improve the next engineering decision
 while the reasoning is still fresh, and they preserve authentic evidence for the
 final write-up. Reconstructing them afterwards produces mythology, not evidence.
