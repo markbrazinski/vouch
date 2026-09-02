@@ -45,3 +45,55 @@ describe('production build excludes the dev fixture harness', () => {
     expect(bundle).toMatch(/need a Quality decision/);
   });
 });
+
+/**
+ * The credential boundary.
+ *
+ * A browser that could sign an AgentCore request would need AWS credentials,
+ * and a credential shipped to a browser is a credential handed to every viewer.
+ * The BFF signs server-side precisely so this bundle cannot.
+ *
+ * Asserted against the real production build rather than the source, because
+ * what matters is what actually ships.
+ */
+describe('the production bundle holds no AWS credentials or signing code', () => {
+  let bundle = '';
+
+  beforeAll(() => {
+    const assets = join(DIST, 'assets');
+    bundle = readdirSync(assets)
+      .filter((f) => f.endsWith('.js'))
+      .map((f) => readFileSync(join(assets, f), 'utf8'))
+      .join('\n');
+  });
+
+  it('contains no AWS access key or session credential', () => {
+    expect(bundle).not.toMatch(/AKIA[0-9A-Z]{16}/);
+    expect(bundle).not.toMatch(/aws_secret_access_key/i);
+    expect(bundle).not.toMatch(/aws_session_token/i);
+  });
+
+  it('contains no browser-side SigV4 implementation', () => {
+    expect(bundle).not.toMatch(/AWS4-HMAC-SHA256/);
+    expect(bundle).not.toMatch(/X-Amz-Credential/i);
+    expect(bundle).not.toMatch(/getSignatureKey|createSigV4|SignatureV4/);
+  });
+
+  it('does not bundle an AWS SDK to invoke AgentCore', () => {
+    expect(bundle).not.toMatch(/@aws-sdk\/client-bedrock/);
+    expect(bundle).not.toMatch(/invoke_agent_runtime|InvokeAgentRuntime/);
+  });
+
+  it('ships no AgentCore runtime ARN', () => {
+    expect(bundle).not.toMatch(/arn:aws:bedrock-agentcore/);
+  });
+});
+
+describe('the frontend declares no AWS SDK dependency', () => {
+  it('has no @aws-sdk package in dependencies', () => {
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+    expect(declared.filter((name) => name.startsWith('@aws-sdk/'))).toEqual([]);
+    expect(declared).not.toContain('aws-sdk');
+  });
+});

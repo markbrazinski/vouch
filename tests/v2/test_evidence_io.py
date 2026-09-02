@@ -534,3 +534,51 @@ def test_metadata_still_renders_when_retrieval_is_unavailable(runtime):
     source = response["sources"][0]
     assert source["view_ref"] is None
     assert source["content_hash"] and source["object_version"] and source["storage_ref"]
+
+
+def test_presigning_is_pinned_to_sigv4():
+    """SigV2 puts the session credential in the URL and ignores the expiry.
+
+    Observed live before this was pinned: the returned URL carried
+    `AWSAccessKeyId`, `Signature` and a full `x-amz-security-token` query
+    parameter, and the `ExpiresIn` this method computes was not honoured. A
+    presigned URL is already a bearer token; one that also carries the caller's
+    session credential is a much larger thing to hand a browser.
+    """
+    import boto3
+    from botocore.config import Config
+
+    store = S3EvidenceStore.__new__(S3EvidenceStore)
+    store.bucket = "test-bucket"
+    store.prefix = "evidence"
+    store._region = "us-east-1"
+    store._s3 = None
+    store._signer = None
+
+    captured = {}
+    original = boto3.client
+
+    def spy(service, **kwargs):
+        captured["service"] = service
+        captured["config"] = kwargs.get("config")
+        return original(
+            service,
+            region_name="us-east-1",
+            aws_access_key_id="AKIAtest",
+            aws_secret_access_key="secret",
+            config=kwargs.get("config"),
+        )
+
+    boto3.client = spy
+    try:
+        url = store.presigned_get("LOT-1002/ART-1", "v9")
+    finally:
+        boto3.client = original
+
+    assert isinstance(captured.get("config"), Config)
+    assert captured["config"].signature_version == "s3v4"
+    # SigV4 marks itself and keeps the credential out of a bare query field.
+    assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in url
+    assert "AWSAccessKeyId=" not in url
+    assert "x-amz-security-token" not in url.lower() or "X-Amz-Security-Token" in url
+    assert "X-Amz-Expires=300" in url

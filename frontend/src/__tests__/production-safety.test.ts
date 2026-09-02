@@ -22,11 +22,24 @@ const productFiles = sourceFiles(SRC).filter((p) => !p.includes(`${join('src', '
 
 describe('the product surface carries no demo apparatus', () => {
   it('no page fetches or invents a backend route', () => {
-    for (const f of productFiles) {
+    // `adapter/client.ts` is the ONE sanctioned transport seam. It exists so no
+    // component has to reach for the network itself; keeping the ban on every
+    // other file is what makes that true rather than aspirational.
+    const CLIENT = join('src', 'adapter', 'client.ts');
+    for (const f of productFiles.filter((p) => !p.endsWith(CLIENT))) {
       const src = readFileSync(f, 'utf8');
       expect(src, f).not.toMatch(/\bfetch\s*\(/);
       expect(src, f).not.toMatch(/XMLHttpRequest|EventSource|new WebSocket/);
     }
+  });
+
+  it('the transport seam reaches only the same-origin BFF', () => {
+    const src = readFileSync(join(SRC, 'adapter', 'client.ts'), 'utf8');
+    // No absolute origin: an absolute URL would be a second backend, and a
+    // cross-origin one would need credentials the browser must never hold.
+    expect(src).not.toMatch(/https?:\/\//);
+    expect(src).not.toMatch(/amazonaws\.com|bedrock-agentcore/);
+    expect(src).toMatch(/'\/api'/);
   });
 
   it('no fake timer manufactures product state', () => {

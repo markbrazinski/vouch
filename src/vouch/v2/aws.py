@@ -186,6 +186,39 @@ class S3EvidenceStore:
     #: access-controlled.
     MAX_VIEW_TTL_SECONDS = 300
 
+    def _signing_client(self):
+        """An S3 client pinned to SigV4 for presigning.
+
+        Without an explicit signature version botocore falls back to SigV2 for
+        presigned GETs, which was observed live: the URL came back carrying
+        `AWSAccessKeyId`, `Signature` and a full `x-amz-security-token` — the
+        session credential itself in a query string — and silently ignored the
+        expiry this method computes. SigV4 keeps the credential out of the URL
+        and honours `ExpiresIn`.
+
+        Only the presigning client is pinned; `self.s3` stays the shared client
+        used for reads and writes.
+        """
+        if getattr(self, "_signer", None) is None:
+            # An injected client (tests, or a caller that supplied its own) is
+            # used as-is rather than replaced by a real one.
+            if self._s3 is not None:
+                self._signer = self._s3
+                return self._signer
+            try:
+                from botocore.config import Config
+
+                import boto3
+
+                self._signer = boto3.client(
+                    "s3",
+                    region_name=self._region,
+                    config=Config(signature_version="s3v4"),
+                )
+            except Exception:  # noqa: BLE001 — fall back rather than lose the viewer
+                self._signer = self.s3
+        return self._signer
+
     def presigned_get(
         self, key: str, version_id: str = "", expires_in: int = MAX_VIEW_TTL_SECONDS
     ) -> str:
@@ -201,13 +234,14 @@ class S3EvidenceStore:
         """
         ttl = max(1, min(int(expires_in), self.MAX_VIEW_TTL_SECONDS))
         params: dict[str, Any] = {"Bucket": self.bucket, "Key": self._key(key)}
+        signer = self._signing_client()
         if version_id:
             # Pin the exact object version the decision actually read. Without
             # it a viewer could be shown a later overwrite of the same key and
             # believe it was the evidence.
             params["VersionId"] = version_id
         try:
-            return self.s3.generate_presigned_url(
+            return signer.generate_presigned_url(
                 "get_object", Params=params, ExpiresIn=ttl
             )
         except Exception as exc:  # noqa: BLE001
