@@ -33,8 +33,10 @@ from typing import Callable, Protocol
 
 from .contracts import (
     ArtifactStatus,
+    FailureCategory,
     GuardrailOutcome,
     ScanStatus,
+    VouchFailure,
     CanonicalEvidenceClaim,
     EvidenceSnapshot,
     ExternalEvidenceArtifact,
@@ -216,6 +218,36 @@ class LocalEvidenceStore:
 
     def get_original(self, key: str) -> bytes:
         return self._objects[key]
+
+
+def parse_storage_ref(storage_ref: str) -> tuple[str, str, str]:
+    """Split a stored reference into (scheme, container, key).
+
+    `storage_ref` is written as a full URI — `s3://<bucket>/<prefix>/<key>` or
+    `local://evidence/<key>` — but the stores' own `get_original` takes the key
+    WITHOUT the prefix they re-apply themselves. Nothing parsed it back until
+    now, so every caller was one double-prefix away from a silent miss.
+
+    Returns the key relative to the store's prefix, so the result can be handed
+    straight to `get_original` or `presigned_get`.
+    """
+    if not storage_ref or "://" not in storage_ref:
+        raise VouchFailure(
+            FailureCategory.PERSISTENCE_FAILURE,
+            f"unrecognized storage reference {storage_ref!r}",
+        )
+    scheme, remainder = storage_ref.split("://", 1)
+    container, _, key = remainder.partition("/")
+    if not key:
+        raise VouchFailure(
+            FailureCategory.PERSISTENCE_FAILURE,
+            f"storage reference {storage_ref!r} names no object",
+        )
+    # Both stores re-apply their own prefix, so strip the one already in the URI
+    # rather than handing back a key that would resolve to evidence/evidence/...
+    if key.startswith("evidence/"):
+        key = key[len("evidence/") :]
+    return scheme, container, key
 
 
 def ingest(

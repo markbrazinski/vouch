@@ -180,6 +180,44 @@ class S3EvidenceStore:
                 FailureCategory.PERSISTENCE_FAILURE, f"s3 get_object: {exc}"
             ) from exc
 
+    #: Upper bound on a view reference's life. A source link is for looking at
+    #: one document now, not a durable handle: anything longer starts behaving
+    #: like an unauthenticated copy of evidence that is supposed to be
+    #: access-controlled.
+    MAX_VIEW_TTL_SECONDS = 300
+
+    def presigned_get(
+        self, key: str, version_id: str = "", expires_in: int = MAX_VIEW_TTL_SECONDS
+    ) -> str:
+        """A short-lived URL a browser can open, without holding credentials.
+
+        The alternative was streaming bytes back through the runtime, which
+        would mean evidence documents travelling through an agent invocation
+        path and being copied into a second store. Signing keeps the original
+        the only copy and keeps the runtime out of the data path.
+
+        The caller never sees a credential; the signature is derived from the
+        runtime role and expires on its own.
+        """
+        ttl = max(1, min(int(expires_in), self.MAX_VIEW_TTL_SECONDS))
+        params: dict[str, Any] = {"Bucket": self.bucket, "Key": self._key(key)}
+        if version_id:
+            # Pin the exact object version the decision actually read. Without
+            # it a viewer could be shown a later overwrite of the same key and
+            # believe it was the evidence.
+            params["VersionId"] = version_id
+        try:
+            return self.s3.generate_presigned_url(
+                "get_object", Params=params, ExpiresIn=ttl
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Never include the exception's own text: a signing error can echo
+            # back the parameters it was signing.
+            raise VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE,
+                f"could not sign a view reference: {type(exc).__name__}",
+            ) from exc
+
 
 # ==========================================================================
 # P0-6 — Bedrock Guardrails prompt-attack detection

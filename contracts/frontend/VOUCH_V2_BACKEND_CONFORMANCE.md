@@ -214,7 +214,7 @@ backend forces no duplication.
 | `declaredClaims` / `highlightedClaims` | `evidence.canonical_claims` | ADAPTER |
 | `displayName` | none | ADAPTER (compose) |
 | `documentType` | **not persisted** — see below | GAP → SUPPORTED after **C2** |
-| `viewRef` | **none** | GAP → SUPPORTED after **C1** |
+| `viewRef` | short-lived presigned GET, minted per read (`aws.py` `presigned_get`) | **SUPPORTED_AS_IS** (C1 shipped) |
 | `hostileContentExcerpt` | **none, deliberately** | **FE_CHANGE_REQUIRED** |
 
 **`documentType` gap.** `content_type` is accepted at ingestion
@@ -716,9 +716,9 @@ deterministic result in `DispositionSegment`, factory impact in
 | 3 | `events_for` has no cursor and no pagination | BACKEND_GAP | **CLOSED** — `after_sequence`, `limit`, `LastEvaluatedKey` |
 | 4 | Events persisted only at terminal exit | BACKEND_GAP | **CLOSED** — change A |
 | 5 | Run 2 overwrites Run 1 agent evidence | BACKEND_GAP | **CLOSED** — change B |
-| 6 | No presigned/browser-safe evidence retrieval | BACKEND_GAP | open — change C1 |
-| 7 | PDF unreachable from the runtime entrypoint | BACKEND_GAP | open — change C2 |
-| 8 | `documentType` not persisted at ingestion | BACKEND_GAP | open — change C2 |
+| 6 | No presigned/browser-safe evidence retrieval | BACKEND_GAP | **CLOSED** — `presigned_get`, ≤300s, version-pinned |
+| 7 | PDF unreachable from the runtime entrypoint | BACKEND_GAP | **CLOSED** — `document_b64` / `artifact_ref` through the same ingest |
+| 8 | `documentType` not persisted at ingestion | BACKEND_GAP | **CLOSED** — `content_types` added; classification already stored |
 | 9 | No browser-safe transport (no CORS, SigV4 only) | BACKEND_GAP | open — change D |
 | 10 | `hostileContentExcerpt` | FE_CHANGE_REQUIRED | Viewer opens retained source |
 | 11 | `KeepDecisionHeld` | FE_CHANGE_REQUIRED | UI-only |
@@ -732,6 +732,8 @@ neither audit had it:
 |---|---|---|
 | 14 | `EvidenceSegment` carries no `artifact_id`; the id lives only in event payloads and the security exclusion sets | `decision_record.py:36-51` |
 | 15 | The staged runtime copy under `app/Gatehouse/src/` shadows `src/` on `sys.path` and was stale; the deployed runtime can silently serve older code | `main.py:37`, `scripts/stage_runtime.py` |
+| 16 | `EVIDENCE_RECEIVED` carries `content_type` but not the document classification, so the source projection joins it from `EvidenceSegment` by `storage_ref` rather than changing the event vocabulary | `evidence.py:291-304` |
+| 17 | `parse_storage_ref` had no counterpart: `storage_ref` is a full URI while `get_original` takes a prefix-relative key, so every caller was one double-prefix from a silent miss | `aws.py:124`, `aws.py:169` |
 
 Nothing in this register requires rearchitecting, and none of it touches agent
 prompts, decision semantics, disposition, authority or mutation.

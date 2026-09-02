@@ -31,6 +31,8 @@ a caller can tell durability from simulation without trusting a summary word.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import sys
 from pathlib import Path
 
@@ -43,6 +45,7 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 
 from vouch.v2.consequences import compute_readiness, enumerate_recovery  # noqa: E402
 from vouch.v2.contracts import FailureCategory, VouchFailure  # noqa: E402
+from vouch.v2.evidence import parse_storage_ref  # noqa: E402
 from vouch.v2.runtime import build  # noqa: E402
 
 app = BedrockAgentCoreApp()
@@ -142,6 +145,85 @@ def _record_summary(record) -> dict:
 # ==========================================================================
 
 
+def _documents_from(payload: dict) -> list[dict]:
+    """The documents an invocation should evaluate.
+
+    Three shapes, one pipeline. `document` is inline text, as before.
+    `document_b64` carries bytes that are not text — a real PDF cannot survive
+    a JSON string. `artifact_ref` names something already in evidence storage,
+    which is how a PDF uploaded ahead of the decision is evaluated without
+    being copied into the request.
+
+    Every shape lands in the SAME `ingest_evidence` call: same security
+    inspection, same binding validation, same parser, same canonicalization,
+    same trust labels. There is deliberately no separate "demo PDF" route —
+    a second ingestion path would be a second set of security properties.
+    """
+    content_type = payload.get("content_type") or "text/plain"
+    document_identity = payload.get("document_type") or payload.get("document_identity")
+
+    def shaped(raw: bytes) -> dict:
+        entry: dict = {"raw": raw, "content_type": content_type}
+        if document_identity:
+            entry["document_identity"] = document_identity
+        return entry
+
+    if payload.get("artifact_ref"):
+        return [shaped(_bytes_for_ref(payload["artifact_ref"]))]
+
+    if payload.get("document_b64"):
+        try:
+            return [shaped(base64.b64decode(payload["document_b64"], validate=True))]
+        except (ValueError, binascii.Error) as exc:
+            raise VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE,
+                f"document_b64 is not valid base64: {type(exc).__name__}",
+            ) from exc
+
+    document = payload.get("document")
+    return [shaped(document.encode())] if document else []
+
+
+def _bytes_for_ref(storage_ref: str) -> bytes:
+    """Read an artifact already in evidence storage, by its stored reference.
+
+    Reading the original back and re-ingesting it keeps ONE ingestion path
+    rather than a second one that skips inspection. The re-ingested copy gets
+    its own artifact id and its own security verdict, which is the honest
+    outcome: this is a fresh submission of those bytes for this decision.
+    """
+    _, _, key = parse_storage_ref(storage_ref)
+    try:
+        return _VOUCH.evidence_store.get_original(key)
+    except VouchFailure:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise VouchFailure(
+            FailureCategory.PERSISTENCE_FAILURE,
+            f"could not read {storage_ref}: {type(exc).__name__}",
+        ) from exc
+
+
+def _view_ref(storage_ref: str, object_version: str) -> str | None:
+    """A short-lived, credential-free way for a browser to open the original.
+
+    Returns None whenever the store cannot sign one — a local simulation, or a
+    signing failure. That is the honest answer: the frontend renders "source
+    unavailable" beside real metadata rather than a broken viewer.
+
+    The URL is never logged. It carries its own authorization, so a log line
+    holding one is a copy of the evidence that outlives the request.
+    """
+    store = _VOUCH.evidence_store
+    if not storage_ref or not hasattr(store, "presigned_get"):
+        return None
+    try:
+        _, _, key = parse_storage_ref(storage_ref)
+        return store.presigned_get(key, object_version)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _stored_record(decision_record_id: str) -> dict:
     """The DecisionRecord document, straight from the durable store.
 
@@ -228,7 +310,39 @@ def _artifacts_from_events(events: list[dict]) -> dict[str, dict]:
             entry["received_at"] = event.get("at", "")
             entry["binding_status"] = event.get("binding_status", "")
             entry["security_state"] = "CLEARED"
+
+    # A view reference is minted per read, not stored: it expires, so a saved
+    # one would be a dead link in an audit record.
+    for entry in artifacts.values():
+        entry["view_ref"] = _view_ref(entry["storage_ref"], entry["object_version"])
     return artifacts
+
+
+def _join_record_metadata(artifacts: dict[str, dict], record: dict) -> None:
+    """Fill in what the events do not carry, from the record that does.
+
+    `EVIDENCE_RECEIVED` carries the content type but not the document
+    classification, and adding it to the event would change the lifecycle
+    vocabulary — out of bounds here, and unnecessary: `EvidenceSegment` already
+    stores `document_identities` and `content_types` index-aligned with
+    `storage_refs`, so the storage ref is a reliable join key.
+    """
+    evidence = record.get("evidence") or {}
+    refs = evidence.get("storage_refs") or []
+    identities = evidence.get("document_identities") or []
+    content_types = evidence.get("content_types") or []
+
+    by_ref = {}
+    for index, ref in enumerate(refs):
+        by_ref[ref] = (
+            identities[index] if index < len(identities) else "",
+            content_types[index] if index < len(content_types) else "",
+        )
+
+    for entry in artifacts.values():
+        identity, content_type = by_ref.get(entry["storage_ref"], ("", ""))
+        entry["document_identity"] = entry["document_identity"] or identity
+        entry["content_type"] = entry["content_type"] or content_type
 
 
 def _apply_exclusions(artifacts: dict[str, dict], record: dict) -> None:
@@ -383,8 +497,7 @@ def invoke(payload: dict, context=None) -> dict:
 
     try:
         if action == "evaluate_lot":
-            document = payload.get("document")
-            documents = [{"raw": document.encode()}] if document else []
+            documents = _documents_from(payload)
             # A caller may name the decision before it starts.
             #
             # Invocation is synchronous, so a browser that does not know the id
@@ -420,11 +533,19 @@ def invoke(payload: dict, context=None) -> dict:
             }
 
         if action == "supply_evidence":
+            supplied = _documents_from(payload)
+            if not supplied:
+                raise VouchFailure(
+                    FailureCategory.PERSISTENCE_FAILURE,
+                    "supply_evidence requires a document or an artifact_ref",
+                )
+            document = supplied[0]
             outcome = _VOUCH.supply_human_evidence(
                 decision_record_id=payload["decision_record_id"],
                 lot_id=payload["lot_id"],
-                raw=payload["document"].encode(),
+                raw=document["raw"],
                 authority_source=payload["authority_source"],
+                document_identity=document.get("document_identity", "QA_RETEST"),
             )
             return {
                 "ok": True,
@@ -505,6 +626,7 @@ def invoke(payload: dict, context=None) -> dict:
             artifacts = _artifacts_from_events(
                 [{**row["payload"], "event": row["event"], "at": row["at"]} for row in events]
             )
+            _join_record_metadata(artifacts, document)
             _apply_exclusions(artifacts, document)
             return {
                 "ok": True,
@@ -551,6 +673,7 @@ def invoke(payload: dict, context=None) -> dict:
             artifacts = _artifacts_from_events(
                 [{**row["payload"], "event": row["event"], "at": row["at"]} for row in events]
             )
+            _join_record_metadata(artifacts, document)
             _apply_exclusions(artifacts, document)
 
             artifact_id = payload.get("artifact_id")
@@ -571,10 +694,11 @@ def invoke(payload: dict, context=None) -> dict:
                 "backend": _BACKEND.as_dict(),
                 "decision_record_id": record_id,
                 "sources": sources,
-                # Stated, not implied. Every artifact currently reports
-                # view_ref=None, and a caller must render "source unavailable"
-                # rather than assume a retrieval route exists.
-                "retrieval_available": False,
+                # Stated per read, never assumed. False means the store cannot
+                # sign a link (a local simulation, or a signing failure), and
+                # the caller must render "source unavailable" beside the
+                # metadata rather than a broken viewer.
+                "retrieval_available": any(s.get("view_ref") for s in sources),
             }
 
         if action == "get_today":

@@ -287,6 +287,9 @@ class VouchV2:
             "object_version": artifact.object_version,
             "storage_ref": artifact.storage_ref,
             "document_identity": artifact.document_identity,
+            # What the artifact was ingested AS. A viewer cannot tell a PDF
+            # from a text COA without it, and must never guess a document type.
+            "content_type": content_type,
             "received_at": artifact.received_at,
             "inspection": inspection,
             "status": artifact.status,
@@ -395,6 +398,7 @@ class VouchV2:
             record.evidence.storage_refs.append(summary["storage_ref"])
             record.evidence.object_versions.append(summary["object_version"])
             record.evidence.claimed_identities.append(summary["claimed_identity"])
+            record.evidence.content_types.append(summary.get("content_type", ""))
             record.security.inspection_performed = True
             record.security.config_version = inspection.config_version
             record.security.detector = inspection.detector
@@ -949,6 +953,7 @@ class VouchV2:
         record.evidence.object_versions.append(summary["object_version"])
         record.evidence.claimed_identities.append(summary["claimed_identity"])
         record.evidence.binding_statuses.append(summary["binding_status"])
+        record.evidence.content_types.append(summary.get("content_type", ""))
         for claim in claims:
             record.extraction.per_claim[claim.claim_id] = {
                 "method": claim.extraction_method.value,

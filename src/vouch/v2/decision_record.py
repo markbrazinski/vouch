@@ -49,6 +49,13 @@ class EvidenceSegment:
     #: audit-2 F3: per-artifact binding status. An artifact that stated no
     #: identity is UNBOUND — neither a mismatch nor a successful binding.
     binding_statuses: list[str] = field(default_factory=list)
+    #: The MIME type the artifact was ingested AS. Only one field is added here:
+    #: `document_identities` above already carries the classification (COA,
+    #: QA_RETEST, …), and duplicating it would give a viewer two document types
+    #: that could disagree. Without the MIME type a frontend cannot tell a PDF
+    #: from a text COA, and would have to guess a document type it must never
+    #: invent.
+    content_types: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -407,6 +414,7 @@ class DecisionRecord:
                 len(self.evidence.document_identities),
                 len(self.evidence.receipt_timestamps),
                 len(self.evidence.claimed_identities),
+                len(self.evidence.content_types),
             )
             need(
                 all(count == len(hashes) for count in aligned),
