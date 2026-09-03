@@ -7,14 +7,25 @@
  * scrolling — it has an independently-scrolling activity rail — and the older
  * shell wraps children in a single scroller that would fight it.
  *
- * Only the surfaces Hero A needs exist here. Today, Records and Suppliers are
- * rendered as navigable but out of scope for this gate, and say so rather than
- * showing fabricated content.
+ * All four surfaces are now live: each reads its own authoritative read model
+ * and renders an answer, a truthful empty, an explicitly-blocked path or a
+ * technical failure. None of them falls back to fixture content.
+ *
+ * Navigation keeps context. Opening a decision from Today or Incoming lands on
+ * that decision's record and remembers where it came from, so returning goes
+ * back to the surface the operator was reading rather than to a default.
  */
 
-import { useState } from 'react';
-import { HeroAPage, IncomingBlockedNotice, type HeroAEntry } from './HeroAPage';
+import { useCallback, useState } from 'react';
+import { HeroAPage, type HeroAEntry } from './HeroAPage';
 import { INK, MONO, N, SANS, HAIR } from './primitives';
+import {
+  IncomingSurface,
+  RecordSurface,
+  RecordsIndexSurface,
+  SuppliersSurface,
+  TodaySurface,
+} from '../features/Surfaces';
 
 type Surface = 'incoming' | 'today' | 'suppliers' | 'records';
 
@@ -32,33 +43,49 @@ const TITLES: Record<Surface, [string, string]> = {
   records: ['Records', 'Every disposition, searchable'],
 };
 
-function OutOfScope({ surface }: { surface: string }) {
+/** Returning from a record goes back where the operator actually was. */
+function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
   return (
-    <div
-      data-testid="out-of-scope"
-      style={{
-        margin: '18px 26px',
-        background: N.fill,
-        border: `1px solid ${HAIR}`,
-        borderRadius: 13,
-        padding: '15px 22px',
-        maxWidth: 640,
-      }}
-    >
-      <div style={{ font: `600 9px ${MONO}`, letterSpacing: '.1em', color: INK.label }}>
-        {surface.toUpperCase()}
-      </div>
-      <div style={{ font: `400 12.5px/1.5 ${SANS}`, color: INK.prose, marginTop: 6 }}>
-        Not built in this gate. Hero A is the scope; this surface comes later rather than being
-        filled with placeholder content.
-      </div>
+    <div style={{ padding: '14px 30px 0' }}>
+      <button
+        type="button"
+        onClick={onBack}
+        style={{
+          background: 'transparent',
+          border: `1px solid ${HAIR}`,
+          borderRadius: 7,
+          padding: '5px 11px',
+          font: `600 11.5px ${SANS}`,
+          color: INK.prose,
+          cursor: 'pointer',
+        }}
+      >
+        &larr; {label}
+      </button>
     </div>
   );
 }
 
 export function HeroAApp({ entry }: { entry: HeroAEntry }) {
   const [surface, setSurface] = useState<Surface>('incoming');
+  const [openRecordId, setOpenRecordId] = useState<string | null>(null);
   const [title, sub] = TITLES[surface];
+
+  const openRecord = useCallback((id: string) => setOpenRecordId(id), []);
+
+  /**
+   * Today links an order to the decision that changed it.
+   *
+   * The causal link is `consequences.caused_by` on the record, which Today's
+   * payload does not carry - `get_today` deliberately states no before/after,
+   * because which change to highlight is a presentation question. Until a
+   * decision id reaches this surface, the honest move is to send the operator
+   * to the ledger rather than to guess at a record id.
+   */
+  const openOrder = useCallback((_orderId: string) => {
+    setOpenRecordId(null);
+    setSurface('records');
+  }, []);
 
   return (
     <div
@@ -129,7 +156,10 @@ export function HeroAApp({ entry }: { entry: HeroAEntry }) {
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setSurface(item.key)}
+                  onClick={() => {
+                    setSurface(item.key);
+                    setOpenRecordId(null);
+                  }}
                   style={{
                     textAlign: 'left',
                     background: on ? 'rgba(255,255,255,.08)' : 'transparent',
@@ -182,15 +212,27 @@ export function HeroAApp({ entry }: { entry: HeroAEntry }) {
             <div style={{ font: `400 12px ${MONO}`, color: INK.label }}>{sub}</div>
           </header>
 
-          {surface === 'incoming' ? (
+          {surface === 'incoming' && !openRecordId ? (
             <HeroAPage entry={entry} />
-          ) : surface === 'today' ? (
-            <div style={{ overflowY: 'auto' }}>
-              <IncomingBlockedNotice detail="Today is a later gate; the readiness read model is live but unrendered." />
-            </div>
           ) : (
-            <div style={{ overflowY: 'auto' }}>
-              <OutOfScope surface={surface} />
+            <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {openRecordId ? (
+                <>
+                  <BackBar
+                    label={`Back to ${TITLES[surface][0]}`}
+                    onBack={() => setOpenRecordId(null)}
+                  />
+                  <RecordSurface decisionRecordId={openRecordId} />
+                </>
+              ) : surface === 'today' ? (
+                <TodaySurface onOpenDecision={openOrder} />
+              ) : surface === 'incoming' ? (
+                <IncomingSurface onOpen={setOpenRecordId} />
+              ) : surface === 'suppliers' ? (
+                <SuppliersSurface onOpen={openRecord} />
+              ) : (
+                <RecordsIndexSurface onOpen={setOpenRecordId} />
+              )}
             </div>
           )}
         </main>

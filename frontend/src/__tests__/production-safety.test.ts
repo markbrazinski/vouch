@@ -162,6 +162,97 @@ describe('the product surface carries no demo apparatus', () => {
     }
   });
 
+  /**
+   * The LIVE product surfaces.
+   *
+   * `src/features/*` still contains the earlier fixture-driven screens
+   * (`IncomingPage`, `SuppliersPage`, `TodayPage`, `RecordsPage`). They are
+   * reachable only from `VouchApp`, which `main.tsx` does not mount — they back
+   * the DEV state harness and its tests. The rules below therefore bind the
+   * surfaces that actually ship: the `Live*Page` components, their models, and
+   * the bindings in `Surfaces.tsx`.
+   */
+  const liveSurfaces = productFiles.filter(
+    (p) =>
+      p.includes(join('src', 'features')) &&
+      (/Live[A-Za-z]+Page\.tsx$/.test(p) ||
+        /features[\\/][a-z]+[\\/]model\.ts$/.test(p) ||
+        p.endsWith(join('src', 'features', 'Surfaces.tsx')) ||
+        p.endsWith(join('src', 'features', 'useSurfaceData.ts'))),
+  );
+
+  /** Comments explain WHY a rule exists; only executable code can break it. */
+  const codeOf = (file: string) =>
+    readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+  it('the live surfaces do no domain arithmetic', () => {
+    // Readiness, coverage, shortage and every ratio are deterministic Python
+    // (AGENTS.md §6). A browser that recomputed one could disagree with the
+    // decision that produced it, so the surfaces format and never derive.
+    expect(liveSurfaces.length).toBeGreaterThan(0);
+    for (const f of liveSurfaces) {
+      const src = codeOf(f);
+      // Subtraction or division on a coverage figure is where a re-derived
+      // shortage or ratio would appear. Counting array lengths is inventory,
+      // not domain arithmetic, so `.length` and `+= 1` stay allowed.
+      expect(src, f).not.toMatch(/required\s*[-/]\s*available/);
+      expect(src, f).not.toMatch(/available\s*[-/]\s*required/);
+      expect(src, f).not.toMatch(/(shortBy|short_by|ratio|coverage)\s*[:=]\s*[^,;]*[-*/]\s*[a-z]/i);
+    }
+  });
+
+  it('no live surface resurrects the rejected fictional counters', () => {
+    // `inProgress` and `completedByVouch` were rejected: invocation is
+    // synchronous so nothing is ever persisted mid-flight, and nothing in the
+    // model attributes a decision to Vouch rather than to a human.
+    for (const f of liveSurfaces) {
+      const src = codeOf(f);
+      expect(src, f).not.toMatch(/completedByVouch|completed_by_vouch/);
+      expect(src, f).not.toMatch(/inProgress|in_progress/);
+    }
+  });
+
+  it('no live surface invents supplier standing the backend does not own', () => {
+    // Qualification status, dates and site scope are read by an agent tool but
+    // never serialized into a browser-reachable response, and a supplier score
+    // or risk model exists nowhere in the backend at all.
+    const suppliers = liveSurfaces.filter((p) => p.includes(join('features', 'suppliers')));
+    expect(suppliers.length).toBeGreaterThan(0);
+    for (const f of suppliers) {
+      const src = codeOf(f);
+      expect(src, f).not.toMatch(/REQUAL|riskScore|supplierScore|trendline|qualificationStatus/);
+    }
+  });
+
+  it('no live surface hard-codes a demo lot, order or spec', () => {
+    // `LiveTodayPage` must not know C-417 exists; it renders whatever the
+    // backend returned.
+    for (const f of liveSurfaces) {
+      const src = codeOf(f);
+      expect(src, f).not.toMatch(/C-41[789]|LOT-100\d|SPEC-A7|MAT-ALLOY-7|L-22\d\d/);
+      expect(src, f).not.toMatch(/Meridian|Halden|Kessler|Baumann|Orica/);
+    }
+  });
+
+  it('no invented total or count ships on a live surface', () => {
+    // "1-10 of 3,481" and "5 of 214" asserted totals nothing ever counted.
+    for (const f of liveSurfaces) {
+      const src = codeOf(f);
+      expect(src, f).not.toMatch(/3,481|of 214|\b187\b|\b3481\b/);
+    }
+  });
+
+  it('no generated PDF fixture ships yet', () => {
+    // The synthetic supplier PDFs belong to the next gate. Nothing in the
+    // product may reference one before they exist and are qualified.
+    for (const f of productFiles) {
+      const src = readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/\.pdf['"\)]/);
+    }
+  });
+
   it('the fixture harness is imported only behind import.meta.env.DEV', () => {
     const main = readFileSync(join(SRC, 'main.tsx'), 'utf8');
     expect(main).toMatch(/import\.meta\.env\.DEV/);

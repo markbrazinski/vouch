@@ -1,0 +1,17 @@
+{
+  "ok": false,
+  "action": "list_decisions",
+  "backend": {
+    "mode": "production",
+    "corpus": "AWS_DYNAMODB",
+    "evidence_store": "AWS_S3",
+    "capability_store": "AWS_DYNAMODB",
+    "record_store": "AWS_DYNAMODB",
+    "event_store": "AWS_DYNAMODB",
+    "reasoners": "BEDROCK_NOVA",
+    "durable": true
+  },
+  "failure_category": "PERSISTENCE_FAILURE",
+  "error": "could not list decisions: An error occurred (AccessDeniedException) when calling the Query operation: User: arn:aws:sts::000000000000:assumed-role/GatehouseAgentCoreRuntimeRole/BedrockAgentCore-53441750-8d4e-47bc-8268-d7cee7493ef9 is not authorized to perform: dynamodb:Query on resource: arn:aws:dynamodb:us-east-1:000000000000:table/gatehouse-dev-state/index/decisions-by-recency because no identity-based policy allows the dynamodb:Query action",
+  "mutation": {}
+}

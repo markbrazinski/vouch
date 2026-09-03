@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
 import subprocess
 import sys
 import time
@@ -28,9 +29,27 @@ sys.path.insert(0, str(ROOT / "src"))
 from vouch.config import load  # noqa: E402
 from vouch.v2.fixtures import COA_AMBIGUOUS, COA_HERO, QA_RETEST  # noqa: E402
 
-RUNTIME_ARN = (
-    "arn:aws:bedrock-agentcore:us-east-1:000000000000:runtime/Gatehouse-IWAmEp93XP"
-)
+#: The account id is account-specific targeting information: it lives in the
+#: gitignored provisioning manifest (contract §13), never in a tracked file.
+#: Set VOUCH_RUNTIME_ARN to point at a different deployed runtime.
+RUNTIME_NAME = os.environ.get("VOUCH_RUNTIME_NAME", "Gatehouse-IWAmEp93XP")
+
+
+def runtime_arn() -> str:
+    """The deployed runtime, composed from configuration rather than literal."""
+    override = os.environ.get("VOUCH_RUNTIME_ARN")
+    if override:
+        return override
+    config = load()
+    if not config.account_id:
+        raise SystemExit(
+            "no account id: set VOUCH_RUNTIME_ARN, or AWS_ACCOUNT_ID, or "
+            "provide provisioning.json"
+        )
+    return (
+        f"arn:aws:bedrock-agentcore:{config.region}:{config.account_id}"
+        f":runtime/{RUNTIME_NAME}"
+    )
 
 
 def invoke(payload: dict) -> dict:
@@ -40,7 +59,7 @@ def invoke(payload: dict) -> dict:
     subprocess.run(
         [
             "aws", "bedrock-agentcore", "invoke-agent-runtime",
-            "--agent-runtime-arn", RUNTIME_ARN,
+            "--agent-runtime-arn", runtime_arn(),
             "--payload", base64.b64encode(json.dumps(payload).encode()).decode(),
             "--region", load().region, str(out),
         ],

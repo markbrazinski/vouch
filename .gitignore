@@ -144,6 +144,12 @@ contracts/frontend/*
 !contracts/frontend/VOUCH_V2_BACKEND_CONFORMANCE.md
 !contracts/frontend/VOUCH_V2_FE_BE_INTEGRATION_CONTRACT.md
 
+# The canonical supplier/document brief is normative: it constrains what the
+# synthetic demo PDFs may contain, so it is tracked like the other contracts.
+!contracts/demo/
+contracts/demo/*
+!contracts/demo/VOUCH_V2_CANONICAL_SUPPLIER_DOCUMENT_BRIEF.md
+
 # ---- local agent / editor tooling state ------------------------------------
 .claude/settings.local.json
 .claude/projects/
