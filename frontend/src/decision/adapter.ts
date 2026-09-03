@@ -1,0 +1,1181 @@
+/**
+ * Backend DTOs -> DecisionWorkspaceVM.
+ *
+ * The whole workspace is a projection of one ordered event list plus, once it
+ * exists, the terminal authoritative record. That is deliberate: the UI cannot
+ * drift from the backend's account of what happened, because there is no second
+ * place where "what happened" is decided.
+ *
+ * Two rules this file exists to enforce:
+ *
+ *   1. Business state is read from event PAYLOAD FIELDS, never parsed out of
+ *      prose. `reason` strings are for humans; a UI that regexes them would
+ *      break the moment wording changed, and would be asserting business truth
+ *      it did not compute.
+ *
+ *   2. The active stage moves only on major stage boundaries (D8). Tool traffic
+ *      is high-frequency and would make the slot flicker; it belongs in the
+ *      Activity rail, which is exactly where the backend already puts it.
+ */
+
+import type {
+  ActivityEventVM,
+  AgentStageVM,
+  CompletedStageVM,
+  ConsequenceVM,
+  DecisionWorkspaceVM,
+  DispositionVM,
+  EstablishedTruthVM,
+  ExtractionProvenanceVM,
+  FailureVM,
+  OutcomeSummaryVM,
+  ReconciliationVM,
+  SourceArtifactVM,
+  SourceLocatorVM,
+  SpineNodeVM,
+  StageKey,
+} from './model';
+import type {
+  EvaluateDTO,
+  LifecycleEventDTO,
+  RecoveryCandidateDTO,
+  SourceArtifactDTO,
+  SourceClaimDTO,
+  SourceLocatorDTO,
+} from './dto';
+import type { SemanticTone } from '../view-models/types';
+
+/** D8. Only these events hand the slot to a new stage. */
+const STAGE_OWNER: Record<string, StageKey> = {
+  EVIDENCE_RECEIVED: 'evidence',
+  INVESTIGATOR_STARTED: 'investigator',
+  VERIFIER_STARTED: 'verifier',
+  RECONCILIATION_COMPLETED: 'reconciliation',
+  DISPOSITION_COMPUTED: 'disposition',
+  QUALITY_DECISION_REQUIRED: 'disposition',
+  CONSEQUENCE_RECALCULATED: 'consequence',
+};
+
+/** D8: these two drop the left column and take the full inner width. */
+const FULL_BLEED: StageKey[] = ['reconciliation', 'consequence'];
+
+const STAGE_ORDER: StageKey[] = [
+  'evidence',
+  'investigator',
+  'verifier',
+  'reconciliation',
+  'disposition',
+  'consequence',
+];
+
+const ACTOR_BY_EVENT: Record<string, ActivityEventVM['actorType']> = {
+  EVIDENCE_RECEIVED: 'evidence',
+  EVIDENCE_EXTRACTED: 'evidence',
+  EVIDENCE_SNAPSHOT_CREATED: 'evidence',
+  EVIDENCE_BINDING_COMPLETED: 'evidence',
+  EVIDENCE_BINDING_MISMATCH: 'evidence',
+  EVIDENCE_SECURITY_COMPLETED: 'security',
+  INVESTIGATOR_STARTED: 'investigator',
+  APPLICABILITY_BRIEF_COMPLETED: 'investigator',
+  BRIEF_VALIDATION_FAILED: 'investigator',
+  VERIFIER_STARTED: 'verifier',
+  VERIFIER_BRIEF_COMPLETED: 'verifier',
+  RECONCILIATION_COMPLETED: 'system',
+  DISPOSITION_COMPUTED: 'system',
+  POLICY_EVALUATED: 'system',
+  CAPABILITY_ISSUED: 'system',
+  MUTATION_COMPLETED: 'system',
+  CONSEQUENCE_RECALCULATED: 'operations',
+  READINESS_TRANSITIONED: 'operations',
+  RECOVERY_EVALUATED: 'operations',
+  RECOVERY_EXECUTED: 'operations',
+  QUALITY_DECISION_REQUIRED: 'system',
+  HUMAN_EVIDENCE_RECEIVED: 'human',
+  DECISION_RESUMED: 'system',
+};
+
+const ACTOR_NAME: Record<ActivityEventVM['actorType'], string> = {
+  evidence: 'Evidence',
+  security: 'Security',
+  investigator: 'Applicability Investigator',
+  verifier: 'Independent Verifier',
+  system: 'Vouch',
+  operations: 'Operations',
+  human: 'Quality',
+};
+
+/** D7: only these three carry optional detail on click. */
+const EXPANDABLE = new Set([
+  'TOOL_RESULT_BOUND',
+  'RECONCILIATION_COMPLETED',
+  'DISPOSITION_COMPUTED',
+]);
+
+const str = (v: unknown, fallback = ''): string =>
+  typeof v === 'string' ? v : typeof v === 'number' ? String(v) : fallback;
+const num = (v: unknown): number | undefined =>
+  typeof v === 'number' ? v : undefined;
+const bool = (v: unknown): boolean => v === true;
+
+export const dispositionTone = (disposition: string): SemanticTone => {
+  switch (disposition) {
+    case 'RELEASE':
+    case 'RELEASED':
+      return 'released';
+    case 'QUARANTINE':
+    case 'QUARANTINED':
+      return 'quarantine';
+    case 'INSUFFICIENT_EVIDENCE':
+      return 'decision';
+    default:
+      return 'progress';
+  }
+};
+
+export const clockOf = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(
+        d.getSeconds(),
+      ).padStart(2, '0')}`;
+};
+
+const titleCase = (s: string): string =>
+  s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+/**
+ * A human label for one event, built from payload FIELDS.
+ *
+ * Note what this does not do: it never inspects a `reason` string to decide
+ * what happened. Every branch reads a typed field the backend computed.
+ */
+function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
+  const type = e.event;
+  switch (type) {
+    case 'EVIDENCE_RECEIVED':
+      return { short: 'Evidence received', summary: str(e.content_type) };
+    case 'EVIDENCE_SECURITY_COMPLETED': {
+      const outcome = str(e.guardrail_outcome, 'NOT_RUN');
+      return {
+        short: 'Security inspection',
+        summary: outcome === 'DETECTED' ? 'prompt attack detected' : `guardrail ${outcome.toLowerCase()}`,
+      };
+    }
+    case 'EVIDENCE_EXTRACTED': {
+      // Sponsor-depth micro-pass: meaning first, method as secondary metadata.
+      const claims = num(e.claim_count) ?? 0;
+      const structured = bool(e.structured_extraction);
+      const gate = (num(e.confidence) ?? 0) >= 0.75;
+      if (structured) {
+        return {
+          short: 'Structured table extracted',
+          summary: `${claims} claim${claims === 1 ? '' : 's'} · confidence gate ${gate ? 'passed' : 'not met'}`,
+        };
+      }
+      return { short: 'Evidence extracted', summary: `${claims} claim${claims === 1 ? '' : 's'}` };
+    }
+    case 'EVIDENCE_BINDING_COMPLETED':
+      return {
+        short: 'Identity bound',
+        summary: bool(e.bound) ? str(e.binding_status) : str(e.binding_status, 'not bound'),
+      };
+    case 'EVIDENCE_SNAPSHOT_CREATED':
+      return { short: 'Evidence frozen', summary: `${num(e.claim_count) ?? 0} claims` };
+    case 'INVESTIGATOR_STARTED':
+      return { short: 'Investigator started', summary: str(e.model_id) };
+    case 'VERIFIER_STARTED':
+      return { short: 'Verifier started', summary: str(e.model_id) };
+    case 'TOOL_CALLED':
+      return { short: `Tool · ${str(e.tool)}`, summary: str(e.agent) };
+    case 'TOOL_RESULT_BOUND':
+      return {
+        short: `Result bound · ${str(e.tool)}`,
+        summary: `${num(e.result_count) ?? 0} record${(num(e.result_count) ?? 0) === 1 ? '' : 's'}`,
+      };
+    case 'APPLICABILITY_BRIEF_COMPLETED':
+      return { short: 'Applicability brief', summary: str(e.sufficiency) };
+    case 'VERIFIER_BRIEF_COMPLETED':
+      return { short: 'Verifier brief', summary: str(e.sufficiency) };
+    case 'BRIEF_VALIDATION_FAILED':
+      return { short: 'Brief returned for correction', summary: str(e.agent) };
+    case 'RECONCILIATION_COMPLETED':
+      return { short: 'Reconciliation', summary: titleCase(str(e.outcome)) };
+    case 'DISPOSITION_COMPUTED':
+      return { short: 'Disposition computed', summary: str(e.disposition) };
+    case 'POLICY_EVALUATED':
+      return { short: 'Policy evaluated', summary: str(e.gate_decision) };
+    case 'CAPABILITY_ISSUED':
+      return { short: 'Capability issued', summary: str(e.action) };
+    case 'MUTATION_COMPLETED':
+      return { short: 'State change committed', summary: `${str(e.action)} · ${str(e.target)}` };
+    case 'CONSEQUENCE_RECALCULATED':
+      return { short: 'Consequence recalculated', summary: str(e.order_id) };
+    case 'READINESS_TRANSITIONED':
+      return { short: 'Readiness changed', summary: `${str(e.from)} → ${str(e.to)}` };
+    case 'RECOVERY_EVALUATED':
+      return { short: 'Recovery evaluated', summary: `${num(e.candidate_count) ?? 0} candidates` };
+    case 'RECOVERY_EXECUTED':
+      return { short: 'Recovery executed', summary: str(e.order_id) };
+    case 'QUALITY_DECISION_REQUIRED':
+      return { short: 'Quality decision required', summary: str(e.reason) };
+    case 'HUMAN_EVIDENCE_RECEIVED':
+      return { short: 'Human evidence received', summary: str(e.authority_source) };
+    case 'DECISION_RESUMED':
+      return { short: 'Decision resumed', summary: `run ${num(e.run_number) ?? 2}` };
+    default:
+      return { short: titleCase(type) };
+  }
+}
+
+function statusFor(e: LifecycleEventDTO): ActivityEventVM['resultStatus'] {
+  switch (e.event) {
+    case 'EVIDENCE_SECURITY_COMPLETED':
+      return str(e.guardrail_outcome) === 'DETECTED' ? 'bad' : 'good';
+    case 'RECONCILIATION_COMPLETED':
+      return str(e.outcome) === 'MATERIAL_DISAGREEMENT' ? 'caution' : 'good';
+    case 'DISPOSITION_COMPUTED':
+      return str(e.disposition) === 'RELEASE' ? 'good' : 'caution';
+    case 'QUALITY_DECISION_REQUIRED':
+    case 'BRIEF_VALIDATION_FAILED':
+      return 'caution';
+    case 'MUTATION_COMPLETED':
+    case 'RECOVERY_EXECUTED':
+      return 'good';
+    default:
+      return 'neutral';
+  }
+}
+
+/**
+ * Which run each event belongs to, derived.
+ *
+ * The backend does not put `run_number` on the wire: `rerun()` increments
+ * `run_count` on the RECORD, and the only in-stream markers of that boundary
+ * are HUMAN_EVIDENCE_RECEIVED and DECISION_RESUMED. Without this, every event
+ * of a resumed decision reported run 1 and Hero B's second run was
+ * indistinguishable from its first.
+ *
+ * The boundary opens at the HUMAN act rather than at DECISION_RESUMED: the
+ * human is what causes the new run, and the evidence-intake events carrying it
+ * would otherwise be filed under the run they ended. Both markers are counted
+ * so a stream carrying only one still steps exactly once.
+ *
+ * One function, because the activity rail and the agent stage cards must not
+ * disagree about which run the operator is looking at.
+ */
+export function runNumbers(events: LifecycleEventDTO[]): number[] {
+  let derived = 1;
+  let stepped = false;
+  return events.map((e) => {
+    if (e.event === 'HUMAN_EVIDENCE_RECEIVED') {
+      derived += 1;
+      stepped = true;
+    } else if (e.event === 'DECISION_RESUMED') {
+      if (!stepped) derived += 1;
+      stepped = false;
+    }
+    return derived;
+  });
+}
+
+export function toActivity(events: LifecycleEventDTO[]): ActivityEventVM[] {
+  // A `run_number` IS still honoured if it ever appears: this is a fallback,
+  // never an override.
+  const runOf = runNumbers(events);
+
+  return events.map((e, index) => {
+    const actorType = ACTOR_BY_EVENT[e.event] ?? 'system';
+    const { short, summary } = labelFor(e);
+    const sequence = num(e.sequence) ?? index + 1;
+    const detail: { label: string; value: string }[] = [];
+
+    if (e.event === 'TOOL_RESULT_BOUND') {
+      if (e.tool) detail.push({ label: 'Tool', value: str(e.tool) });
+      if (e.result_count !== undefined)
+        detail.push({ label: 'Records', value: String(e.result_count) });
+      if (e.elapsed_ms !== undefined)
+        detail.push({ label: 'Elapsed', value: `${e.elapsed_ms} ms` });
+    } else if (e.event === 'RECONCILIATION_COMPLETED') {
+      detail.push({ label: 'Outcome', value: titleCase(str(e.outcome)) });
+      const differing = Array.isArray(e.differing_fields) ? (e.differing_fields as string[]) : [];
+      if (differing.length) detail.push({ label: 'Differing', value: differing.join(', ') });
+    } else if (e.event === 'DISPOSITION_COMPUTED') {
+      detail.push({ label: 'Disposition', value: str(e.disposition) });
+      if (e.basis) detail.push({ label: 'Basis', value: str(e.basis) });
+    }
+
+    return {
+      eventId: str(e.event_id, `${e.decision_record_id}:${sequence}`),
+      sequence,
+      timestamp: str(e.at),
+      clock: clockOf(str(e.at)),
+      eventType: e.event,
+      actorType,
+      actorDisplayName: ACTOR_NAME[actorType],
+      toolId: e.tool ? str(e.tool) : undefined,
+      shortLabel: short,
+      resultSummary: summary,
+      resultStatus: statusFor(e),
+      runNumber: num(e.run_number) ?? runOf[index],
+      expandable: EXPANDABLE.has(e.event) && detail.length > 0,
+      detail: detail.length ? detail : undefined,
+    };
+  });
+}
+
+/** "2026-08-15T08:00" -> "08:00". The date is the same day throughout. */
+export const slotTime = (slot: string): string => {
+  const t = slot.split('T')[1];
+  return t ? t.slice(0, 5) : slot;
+};
+
+/**
+ * A sentence for one recovery candidate, composed from the backend's own
+ * reason code and computed facts. Never parsed out of prose, and never
+ * arithmetic performed here.
+ */
+export function recoveryDetail(c: RecoveryCandidateDTO): string {
+  const f = (c.facts ?? {}) as Record<string, unknown>;
+  switch (c.reason_code) {
+    case 'INSUFFICIENT_QUANTITY':
+      return `Short by ${f.short_by} of ${c.candidate_id} — ${f.available} available against ${f.required} required.`;
+    case 'NOT_APPROVED':
+      return `${f.available} in stock, but ${c.candidate_id} is not an approved substitution for ${f.product}. Stock is not authority.`;
+    case 'FEASIBLE':
+      return `Materials ready on ${f.resource}; the ${slotTime(String(f.target_slot ?? ''))} slot is free.`;
+    case 'SLOT_OCCUPIED':
+      return `The target slot is already committed.`;
+    case 'MATERIALS_NOT_READY':
+      return `Required material for this order is not released.`;
+    case 'RESOURCE_MISMATCH':
+      return `Runs on a different resource; it cannot take this slot.`;
+    default:
+      return c.reason_code ? titleCase(String(c.reason_code)) : '';
+  }
+}
+
+const localeNum = (v: unknown): string =>
+  typeof v === 'number' ? String(v) : str(v);
+
+function locatorLabel(l: SourceLocatorDTO): string {
+  const parts: string[] = [];
+  if (l.page !== undefined) parts.push(`Page ${l.page}`);
+  if (l.table !== undefined) parts.push(`Table ${l.table}`);
+  if (l.row_label) parts.push(titleCase(l.row_label));
+  if (l.column_label) parts.push(titleCase(l.column_label));
+  return parts.join(' · ');
+}
+
+/** Sponsor depth. Returns null for every ordinary document. */
+function extractionOf(a: SourceArtifactDTO): ExtractionProvenanceVM | null {
+  const structured = bool(a.structured_extraction);
+  const method = str(a.extraction_method);
+  if (!structured && !method) return null;
+
+  const claimCount = a.claims?.length ?? a.source_locators?.length ?? 0;
+  return {
+    method,
+    // Meaning first. The method is metadata, never the headline.
+    headline: structured ? 'Structured table extracted' : 'Text extracted',
+    structured,
+    confidence: a.extraction_confidence,
+    confidenceGatePassed: a.confidence_gate_passed,
+    identityTrusted: a.identity_trusted,
+    reason: a.structured_reason,
+    claimCount,
+  };
+}
+
+/**
+ * The canonical claims the decision actually froze, keyed by artifact.
+ *
+ * `get_source` reports a claim COUNT but never the claims themselves. The
+ * claims do exist on an authoritative surface: the stored decision record
+ * carries `evidence.canonical_claims`, and `get_decision` returns that document
+ * whole. Each claim names the artifact it came from (`evidence_artifact_id`),
+ * so this is a join over truth the backend already publishes — not a new
+ * contract, and not a value invented here.
+ *
+ * Every claim arrives with its own provenance: characteristic, value, units,
+ * method, condition and `source_locator`. That is what lets the viewer itemize
+ * WHAT was read and WHERE it was read from, instead of admitting a bare count.
+ */
+export function claimsByArtifact(
+  record: Record<string, unknown> | null | undefined,
+): Map<string, SourceClaimDTO[]> {
+  const out = new Map<string, SourceClaimDTO[]>();
+  if (!record) return out;
+  const evidence = record.evidence as Record<string, unknown> | undefined;
+  const claims = evidence?.canonical_claims;
+  if (!Array.isArray(claims)) return out;
+  for (const raw of claims as SourceClaimDTO[]) {
+    if (!raw || typeof raw !== 'object') continue;
+    const artifactId = str(raw.evidence_artifact_id);
+    if (!artifactId) continue;
+    const list = out.get(artifactId);
+    if (list) list.push(raw);
+    else out.set(artifactId, [raw]);
+  }
+  return out;
+}
+
+export function toSource(a: SourceArtifactDTO, joined?: SourceClaimDTO[]): SourceArtifactVM {
+  // Field names verified against a LIVE get_source response. Three of them
+  // differ from what the DTO shape suggested — `trust_class` not `trust_label`,
+  // `excluded_from_decision_use` not `excluded_from_decision`, and
+  // `security_state` arriving UPPERCASE — so both spellings are accepted rather
+  // than one being guessed at.
+  const trustRaw = str(a.trust_class) || str(a.trust_label, 'UNTRUSTED_SUPPLIER');
+  const securityRaw = str(a.security_state, 'CLEARED').toUpperCase();
+  const status = str(a.status);
+  const quarantined =
+    securityRaw === 'QUARANTINED' ||
+    status === 'QUARANTINED_SECURITY' ||
+    bool(a.prompt_attack_detected);
+
+  const trustClass: SourceArtifactVM['trustClass'] = quarantined
+    ? 'quarantined'
+    : trustRaw === 'HUMAN_AUTHORIZED'
+      ? 'human_authorized'
+      : trustRaw === 'AUTHORITATIVE_INTERNAL'
+        ? 'internal'
+        : 'supplier_untrusted';
+
+  const locators: SourceLocatorVM[] = (a.source_locators ?? []).map((l) => ({
+    label: locatorLabel(l),
+    page: l.page,
+    table: l.table,
+    rowLabel: l.row_label,
+    columnLabel: l.column_label,
+    cell: l.cell,
+    confidence: l.confidence,
+    structured: true,
+  }));
+
+  // The artifact's own claims when a surface ever carries them, otherwise the
+  // ones joined from the durable record. Never both — one claim, one row.
+  const claimSource = a.claims?.length ? a.claims : (joined ?? []);
+  const claims: SourceClaimVMLocal[] = claimSource.map((c) => ({
+    label: titleCase(str(c.characteristic)),
+    value: [localeNum(c.value), str(c.units)].filter(Boolean).join(' '),
+    locator: str(c.source_locator),
+    method: str(c.method),
+    condition: str(c.condition),
+    trustClass: str(c.trust_label, trustRaw),
+  }));
+
+  const hash = str(a.content_hash);
+  const pageCount = num(a.page_count);
+
+  return {
+    artifactId: str(a.artifact_id),
+    displayName:
+      str(a.display_name) || str(a.document_identity) || str(a.document_type) || str(a.artifact_id),
+    documentType: str(a.document_identity) || str(a.document_type, 'document'),
+    trustClass,
+    trustLabel: trustRaw,
+    securityState: quarantined ? 'quarantined' : securityRaw === 'CLEARED' ? 'cleared' : 'pending',
+    versionId: str(a.version_id) || str(a.object_version),
+    hashSummary: hash ? `${hash.slice(0, 12)}…` : '',
+    pageCount,
+    excludedFromDecision:
+      bool(a.excluded_from_decision_use) || bool(a.excluded_from_decision) || quarantined,
+    claims,
+    // The backend reports the count even when it does not itemize the claims.
+    claimCount: num(a.claim_count) ?? claims.length,
+    locators,
+    extraction: extractionOf(a),
+    // `view_ref` presence only. The URL itself is never carried on the model:
+    // it is a 300s bearer credential and is fetched at open time.
+    openable: Boolean(a.view_ref || a.view_url),
+  };
+}
+
+interface SourceClaimVMLocal {
+  label: string;
+  value: string;
+  locator: string;
+  method: string;
+  condition: string;
+  trustClass: string;
+}
+
+/** Latest event of a type, or undefined. Events arrive in ascending sequence. */
+const last = (events: LifecycleEventDTO[], type: string): LifecycleEventDTO | undefined => {
+  for (let i = events.length - 1; i >= 0; i -= 1) if (events[i].event === type) return events[i];
+  return undefined;
+};
+
+const allOf = (events: LifecycleEventDTO[], type: string): LifecycleEventDTO[] =>
+  events.filter((e) => e.event === type);
+
+/**
+ * D8. The active stage is derived from the last STAGE BOUNDARY event only.
+ * `TOOL_CALLED` is intentionally absent from STAGE_OWNER.
+ */
+export function activeStageFrom(events: LifecycleEventDTO[]): StageKey | null {
+  let owner: StageKey | null = null;
+  for (const e of events) {
+    const next = STAGE_OWNER[e.event];
+    if (next) owner = next;
+  }
+  return owner;
+}
+
+function agentFrom(
+  events: LifecycleEventDTO[],
+  role: 'investigator' | 'verifier',
+): AgentStageVM | null {
+  const startedType = role === 'investigator' ? 'INVESTIGATOR_STARTED' : 'VERIFIER_STARTED';
+  const doneType =
+    role === 'investigator' ? 'APPLICABILITY_BRIEF_COMPLETED' : 'VERIFIER_BRIEF_COMPLETED';
+
+  const started = last(events, startedType);
+  if (!started) return null;
+  const done = last(events, doneType);
+
+  // Tool results are attributed by the `agent` field the backend stamps, so the
+  // two agents' consulted-records lists cannot bleed into each other.
+  const records = allOf(events, 'TOOL_RESULT_BOUND')
+    .filter((e) => str(e.agent) === role)
+    .map((e) => ({
+      mark: '·',
+      label: titleCase(str(e.tool)),
+      value: `${num(e.result_count) ?? 0} record${(num(e.result_count) ?? 0) === 1 ? '' : 's'}`,
+      emphasis: false,
+    }));
+
+  const sufficiency = done ? str(done.sufficiency) : '';
+  const sufficient = sufficiency === 'SUFFICIENT';
+
+  return {
+    role,
+    // Same derived boundary the rail uses, so the "RUN 2" badge and the rail
+    // cannot contradict each other on a resumed decision.
+    runNumber: num(started.run_number) ?? runNumbers(events)[events.indexOf(started)] ?? 1,
+    state: done ? 'complete' : 'active',
+    modelId: str(started.model_id),
+    recordsConsulted: records,
+    resultTitle: done
+      ? sufficient
+        ? 'Evidence is applicable'
+        : 'Evidence does not establish the requirement'
+      : 'Working',
+    resultBody: done
+      ? `Governing basis ${str(done.basis, 'unresolved')} · ${num(done.required_test_count) ?? 0} required test(s)`
+      : 'Consulting authoritative records.',
+    resultTone: done ? (sufficient ? 'released' : 'decision') : 'progress',
+    isIndependent: role === 'verifier',
+    basis: done ? str(done.basis) : undefined,
+    sufficiency: sufficiency || undefined,
+  };
+}
+
+function reconciliationFrom(events: LifecycleEventDTO[]): ReconciliationVM | null {
+  const e = last(events, 'RECONCILIATION_COMPLETED');
+  if (!e) return null;
+  const outcome = str(e.outcome, 'MATCH') as ReconciliationVM['state'];
+  const differing = Array.isArray(e.differing_fields) ? (e.differing_fields as string[]) : [];
+
+  const investigator = last(events, 'APPLICABILITY_BRIEF_COMPLETED');
+  const verifier = last(events, 'VERIFIER_BRIEF_COMPLETED');
+
+  // Only material dimensions, per D4.
+  //
+  // Live payloads settled a design question here: VERIFIER_BRIEF_COMPLETED
+  // carries ONLY a brief hash — no basis, no sufficiency. That is the
+  // verifier-blind architecture showing through the event surface, and it means
+  // a side-by-side value table would have to source the Verifier's column from
+  // somewhere it does not exist. Rather than fabricate one or borrow the
+  // Investigator's, the comparison is shown as what the backend actually
+  // computed: the reconciliation OUTCOME plus the fields it found differing.
+  const dimensions: ReconciliationVM['dimensions'] = [];
+  const iBasis = str(investigator?.basis);
+  if (iBasis) {
+    dimensions.push({
+      dimension: 'Governing basis',
+      investigatorValue: iBasis,
+      verifierValue: differing.includes('governing_basis') ? 'differs' : 'agrees',
+      agrees: !differing.includes('governing_basis'),
+    });
+  }
+  const iSuff = str(investigator?.sufficiency);
+  if (iSuff) {
+    dimensions.push({
+      dimension: 'Sufficiency',
+      investigatorValue: iSuff,
+      verifierValue: differing.includes('sufficiency') ? 'differs' : 'agrees',
+      agrees: !differing.includes('sufficiency'),
+    });
+  }
+  if (verifier) {
+    dimensions.push({
+      dimension: 'Brief hash',
+      investigatorValue: str(investigator?.brief_hash).slice(0, 10) || '—',
+      verifierValue: str(verifier.brief_hash).slice(0, 10) || '—',
+      agrees: true,
+    });
+  }
+
+  const note =
+    outcome === 'MATERIAL_DISAGREEMENT'
+      ? `The two independent reads differ on ${differing.join(', ') || 'a material dimension'}. Vouch does not proceed on a disagreement.`
+      : outcome === 'NON_MATERIAL_DIFFERENCE'
+        ? 'The reads differ only where the difference cannot change the outcome.'
+        : 'Both independent reads agree on every material dimension.';
+
+  return { state: outcome, dimensions, note };
+}
+
+/**
+ * True once the scanner has quarantined the evidence.
+ *
+ * One definition, because three surfaces need the same answer and a security
+ * halt that only two of them agreed on is how a placeholder gets rendered.
+ */
+function securityHalted(events: LifecycleEventDTO[]): boolean {
+  const security = last(events, 'EVIDENCE_SECURITY_COMPLETED');
+  return security ? str(security.result) === 'QUARANTINED_SECURITY' : false;
+}
+
+function dispositionFrom(
+  events: LifecycleEventDTO[],
+  result: EvaluateDTO | null,
+): DispositionVM | null {
+  const computed = last(events, 'DISPOSITION_COMPUTED');
+  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  if (!computed && !qdr) return null;
+  // Integration contract invariant 6. On a security quarantine the SAME
+  // QUALITY_DECISION_REQUIRED event is emitted by the scanner, before any
+  // adjudication exists — so keying off it alone renders a disposition panel
+  // whose every field is empty ("Governing basis —, Failing 0, Missing 0").
+  // That is the placeholder the invariant forbids: security halts the spine,
+  // it does not produce a weak verdict.
+  if (!computed && securityHalted(events)) return null;
+
+  const disposition = str(computed?.disposition) || result?.disposition || '';
+  const mutations = allOf(events, 'MUTATION_COMPLETED').map(
+    (e) => `${titleCase(str(e.action))} · ${str(e.target)} · v${num(e.before_version) ?? '?'} → v${num(e.after_version) ?? '?'}`,
+  );
+  const policies = allOf(events, 'POLICY_EVALUATED').map(
+    (e) => `Policy ${str(e.gate_decision)} · ${str(e.policy_version)}`,
+  );
+  const capabilities = allOf(events, 'CAPABILITY_ISSUED').map(
+    (e) => `Capability issued · ${str(e.action)} · expires ${str(e.expiry)}`,
+  );
+
+  // On an abstention the DISPOSITION_COMPUTED event carries no basis, but the
+  // Investigator did resolve one and the context column already shows it.
+  // Falling back keeps the two panels from contradicting each other.
+  const basis = str(computed?.basis) || str(last(events, 'APPLICABILITY_BRIEF_COMPLETED')?.basis);
+  const differences = Array.isArray(qdr?.material_differences)
+    ? (qdr!.material_differences as string[])
+    : [];
+
+  return {
+    disposition,
+    tone: dispositionTone(disposition),
+    governingBasis: basis,
+    requirementValue: str(computed?.requirement_value),
+    boundValue: str(computed?.bound_value),
+    basisChain: [
+      { label: 'Governing basis', value: basis || '—' },
+      {
+        label: 'Failing requirements',
+        value: String(num(computed?.failing_test_count) ?? 0),
+        tone: (num(computed?.failing_test_count) ?? 0) > 0 ? 'quarantine' : 'released',
+      },
+      {
+        label: 'Missing requirements',
+        value: String(num(computed?.missing_test_count) ?? 0),
+        tone: (num(computed?.missing_test_count) ?? 0) > 0 ? 'decision' : 'released',
+      },
+    ],
+    stateMutation: [...policies, ...capabilities, ...mutations],
+    qualityDecisionRequired: Boolean(qdr) || Boolean(result?.quality_decision_required),
+    qdrQuestion: qdr ? str(qdr.reason) : undefined,
+    materialDifferences: differences,
+  };
+}
+
+function consequenceFrom(
+  events: LifecycleEventDTO[],
+  result: EvaluateDTO | null,
+): ConsequenceVM | null {
+  const recalcs = allOf(events, 'CONSEQUENCE_RECALCULATED');
+  const evaluated = last(events, 'RECOVERY_EVALUATED');
+  const executed = last(events, 'RECOVERY_EXECUTED');
+  const transitions = allOf(events, 'READINESS_TRANSITIONED');
+  if (!recalcs.length && !evaluated && !executed && !transitions.length) return null;
+
+  const metrics: ConsequenceVM['metrics'] = recalcs.map((e) => ({
+    label: str(e.order_id),
+    value: str(e.order_readiness),
+    note: e.coverage_delta !== undefined ? `coverage ${str(e.coverage_delta)}` : undefined,
+    severity:
+      str(e.order_readiness) === 'BLOCKED'
+        ? 'blocked'
+        : str(e.order_readiness) === 'AT_RISK'
+          ? 'atrisk'
+          : 'released',
+  }));
+
+  const readinessChanges = (
+    result?.consequences?.readiness_changes ??
+    transitions.map((e) => ({
+      order_id: str(e.order_id),
+      from: str(e.from),
+      to: str(e.to),
+    }))
+  ).map((c) => ({ orderId: c.order_id, from: c.from, to: c.to }));
+
+  const candidates = (result?.consequences?.recovery?.candidates ?? []).map((c) => ({
+    candidateId: c.candidate_id,
+    kind: str(c.kind, 'candidate'),
+    title: c.candidate_id,
+    // The backend states WHY as a code plus computed facts, never as prose.
+    // Composing the sentence here keeps the arithmetic where it belongs — in
+    // Python — while still reading like something a person wrote.
+    detail: recoveryDetail(c),
+    verdict: c.verdict,
+    tone: (c.verdict === 'ELIGIBLE'
+      ? 'released'
+      : c.verdict === 'REFUSED'
+        ? 'refused'
+        : 'progress') as SemanticTone,
+  }));
+
+  return {
+    metrics,
+    readinessChanges,
+    candidates,
+    executed: executed
+      ? {
+          tag: str(executed.order_id),
+          line: (() => {
+            const from = str(executed.from_slot);
+            const to = str(executed.to_slot) || str(executed.target_slot);
+            const blocked = str(executed.blocked_order_id);
+            if (from && to) return `moved ${slotTime(from)} → ${slotTime(to)}${blocked ? `, into the slot ${blocked} vacated` : ''}`;
+            return 'resequenced into a vacated slot';
+          })(),
+          caveat: str(executed.caveat) || undefined,
+        }
+      : null,
+  };
+}
+
+function outcomeFrom(
+  events: LifecycleEventDTO[],
+  result: EvaluateDTO | null,
+  failure: FailureVM | null,
+): OutcomeSummaryVM {
+  // A technical failure never produces an outcome with a disposition in it.
+  if (failure?.kind === 'TECHNICAL_FAILURE') {
+    return {
+      visible: true,
+      kind: 'technical_failure',
+      headline: failure.headline,
+      tone: 'progress',
+      lines: [failure.detail],
+    };
+  }
+
+  const security = last(events, 'EVIDENCE_SECURITY_COMPLETED');
+  if (security && str(security.result) === 'QUARANTINED_SECURITY') {
+    return {
+      visible: true,
+      kind: 'evidence_quarantined',
+      headline: 'Evidence quarantined before any decision was made',
+      tone: 'quarantine',
+      lines: [
+        'The document was withheld from the decision agents entirely.',
+        'The lot state was not changed.',
+      ],
+      chip: { label: 'SECURITY HOLD', tone: 'quarantine' },
+    };
+  }
+
+  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  if (qdr || result?.quality_decision_required) {
+    return {
+      visible: true,
+      kind: 'quality_decision_required',
+      headline: 'Quality decision required',
+      tone: 'decision',
+      lines: [str(qdr?.reason) || result?.reason || 'The evidence could not establish an answer.'],
+      chip: { label: 'AWAITING QUALITY', tone: 'decision' },
+    };
+  }
+
+  const computed = last(events, 'DISPOSITION_COMPUTED');
+  const disposition = str(computed?.disposition) || result?.disposition || '';
+  if (!disposition) return { visible: false, kind: 'released', headline: '', tone: 'progress', lines: [] };
+
+  const consequence = consequenceFrom(events, result);
+  const blocked = consequence?.readinessChanges.filter((c) => c.to === 'BLOCKED') ?? [];
+
+  if (disposition === 'RELEASE') {
+    return {
+      visible: true,
+      kind: 'released',
+      headline: 'Released into usable inventory',
+      tone: 'released',
+      lines: [result?.reason || 'Every governing requirement was met by applicable evidence.'],
+      chip: { label: 'RELEASED', tone: 'released' },
+    };
+  }
+
+  const lines = [result?.reason || 'The evidence could not defend a release.'];
+  for (const change of blocked) lines.push(`${change.orderId} moved ${change.from} → ${change.to}.`);
+  if (consequence?.executed) lines.push(`${consequence.executed.tag}: ${consequence.executed.line}`);
+
+  return {
+    visible: true,
+    kind: blocked.length ? 'quarantined_with_consequence' : 'released',
+    headline: 'Quarantined — production impact recalculated',
+    tone: 'quarantine',
+    lines,
+    chip: { label: 'QUARANTINED', tone: 'quarantine' },
+  };
+}
+
+function truthFrom(
+  events: LifecycleEventDTO[],
+  lotId: string,
+  material: string,
+): EstablishedTruthVM {
+  const brief = last(events, 'APPLICABILITY_BRIEF_COMPLETED');
+  const binding = last(events, 'EVIDENCE_BINDING_COMPLETED');
+  const mutation = last(events, 'MUTATION_COMPLETED');
+
+  return {
+    lotLine: [lotId, material].filter(Boolean).join(' · '),
+    // Deliberately null until the brief lands: showing a placeholder would
+    // imply the basis was known before it was resolved.
+    governingBasis: brief ? str(brief.basis) || null : null,
+    // The bound IDENTITY, not the binding status. The column renders this
+    // under a "BOUND FACT" heading, so `binding_status` put the word "BOUND"
+    // under the label "BOUND FACT" and told the operator nothing. Which lot the
+    // document actually bound to is the fact worth showing — and on the hostile
+    // path it is the only thing Vouch established before it stopped.
+    boundFact: (() => {
+      if (!binding || !bool(binding.bound)) return null;
+      const claimed = (binding.claimed_identity ?? {}) as Record<string, unknown>;
+      const lot = str(claimed.claimed_lot);
+      return lot
+        ? { label: 'Identity bound', value: lot }
+        : { label: 'Identity bound', value: str(binding.binding_status, 'BOUND') };
+    })(),
+    holdTruth: mutation ? `${titleCase(str(mutation.action))} committed` : null,
+  };
+}
+
+/**
+ * The sufficiency ONE agent asserted, from its own persisted brief.
+ *
+ * `record.<role>.brief` is the complete brief (`AgentSegment.brief`, added so a
+ * reviewer sees what was asserted and not merely its hash). The verifier's
+ * COMPLETION EVENT carries only `brief_hash` — `agents.py` puts `sufficiency`
+ * in the payload for the investigator alone — so the event stream cannot answer
+ * this for the verifier and the stored record can.
+ *
+ * Strictly per-role: the verifier's value comes from the verifier's own brief
+ * or it stays null. A lane that borrowed the investigator's answer would make
+ * an independent verifier look like it agreed when it was never asked.
+ */
+function briefSufficiency(
+  record: Record<string, unknown> | null | undefined,
+  role: 'investigator' | 'verifier',
+): string | null {
+  const segment = (record?.[role] ?? null) as Record<string, unknown> | null;
+  const brief = (segment?.brief ?? null) as Record<string, unknown> | null;
+  const value = brief ? str(brief.sufficiency) : '';
+  return value || null;
+}
+
+function spineFrom(
+  events: LifecycleEventDTO[],
+  active: StageKey | null,
+  reconciliation: ReconciliationVM | null,
+  record?: Record<string, unknown> | null,
+): SpineNodeVM[] {
+  const halted = securityHalted(events);
+  const snapshot = last(events, 'EVIDENCE_SNAPSHOT_CREATED');
+  const investigator = last(events, 'APPLICABILITY_BRIEF_COMPLETED');
+  const verifier = last(events, 'VERIFIER_BRIEF_COMPLETED');
+  const computed = last(events, 'DISPOSITION_COMPUTED');
+  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  const consequence = last(events, 'CONSEQUENCE_RECALCULATED');
+
+  const evidenceState: SpineNodeVM['state'] = halted
+    ? 'halted'
+    : snapshot
+      ? 'completed'
+      : active === 'evidence'
+        ? 'active'
+        : events.length
+          ? 'active'
+          : 'pending';
+
+  // A halted node reads HALTED, not PENDING. "Pending" tells an operator the
+  // agents are still coming; on a security quarantine they are never going to
+  // run, and that difference is the whole point of the hostile path.
+  const agentsState: SpineNodeVM['state'] = halted
+    ? 'halted'
+    : reconciliation?.state === 'MATERIAL_DISAGREEMENT'
+      ? 'material_disagreement'
+      : verifier && investigator
+        ? 'completed'
+        : active === 'investigator' || active === 'verifier' || active === 'reconciliation'
+          ? 'active'
+          : 'pending';
+
+  const dispositionState: SpineNodeVM['state'] = halted
+    ? 'halted'
+    : qdr
+      ? 'material_disagreement'
+      : computed
+        ? 'terminal'
+        : active === 'disposition'
+          ? 'active'
+          : 'pending';
+
+  const consequenceState: SpineNodeVM['state'] = consequence
+    ? 'completed'
+    : active === 'consequence'
+      ? 'active'
+      : 'pending';
+
+  return [
+    {
+      key: 'evidence',
+      label: 'Evidence',
+      state: evidenceState,
+      headline: halted ? 'Quarantined' : snapshot ? 'Frozen' : 'Arriving',
+      note: halted
+        ? 'withheld from the agents'
+        : snapshot
+          ? `${num(snapshot.claim_count) ?? 0} claims`
+          : '',
+    },
+    {
+      key: 'agents',
+      label: 'Investigation & Verification',
+      state: agentsState,
+      headline: halted
+        ? 'Never invoked'
+        : reconciliation?.state === 'MATERIAL_DISAGREEMENT'
+          ? 'Material disagreement'
+          : verifier && investigator
+            ? 'Independently reconciled'
+            : 'Reasoning',
+      note: investigator ? str(investigator.basis) : '',
+      // Event payload first (it is live mid-run, before any record exists),
+      // then the agent's own stored brief. Null until one of them answers —
+      // the model documents these as null-until-known, never a placeholder.
+      investigatorLane:
+        (investigator ? str(investigator.sufficiency) : '') ||
+        briefSufficiency(record, 'investigator'),
+      verifierLane:
+        (verifier ? str(verifier.sufficiency) : '') || briefSufficiency(record, 'verifier'),
+      reconciliationSeal: halted
+        ? 'halted'
+        : reconciliation
+          ? reconciliation.state === 'MATERIAL_DISAGREEMENT'
+            ? 'disagreement'
+            : 'match'
+          : 'pending',
+    },
+    {
+      key: 'disposition',
+      label: 'Disposition',
+      state: dispositionState,
+      headline: halted
+        ? 'Withheld'
+        : qdr
+          ? 'Quality decision'
+          : str(computed?.disposition) || 'Pending',
+      note: computed ? str(computed.basis) : '',
+    },
+    {
+      key: 'consequence',
+      label: 'Consequence',
+      state: consequenceState,
+      headline: consequence ? str(consequence.order_readiness) || 'Recalculated' : 'Pending',
+      note: consequence ? str(consequence.order_id) : '',
+    },
+  ];
+}
+
+function completedFrom(
+  events: LifecycleEventDTO[],
+  active: StageKey | null,
+  parts: {
+    investigator: AgentStageVM | null;
+    verifier: AgentStageVM | null;
+    reconciliation: ReconciliationVM | null;
+    disposition: DispositionVM | null;
+  },
+): CompletedStageVM[] {
+  if (!active) return [];
+  const activeIndex = STAGE_ORDER.indexOf(active);
+  const out: CompletedStageVM[] = [];
+
+  const snapshot = last(events, 'EVIDENCE_SNAPSHOT_CREATED');
+  const add = (
+    stageKey: StageKey,
+    title: string,
+    oneLine: string,
+    pill: { label: string; tone: SemanticTone },
+    runNumber?: number,
+  ) => {
+    if (STAGE_ORDER.indexOf(stageKey) < activeIndex) {
+      out.push({ stageKey, title, oneLine, pill, runNumber });
+    }
+  };
+
+  add(
+    'evidence',
+    'Evidence',
+    snapshot ? `${num(snapshot.claim_count) ?? 0} claims frozen` : 'Evidence received',
+    { label: 'FROZEN', tone: 'progress' },
+  );
+  if (parts.investigator)
+    add(
+      'investigator',
+      'Applicability Investigator',
+      parts.investigator.resultTitle,
+      { label: parts.investigator.sufficiency ?? 'DONE', tone: parts.investigator.resultTone },
+      parts.investigator.runNumber,
+    );
+  if (parts.verifier)
+    add(
+      'verifier',
+      'Independent Verifier',
+      parts.verifier.resultTitle,
+      { label: parts.verifier.sufficiency ?? 'DONE', tone: parts.verifier.resultTone },
+      parts.verifier.runNumber,
+    );
+  if (parts.reconciliation)
+    add('reconciliation', 'Reconciliation', parts.reconciliation.note, {
+      label: parts.reconciliation.state,
+      tone: parts.reconciliation.state === 'MATERIAL_DISAGREEMENT' ? 'refused' : 'released',
+    });
+  if (parts.disposition)
+    add('disposition', 'Disposition', parts.disposition.disposition, {
+      label: parts.disposition.disposition || 'PENDING',
+      tone: parts.disposition.tone,
+    });
+
+  return out;
+}
+
+export interface ProjectInput {
+  decisionRecordId: string;
+  lotId: string;
+  material?: string;
+  receiptMeta?: string;
+  events: LifecycleEventDTO[];
+  /** The terminal authoritative response, once it has landed. */
+  result?: EvaluateDTO | null;
+  sources?: SourceArtifactDTO[];
+  /**
+   * The stored decision document from `get_decision`, when it has landed.
+   * Carries `evidence.canonical_claims` — the only authoritative surface that
+   * itemizes what was extracted.
+   */
+  record?: Record<string, unknown> | null;
+  selectedArtifactId?: string | null;
+  running?: boolean;
+  failure?: FailureVM | null;
+  durable?: boolean;
+}
+
+/** The one projection. Everything the workspace renders comes from here. */
+export function project(input: ProjectInput): DecisionWorkspaceVM {
+  const events = [...input.events].sort(
+    (a, b) => (num(a.sequence) ?? 0) - (num(b.sequence) ?? 0),
+  );
+  const result = input.result ?? null;
+  const failure = input.failure ?? null;
+
+  const active = activeStageFrom(events);
+  const investigator = agentFrom(events, 'investigator');
+  const verifier = agentFrom(events, 'verifier');
+  const reconciliation = reconciliationFrom(events);
+  const disposition = dispositionFrom(events, result);
+  const consequence = consequenceFrom(events, result);
+
+  const material = input.material ?? '';
+  /**
+   * The disposition the HEADER may claim.
+   *
+   * A proposal is not an outcome. On the abstain path the backend emits
+   * `DISPOSITION_COMPUTED: QUARANTINE`, the policy gate then REFUSES it, and
+   * `QUALITY_DECISION_REQUIRED` follows — no mutation is committed and the
+   * decision stays open for a human.
+   *
+   * Reading the computed value straight through put "QUARANTINE" in the header
+   * beside an outcome panel reading "Quality decision required · ABSTAIN": the
+   * UI asserted a state change that was explicitly refused. While a quality
+   * decision is outstanding the header states that, and nothing else.
+   */
+  const disp = disposition?.qualityDecisionRequired
+    ? 'QUALITY DECISION'
+    : (disposition?.disposition ?? result?.disposition ?? '');
+  // Claims live on the durable record, not on `get_source`. Joining here keeps
+  // the itemization in one place rather than in each component that shows one.
+  const joinedClaims = claimsByArtifact(input.record);
+
+  return {
+    decisionRecordId: input.decisionRecordId,
+    lotId: input.lotId,
+    material,
+    receiptMeta: input.receiptMeta ?? '',
+    // A technical failure must not render a disposition anywhere, including
+    // the header pill.
+    dispositionLabel: failure?.suppressesDisposition ? '' : disp,
+    dispositionTone: dispositionTone(disp),
+    running: Boolean(input.running),
+    authoritative: Boolean(result),
+    durable: input.durable ?? true,
+    spine: spineFrom(events, active, reconciliation, input.record),
+    outcome: outcomeFrom(events, result, failure),
+    activeStage: active,
+    fullBleed: active ? FULL_BLEED.includes(active) : false,
+    completed: completedFrom(events, active, {
+      investigator,
+      verifier,
+      reconciliation,
+      disposition,
+    }),
+    sources: (input.sources ?? []).map((a) => toSource(a, joinedClaims.get(str(a.artifact_id)))),
+    /**
+     * Whether an artifact is KNOWN to exist but has not been fetched yet.
+     *
+     * Read from the lifecycle, not from the fetch. `EVIDENCE_RECEIVED` is the
+     * backend stating an artifact exists; `get_source` only becomes answerable
+     * once the record is durable, which live running showed lands roughly three
+     * seconds AFTER the outcome renders.
+     *
+     * Deriving this from `running` was not enough: by the time the terminal
+     * source fetch resolves the run is already over, so the column claimed
+     * "No source artifact yet" about a document that demonstrably existed.
+     * Absence of a fetch is not absence of evidence.
+     */
+    sourcesPending:
+      (input.sources ?? []).length === 0 &&
+      (Boolean(last(events, 'EVIDENCE_RECEIVED')) || Boolean(input.running)),
+    selectedArtifactId: input.selectedArtifactId ?? null,
+    truth: truthFrom(events, input.lotId, material),
+    investigator,
+    verifier,
+    reconciliation,
+    disposition,
+    consequence,
+    activity: toActivity(events).reverse(), // newest first (D7)
+    failure,
+  };
+}

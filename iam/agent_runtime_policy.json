@@ -63,6 +63,12 @@
       "Effect": "Allow",
       "Action": ["bedrock:InvokeModel", "bedrock:ApplyGuardrail"],
       "Resource": "*"
+    },
+    {
+      "Sid": "AnalyzeStructuredEvidence",
+      "Effect": "Allow",
+      "Action": ["textract:AnalyzeDocument"],
+      "Resource": "*"
     }
   ]
 }

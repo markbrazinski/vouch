@@ -50,6 +50,9 @@ from .lifecycle import EventLog, EventType, utcnow
 
 SECURITY_CONFIG_VERSION = "vouch-sec-1"
 PARSER_VERSION = "coa-parser-1"
+#: Structure recovery ran before this parser; recorded separately so an audit
+#: can tell which reader produced the text a claim came from.
+TEXTRACT_PARSER_VERSION = "coa-parser-1+textract-tables-1"
 MODEL_EXTRACTOR_VERSION = "confined-extract-1"
 
 MAX_ARTIFACT_BYTES = 20 * 1024 * 1024
@@ -267,6 +270,7 @@ def ingest(
     scanner: MalwareScanner | None = None,
     received_at: str | None = None,
     trust_label: TrustLabel = TrustLabel.UNTRUSTED_SUPPLIER,
+    structured_extractor: StructuredExtractor | None = None,
 ) -> ExternalEvidenceArtifact:
     """S1 + S2. Store the original, inspect it, and bind its identity.
 
@@ -313,10 +317,52 @@ def ingest(
     except PdfExtractionError as exc:
         text, parse_confidence, parse_error = "", 0.0, str(exc)
 
+    # Sponsor depth: structure recovery, ONLY where the ordinary path could not
+    # represent the document, and ONLY after detection has cleared the bytes.
+    #
+    # The ordering is a security property, not a preference. Structure recovery
+    # ships the artifact to an EXTERNAL service, so running it before inspection
+    # would hand hostile content to one more system and widen the injection
+    # surface by exactly one network call. Detection runs on whatever text the
+    # ordinary path could produce — for a scan that is nothing, which is why a
+    # scan can only ever be quarantined or routed to a human, never released on
+    # the strength of text nobody inspected.
+    precheck = inspect(
+        raw, content_type, text, detector,
+        scanner=scanner, claimed_identity=None, binding_mismatches=[],
+        binding_status=BindingStatus.BOUND,
+    )
+    structured = (
+        StructureRecovery()
+        if precheck.blocked
+        else recover_structure(
+            raw=raw,
+            content_type=content_type,
+            text=text,
+            parse_confidence=parse_confidence,
+            extractor=structured_extractor,
+        )
+    )
+    if structured.used:
+        text = structured.text
+        parse_confidence = max(parse_confidence, structured.confidence)
+
     # Identity is derived from the ARTIFACT, before the requested target is
     # consulted. HUMAN_AUTHORIZED evidence is still checked: a QA retest for the
     # wrong lot is still the wrong lot.
-    claimed = extract_document_identity(text)
+    #
+    # When the text came from OCR, identity is taken from it ONLY if the
+    # recognition confidence clears IDENTITY_CONFIDENCE_FLOOR. This is a
+    # security control, not a quality one: a wrong measurement is caught later
+    # by deterministic recompute against the governing spec, but a mis-read
+    # LOT ID binds evidence to the wrong lot and every subsequent check then
+    # uses the wrong id. Below the floor the document states no identity, which
+    # is the same fail-closed outcome an unreadable scan has today.
+    claimed = (
+        DocumentIdentity()
+        if structured.used and not structured.identity_trusted
+        else extract_document_identity(text)
+    )
     binding_status, binding_reasons = validate_binding(
         claimed,
         target_lot_id=lot_id,
@@ -328,10 +374,24 @@ def ingest(
         binding_reasons if binding_status is BindingStatus.MISMATCH else []
     )
 
-    inspection = inspect(
-        raw, content_type, text, detector,
-        scanner=scanner, claimed_identity=claimed, binding_mismatches=mismatches,
-        binding_status=binding_status,
+    # Re-inspect when structure recovery changed the text: the recovered lines
+    # are what becomes claims, and text that no detector ever saw must not
+    # reach a decision. When nothing was recovered this is the same call on the
+    # same input, so the ordinary path pays nothing for the guarantee.
+    inspection = (
+        inspect(
+            raw, content_type, text, detector,
+            scanner=scanner, claimed_identity=claimed,
+            binding_mismatches=mismatches, binding_status=binding_status,
+        )
+        if structured.used
+        else precheck.model_copy(
+            update={
+                "claimed_identity": claimed.as_dict(),
+                "binding_mismatches": list(mismatches),
+                "binding_status": binding_status.value,
+            }
+        )
     )
 
     # audit-2 F3/F4: three distinct non-bound outcomes, each with its own
@@ -371,6 +431,10 @@ def ingest(
         extraction_text=text,
         parse_confidence=parse_confidence,
         parse_error=parse_error,
+        structured_extraction=structured.used,
+        structured_identity_trusted=structured.identity_trusted,
+        structured_reason=structured.reason,
+        structured_locators=structured.locators,
     )
 
     events.emit(
@@ -873,6 +937,125 @@ def text_for_content_type(raw: bytes, content_type: str) -> tuple[str, float]:
     return "", 0.0
 
 
+# ==========================================================================
+# Sponsor depth — structure recovery (Textract AnalyzeDocument TABLES)
+# ==========================================================================
+
+
+class StructuredExtractor(Protocol):
+    """Recovers table structure from raw bytes. NOT a decision-maker.
+
+    Returns (text, confidence, locators) where `text` is the SAME
+    `name: value units (method, condition)` shape the deterministic parser
+    already consumes. It has no tools, no authority, no corpus access and no
+    knowledge of the requested target — it sees bytes and returns structure.
+    """
+
+    def __call__(self, raw: bytes) -> tuple[str, float, list[dict]]: ...
+
+
+@dataclass(frozen=True)
+class StructureRecovery:
+    """What structure recovery produced, and whether it may be relied upon.
+
+    `used` is False for the overwhelmingly common case — an ordinary text COA
+    the deterministic parser already reads. Structure recovery is an exception
+    path, not a stage.
+    """
+
+    used: bool = False
+    text: str = ""
+    confidence: float = 0.0
+    locators: tuple[dict, ...] = ()
+    identity_trusted: bool = False
+    reason: str = ""
+    error: str = ""
+
+    @property
+    def claim_count(self) -> int:
+        return len(self.locators)
+
+
+def structure_needed(text: str, parse_confidence: float) -> tuple[bool, str]:
+    """Is the ordinary extraction path unable to represent this document?
+
+    Two distinct failures, deliberately named separately because they are
+    different documents:
+
+      * nothing could be read at all (a scan) — parse_confidence is 0;
+      * text was read perfectly but yields NO measurement-shaped lines, which
+        is the table case the audit measured (parse_confidence 1.0, 0 claims).
+
+    The second is the one that matters. It is invisible today: a table COA and
+    a document genuinely containing no measurements produce identical signals.
+    """
+    if parse_confidence <= 0.0:
+        return True, "no text could be recovered from the artifact"
+    claims, confidence = parse_deterministic(text)
+    if not claims:
+        return True, "text was recovered but no measurement lines could be read"
+    if confidence < LOW_CONFIDENCE:
+        return True, f"deterministic extraction confidence {confidence:.2f} below threshold"
+    return False, ""
+
+
+def recover_structure(
+    *,
+    raw: bytes,
+    content_type: str,
+    text: str,
+    parse_confidence: float,
+    extractor: StructuredExtractor | None,
+) -> StructureRecovery:
+    """Run structure recovery only where it is structurally necessary.
+
+    Never runs when the ordinary path already works — that is the difference
+    between a fallback and a second pipeline, and it is what keeps cost and
+    latency proportional to the problem.
+
+    A failure here is never a domain answer. If the extractor raises, or
+    returns nothing usable, the recovery is simply unused and the existing
+    abstention behaviour stands.
+    """
+    if extractor is None or content_type != "application/pdf":
+        return StructureRecovery()
+
+    needed, reason = structure_needed(text, parse_confidence)
+    if not needed:
+        return StructureRecovery()
+
+    try:
+        recovered, confidence, locators = extractor(raw)
+    except Exception as exc:  # noqa: BLE001 — an extractor outage is not a verdict
+        return StructureRecovery(reason=reason, error=f"{type(exc).__name__}: {exc}")
+
+    if not recovered:
+        return StructureRecovery(
+            reason=reason, error="no table structure found in the artifact"
+        )
+
+    # The gate. Structure was recovered — that alone does NOT make it evidence.
+    from .aws import IDENTITY_CONFIDENCE_FLOOR
+
+    return StructureRecovery(
+        used=True,
+        text=recovered,
+        confidence=confidence,
+        locators=tuple(locators),
+        identity_trusted=confidence >= IDENTITY_CONFIDENCE_FLOOR,
+        reason=reason,
+    )
+
+
+def _extractor_version(method: ExtractionMethod) -> str:
+    """Which reader produced the text this claim came from."""
+    if method is ExtractionMethod.TEXTRACT_TABLES:
+        return TEXTRACT_PARSER_VERSION
+    if method is ExtractionMethod.MODEL_FALLBACK:
+        return MODEL_EXTRACTOR_VERSION
+    return PARSER_VERSION
+
+
 class ConfinedExtractor(Protocol):
     """S3b — the model utility step. NOT an agent.
 
@@ -892,6 +1075,7 @@ def extract(
     model_fallback: ConfinedExtractor | None = None,
     *,
     parse_confidence: float = 1.0,
+    structured: bool = False,
 ) -> tuple[list[CandidateClaim], ExtractionMethod, float]:
     """Deterministic parser first; confined model only where it cannot cope.
 
@@ -901,7 +1085,13 @@ def extract(
     just because the lines that DID emerge matched a regex.
     """
     claims, confidence = parse_deterministic(text)
-    method = ExtractionMethod.DETERMINISTIC_PARSER
+    # The SAME parser reads Textract-recovered text. Only the provenance label
+    # differs, because how the page was read is an audit fact and pretending a
+    # scanned table was read by the PDF parser would be a false one.
+    method = (
+        ExtractionMethod.TEXTRACT_TABLES if structured
+        else ExtractionMethod.DETERMINISTIC_PARSER
+    )
     confidence = min(confidence, parse_confidence)
 
     if confidence < LOW_CONFIDENCE and model_fallback is not None:
@@ -919,8 +1109,10 @@ def extract(
         confidence=round(confidence, 3),
         claim_count=len(claims),
         low_confidence=confidence < LOW_CONFIDENCE,
-        version=PARSER_VERSION if method is ExtractionMethod.DETERMINISTIC_PARSER
-        else MODEL_EXTRACTOR_VERSION,
+        version=_extractor_version(method),
+        # Sponsor depth: the operator-visible semantic stays "evidence was
+        # extracted into usable claims". HOW is secondary metadata.
+        structured_extraction=structured,
     )
     return claims, method, confidence
 
@@ -971,9 +1163,7 @@ def canonicalize(
     is still UNTRUSTED_SUPPLIER. Malformed claims are rejected, not coerced.
     """
     version = (
-        PARSER_VERSION
-        if extraction_method is ExtractionMethod.DETERMINISTIC_PARSER
-        else MODEL_EXTRACTOR_VERSION
+        _extractor_version(extraction_method)
     )
     out: list[CanonicalEvidenceClaim] = []
 

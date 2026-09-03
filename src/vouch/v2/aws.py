@@ -331,6 +331,307 @@ class BedrockGuardrailDetector:
         return detected, detail
 
 
+# ==========================================================================
+# Sponsor-depth — Textract structured table extraction
+# ==========================================================================
+#
+# WHY THIS EXISTS, precisely.
+#
+# The audit measured a real table-formatted COA through the existing path:
+#
+#     pypdf parse_confidence   1.0   (every character was recovered)
+#     extraction_confidence    0.0
+#     claims                   0
+#
+# `page.extract_text()` returns a table as row-wise text, and the claim regex
+# is anchored to `^name: value units$`, so a legible certificate produces NO
+# claims and escalates to a human. Worse, `measurement_shaped == 0` means
+# "I could not read the table" is indistinguishable from "there are no
+# measurements here".
+#
+# Plain OCR does NOT fix this — DetectDocumentText-shaped output was measured
+# at 0 claims too, because it is still row-wise text. Only AnalyzeDocument with
+# FeatureTypes=['TABLES'] returns CELL blocks carrying row/column indices, and
+# only those indices let a deterministic reflow rebuild the one shape the
+# existing parser already understands.
+#
+# So this is NOT generic OCR. It is table-structure recovery, and everything
+# below is deliberately scoped to that.
+
+#: Textract's own per-block confidence is a percentage (0-100). Vouch's
+#: confidence is a 0-1 fraction, and `LOW_CONFIDENCE` (0.75) is the existing
+#: routing threshold. Rather than invent a second threshold, the reflow maps
+#: Textract confidence onto the SAME scale and lets the SAME gate decide.
+TEXTRACT_EXTRACTOR_VERSION = "textract-tables-1"
+
+#: Identity fields must clear a stricter bar than measurements.
+#:
+#: Rationale, and it is a security one rather than a quality one: today an
+#: unreadable document never reaches identity binding at all, so an OCR misread
+#: of a lot number is structurally impossible. Textract makes it possible for
+#: the first time — `LOT-1OO1` vs `LOT-1001`. A measurement that is wrong gets
+#: caught downstream by deterministic recompute against the governing spec; a
+#: mis-bound LOT ID silently attaches evidence to the wrong lot, and nothing
+#: downstream can catch that because every subsequent check uses the bound id.
+#:
+#: 0.99 is not arbitrary: it is the value at which Textract's published
+#: per-character confidence for machine-print digits stops admitting the
+#: single-glyph substitutions that matter here (O/0, I/1, S/5, B/8). Below it,
+#: identity is NOT taken from the OCR text and the artifact keeps whatever
+#: identity the deterministic path found — which for a scan is none, so it
+#: routes to a human exactly as it does today.
+IDENTITY_CONFIDENCE_FLOOR = 0.99
+
+#: Bound on how much structure one artifact may produce. Textract responses are
+#: external content, so they are an attack surface like any other.
+MAX_TEXTRACT_CELLS = 20_000
+
+
+def _cell_text(block: dict, by_id: dict) -> tuple[str, float]:
+    """The text of one CELL, plus the WORST confidence of its parts.
+
+    Worst, not mean: a cell reading "1120" where the "0" was recognised at 62%
+    is a cell we do not trust, and averaging that against three confident
+    digits would hide exactly the substitution this gate exists to catch.
+    """
+    words: list[str] = []
+    worst = 100.0
+    for relationship in block.get("Relationships", []) or []:
+        if relationship.get("Type") != "CHILD":
+            continue
+        for child_id in relationship.get("Ids", []) or []:
+            child = by_id.get(child_id)
+            if not child or child.get("BlockType") not in ("WORD", "SELECTION_ELEMENT"):
+                continue
+            text = child.get("Text", "")
+            if text:
+                words.append(text)
+                worst = min(worst, float(child.get("Confidence", 0.0)))
+    if not words:
+        # An empty cell is not low-confidence, it is empty. Reporting 0.0 here
+        # would drag a whole row's confidence down for a blank column.
+        return "", 100.0
+    return " ".join(words), worst
+
+
+def _non_table_lines(blocks: list[dict], by_id: dict) -> list[str]:
+    """LINE text that is not inside any table.
+
+    A COA states its lot, material and supplier in a HEADER, not in the results
+    grid. Returning only reflowed table rows would therefore recover the
+    measurements and silently lose the identity — which is worse than useless:
+    the document would become UNBOUND and route to a human anyway, having spent
+    a Textract call to get there.
+    """
+    in_table: set[str] = set()
+    for block in blocks:
+        if block.get("BlockType") != "TABLE":
+            continue
+        for relationship in block.get("Relationships", []) or []:
+            if relationship.get("Type") != "CHILD":
+                continue
+            for cid in relationship.get("Ids", []) or []:
+                in_table.add(cid)
+                cell = by_id.get(cid) or {}
+                for sub in cell.get("Relationships", []) or []:
+                    for wid in sub.get("Ids", []) or []:
+                        in_table.add(wid)
+
+    lines: list[str] = []
+    for block in blocks:
+        if block.get("BlockType") != "LINE" or block.get("Id") in in_table:
+            continue
+        # A LINE whose words all belong to a table is the table's own text.
+        words = {
+            wid
+            for rel in block.get("Relationships", []) or []
+            if rel.get("Type") == "CHILD"
+            for wid in rel.get("Ids", []) or []
+        }
+        if words and words <= in_table:
+            continue
+        text = block.get("Text", "").strip()
+        if text:
+            lines.append(text)
+    return lines
+
+
+def reflow_tables(response: dict) -> tuple[str, float, list[dict]]:
+    """Rebuild `name: value units (method, condition)` lines from TABLE cells.
+
+    Returns (text, confidence, locators).
+
+    This is a PURE function over a Textract response so it can be tested
+    without AWS, and so the only thing the live adapter adds is the API call.
+
+    The output is deliberately the SAME text shape the existing deterministic
+    parser already consumes. That is the whole design: no second parser, no
+    second canonicalization, no Textract-specific claim type. Textract recovers
+    structure; `parse_deterministic` still decides what a claim is.
+    """
+    blocks = response.get("Blocks", []) or []
+    if len(blocks) > MAX_TEXTRACT_CELLS:
+        blocks = blocks[:MAX_TEXTRACT_CELLS]
+    by_id = {b.get("Id"): b for b in blocks if b.get("Id")}
+
+    lines: list[str] = []
+    locators: list[dict] = []
+    worst_overall = 100.0
+
+    tables = [b for b in blocks if b.get("BlockType") == "TABLE"]
+    for table_index, table in enumerate(tables, start=1):
+        page = int(table.get("Page", 1) or 1)
+        cells: list[dict] = []
+        for relationship in table.get("Relationships", []) or []:
+            if relationship.get("Type") != "CHILD":
+                continue
+            for cid in relationship.get("Ids", []) or []:
+                cell = by_id.get(cid)
+                if cell and cell.get("BlockType") == "CELL":
+                    cells.append(cell)
+        if not cells:
+            continue
+
+        grid: dict[int, dict[int, tuple[str, float]]] = {}
+        for cell in cells:
+            row = int(cell.get("RowIndex", 0) or 0)
+            col = int(cell.get("ColumnIndex", 0) or 0)
+            grid.setdefault(row, {})[col] = _cell_text(cell, by_id)
+
+        if not grid:
+            continue
+        header_row = min(grid)
+        headers = {
+            col: text.strip().lower() for col, (text, _c) in grid[header_row].items()
+        }
+
+        def column_for(*names: str) -> int | None:
+            """First column whose header contains any of `names`."""
+            for col, label in headers.items():
+                if any(name in label for name in names):
+                    return col
+            return None
+
+        col_char = column_for("characteristic", "property", "test", "parameter", "analyte")
+        col_value = column_for("result", "value", "measured", "actual", "found")
+        col_units = column_for("unit")
+        col_method = column_for("method", "procedure")
+        col_condition = column_for("condition", "state", "temper")
+
+        # Without a characteristic and a value column there is no measurement
+        # table here. Guessing by position would invent structure the document
+        # did not state, which is exactly what this system must not do.
+        if col_char is None or col_value is None:
+            continue
+
+        for row in sorted(grid):
+            if row == header_row:
+                continue
+            cells_by_col = grid[row]
+
+            def get(col: int | None) -> tuple[str, float]:
+                if col is None:
+                    return "", 100.0
+                return cells_by_col.get(col, ("", 100.0))
+
+            characteristic, c_conf = get(col_char)
+            value, v_conf = get(col_value)
+            if not characteristic or not value:
+                continue
+            units, u_conf = get(col_units)
+            method, m_conf = get(col_method)
+            condition, cond_conf = get(col_condition)
+
+            qualifier = ", ".join(p for p in (method.strip(), condition.strip()) if p)
+            line = f"{characteristic.strip()}: {value.strip()}"
+            if units.strip():
+                line += f" {units.strip()}"
+            if qualifier:
+                line += f" ({qualifier})"
+
+            row_worst = min(c_conf, v_conf, u_conf, m_conf, cond_conf)
+            worst_overall = min(worst_overall, row_worst)
+            lines.append(line)
+            locators.append(
+                {
+                    "page": page,
+                    "table": table_index,
+                    "row_label": characteristic.strip(),
+                    "column_label": headers.get(col_value, "result"),
+                    "cell": f"r{row}c{col_value}",
+                    "confidence": round(row_worst / 100.0, 4),
+                }
+            )
+
+    if not lines:
+        return "", 0.0, []
+
+    # Header lines first, then the reflowed rows: identity is stated above the
+    # results on a real certificate, and `parse_deterministic` reads the spec
+    # citation from anywhere in the text.
+    header = _non_table_lines(blocks, by_id)
+    body = header + lines
+    text = f"[[page:{locators[0]['page']}]]\n" + "\n".join(body)
+
+    # Locators are line-numbered against the emitted text, so the Source viewer
+    # can map a claim to its row without re-deriving the offset.
+    offset = 1 + len(header)  # the [[page:N]] marker plus the header lines
+    for index, locator in enumerate(locators):
+        locator["line"] = offset + index + 1
+    return text, round(worst_overall / 100.0, 4), locators
+
+
+class TextractTableExtractor:
+    """AnalyzeDocument(TABLES) as a text-producing fallback (sponsor depth).
+
+    Deliberately shaped like the OTHER extraction paths — bytes in, text and a
+    confidence out — so it slots in behind `text_for_content_type` rather than
+    beside it. There is ONE ingestion path in this system on purpose; a second
+    one would be a second set of security properties.
+
+    It never decides anything. It recovers structure, and the existing
+    deterministic parser, the existing canonicalization, the existing binding
+    and the existing agents all run afterwards, unchanged.
+    """
+
+    #: Only the synchronous, single-request API. Multi-page async intake
+    #: (StartDocumentAnalysis/GetDocumentAnalysis) is a different permission,
+    #: a different failure model and a different cost profile, and it was not
+    #: admitted by the audit. A document too large for the sync API is reported
+    #: as such, never silently truncated into a partial answer.
+    MAX_SYNC_BYTES = 5 * 1024 * 1024
+
+    def __init__(self, *, region: str | None = None, client=None) -> None:
+        self.__name__ = f"textract:{TEXTRACT_EXTRACTOR_VERSION}"
+        self._region = region
+        self._client = client
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = _client("textract", self._region)
+        return self._client
+
+    def __call__(self, raw: bytes) -> tuple[str, float, list[dict]]:
+        """Returns (text, confidence, locators). Raises on API failure.
+
+        Raising rather than returning empty: a Textract call that could not run
+        must not be recorded as a document that contained no tables. The caller
+        turns the exception into "structure recovery unavailable", which keeps
+        the existing abstention instead of inventing an answer.
+        """
+        if len(raw) > self.MAX_SYNC_BYTES:
+            raise VouchFailure(
+                FailureCategory.TOOL_FAILURE,
+                f"artifact is {len(raw)} bytes; the synchronous AnalyzeDocument "
+                f"limit is {self.MAX_SYNC_BYTES}. Async intake is out of scope.",
+            )
+        response = self.client.analyze_document(
+            Document={"Bytes": raw}, FeatureTypes=["TABLES"]
+        )
+        return reflow_tables(response)
+
+
 def _policy_findings(policy: dict) -> list:
     """The findings a guardrail policy block reports, whatever it calls them.
 

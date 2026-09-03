@@ -1,0 +1,148 @@
+{
+ "ok": true,
+ "action": "evaluate_lot",
+ "backend": {
+  "mode": "production",
+  "corpus": "AWS_DYNAMODB",
+  "evidence_store": "AWS_S3",
+  "capability_store": "AWS_DYNAMODB",
+  "record_store": "AWS_DYNAMODB",
+  "event_store": "AWS_DYNAMODB",
+  "reasoners": "BEDROCK_NOVA",
+  "durable": true
+ },
+ "decision_record_id": "DR-63b1f9d8cd67",
+ "lot_id": "LOT-1004",
+ "disposition": "",
+ "failure_category": "SECURITY_QUARANTINE",
+ "quality_decision_required": true,
+ "reason": "evidence quarantined by security inspection; human review required",
+ "mutation": {},
+ "consequences": {},
+ "decision_record": {
+  "record_id": "DR-63b1f9d8cd67",
+  "lot_id": "LOT-1004",
+  "run_count": 1,
+  "security": {
+   "inspection_performed": true,
+   "prompt_attack_detected": true,
+   "blocked": true
+  },
+  "snapshot_hash": "",
+  "investigator": {
+   "model_id": "",
+   "prompt_version": "",
+   "brief_hash": "",
+   "tool_calls": 0
+  },
+  "verifier": {
+   "model_id": "",
+   "prompt_version": "",
+   "brief_hash": "",
+   "tool_calls": 0
+  },
+  "reconciliation": "",
+  "basis": {
+   "spec_id": "",
+   "revision": ""
+  },
+  "disposition": "",
+  "policy": {
+   "version": "vouch-policy-2.1",
+   "gate_decision": ""
+  },
+  "capability": {
+   "id": "",
+   "consumed": false
+  },
+  "mutation": {
+   "action": "",
+   "before_version": 0,
+   "after_version": 0,
+   "inventory_delta": 0.0,
+   "ledger_sequence": 0
+  },
+  "failure_category": "SECURITY_QUARANTINE",
+  "caused_by": []
+ },
+ "events": [
+  {
+   "event": "EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-63b1f9d8cd67",
+   "at": "2026-09-03T21:00:13.820525+00:00",
+   "artifact_id": "ART-6b1eef059fff",
+   "source": "supplier-portal",
+   "content_type": "text/plain",
+   "requested_lot": "LOT-1004",
+   "requested_material": "MAT-ALLOY-7",
+   "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1004/ART-6b1eef059fff",
+   "content_hash": "e29873c3036b305964c17840f794c3018bb0a004e3178909e97279ead89edeb4",
+   "object_version": "CkCitLlbnaTP83awVBXKSAeaii1wRoey",
+   "store_kind": "AWS_S3",
+   "trust_label": "UNTRUSTED_SUPPLIER",
+   "byte_length": 336
+  },
+  {
+   "event": "EVIDENCE_SECURITY_COMPLETED",
+   "decision_record_id": "DR-63b1f9d8cd67",
+   "at": "2026-09-03T21:00:14.309500+00:00",
+   "artifact_id": "ART-6b1eef059fff",
+   "detection_ran": true,
+   "result": "QUARANTINED_SECURITY",
+   "guardrail_outcome": "DETECTED",
+   "guardrail_id": "wok5lemdo1ze",
+   "guardrail_version": "DRAFT",
+   "malware_scan": "NOT_RUN",
+   "prompt_attack_detected": true,
+   "quarantined": true,
+   "binding_mismatches": [],
+   "binding_status": "BOUND",
+   "claimed_identity": {
+    "claimed_lot": "LOT-1004",
+    "claimed_material": "",
+    "claimed_supplier": "",
+    "claimed_supplier_site": "",
+    "claimed_lots": [
+     "LOT-1004"
+    ],
+    "claimed_materials": [],
+    "claimed_suppliers": [],
+    "claimed_supplier_sites": []
+   },
+   "version": "vouch-sec-1"
+  },
+  {
+   "event": "EVIDENCE_BINDING_COMPLETED",
+   "decision_record_id": "DR-63b1f9d8cd67",
+   "at": "2026-09-03T21:00:14.320705+00:00",
+   "artifact_id": "ART-6b1eef059fff",
+   "requested_lot": "LOT-1004",
+   "requested_material": "MAT-ALLOY-7",
+   "binding_status": "BOUND",
+   "bound": true,
+   "claimed_identity": {
+    "claimed_lot": "LOT-1004",
+    "claimed_material": "",
+    "claimed_supplier": "",
+    "claimed_supplier_site": "",
+    "claimed_lots": [
+     "LOT-1004"
+    ],
+    "claimed_materials": [],
+    "claimed_suppliers": [],
+    "claimed_supplier_sites": []
+   },
+   "identity_stated": true,
+   "reasons": [],
+   "result": "QUARANTINED_SECURITY"
+  },
+  {
+   "event": "QUALITY_DECISION_REQUIRED",
+   "decision_record_id": "DR-63b1f9d8cd67",
+   "at": "2026-09-03T21:00:14.336607+00:00",
+   "reason": "INJECTION",
+   "lot_id": "LOT-1004",
+   "category": "SECURITY_QUARANTINE"
+  }
+ ]
+}

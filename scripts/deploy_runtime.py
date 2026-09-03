@@ -133,6 +133,30 @@ def deploy(archive: Path) -> int:
             # the runtime falls back to no detector rather than to a heuristic
             # pretending to be Guardrails.
             "VOUCH_GUARDRAIL_ID": os.environ.get("VOUCH_GUARDRAIL_ID", ""),
+            # Sponsor depth: structure recovery for table/scanned COAs. Off
+            # unless set, so a deploy that omits it behaves exactly as before.
+            "VOUCH_TEXTRACT_ENABLED": os.environ.get("VOUCH_TEXTRACT_ENABLED", ""),
+            # Sponsor depth: AgentCore Observability. The distro was already
+            # vendored and completely unused — aws/spans sat at 0 bytes while
+            # Transaction Search was ACTIVE and the X-Ray IAM was attached.
+            #
+            # AGENT_OBSERVABILITY_ENABLED is what makes AgentCore route spans
+            # to the GenAI observability surface; the OTEL_* pair names the
+            # service so Investigator and Verifier spans are attributable.
+            "AGENT_OBSERVABILITY_ENABLED": "true",
+            "OTEL_PYTHON_DISTRO": "aws_distro",
+            "OTEL_PYTHON_CONFIGURATOR": "aws_configurator",
+            "OTEL_SERVICE_NAME": "vouch-v2",
+            "OTEL_RESOURCE_ATTRIBUTES": "service.name=vouch-v2,service.version=v2",
+            # SECURITY, non-negotiable. The audit found <thinking> blocks
+            # already in CloudWatch; GenAI instrumentation would additionally
+            # copy prompts and completions into a trace backend. Vouch's audit
+            # record is the typed output, and it claims not to retain reasoning
+            # — so content capture stays OFF and `vouch.v2.telemetry` drops any
+            # reasoning-bearing payload before it can become a span attribute.
+            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
+            "OTEL_GENAI_CAPTURE_MESSAGE_CONTENT": "false",
+            "STRANDS_OTEL_ENABLE_CONSOLE_EXPORT": "false",
         },
     )
     version = response["agentRuntimeVersion"]

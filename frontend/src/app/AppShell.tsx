@@ -39,8 +39,10 @@ export function AppShell({
     >
       <div
         style={{
-          width: 1440,
-          height: 940,
+          // The acceptance frame is 1600x900. Fixed, because the demo target
+          // is a single known viewport and the design is pixel-composed for it.
+          width: 1600,
+          height: 900,
           maxWidth: '100%',
           display: 'flex',
           position: 'relative',

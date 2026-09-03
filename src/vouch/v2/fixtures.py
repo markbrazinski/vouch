@@ -221,7 +221,19 @@ def build_corpus() -> Corpus:
     corpus.put(
         "production_order", "C-417",
         ProductionOrder(
-            "C-417", "P-417", 100.0, (MaterialRequirementLine("MAT-ALLOY-7", 800.0),),
+            # 900.0, not 800.0. The demo copy says "C-417 · 900 kg uncovered",
+            # and the FE<->BE contract gate (D10) decided the fixture moves to
+            # match the story rather than the story being rewritten to match an
+            # arbitrary fixture. Coverage still resolves: the three alloy lots
+            # hold 1100 in total, so a full release covers 900 with 200 to
+            # spare, and Hero A's shortage is still measured against 0 usable.
+            #
+            # NOTE the coincidence, because it will mislead someone: LOT-9001
+            # also holds 900.0 of MAT-SUB-9, the substitute whose stock exists
+            # but whose AUTHORITY does not. The two 900s are unrelated, and a
+            # reader who conflates them will think the substitute covers this
+            # requirement. It does not — that is the S4 refusal.
+            "C-417", "P-417", 100.0, (MaterialRequirementLine("MAT-ALLOY-7", 900.0),),
             "LINE-1", "2026-08-15T08:00", "READY",
             customer_id="CUST-1", customer_committed=True, need_by="2026-08-20",
         ),

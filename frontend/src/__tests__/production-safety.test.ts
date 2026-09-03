@@ -43,9 +43,115 @@ describe('the product surface carries no demo apparatus', () => {
   });
 
   it('no fake timer manufactures product state', () => {
-    for (const f of productFiles) {
+    // The rule is about AUTHORSHIP, not about the API. A timer that decides
+    // what happened next is demo apparatus; a timer that asks the server what
+    // happened is a poll, and polling is how the live event path works at all.
+    //
+    // So exactly one file may hold an interval — the decision run — and it is
+    // separately constrained below to prove the interval only fetches.
+    const POLLER = join('src', 'decision', 'useDecisionRun.ts');
+    for (const f of productFiles.filter((p) => !p.endsWith(POLLER))) {
       const src = readFileSync(f, 'utf8');
       expect(src, f).not.toMatch(/setTimeout|setInterval/);
+    }
+  });
+
+  it('the one permitted interval only polls the backend', () => {
+    const src = readFileSync(join(SRC, 'decision', 'useDecisionRun.ts'), 'utf8');
+
+    // Exactly one interval, and it calls the poll and nothing else.
+    const intervals = src.match(/setInterval\(/g) ?? [];
+    expect(intervals).toHaveLength(1);
+    expect(src).toMatch(/setInterval\(\(\) => void pollOnce\(/);
+    expect(src).toMatch(/POLL_MS\)/);
+
+    // It is always cleared: an orphaned poll would keep asking about a decision
+    // nobody is watching.
+    expect(src).toMatch(/clearInterval/);
+
+    // And the timer never decides anything. No lifecycle vocabulary, no stage
+    // names and no dispositions are authored on a tick.
+    const tick = src.slice(src.indexOf('const pollOnce'), src.indexOf('const start'));
+    expect(tick).not.toMatch(/DISPOSITION|QUARANTINE|RELEASE|INVESTIGATOR_STARTED/);
+  });
+
+  it('the client owns a decision id before any decision runs', () => {
+    // Without this the live path is impossible: a caller that learns the id
+    // from the response can only ever poll a decision that already finished.
+    const src = readFileSync(join(SRC, 'decision', 'useDecisionRun.ts'), 'utf8');
+    expect(src).toMatch(/newDecisionRecordId\(\)/);
+    expect(src).toMatch(/decisionRecordId: recordId/);
+  });
+
+  it('no hard-coded hero outcome ships in the product surface', () => {
+    // The entry names a LOT and carries the supplier's own document. It must
+    // never name what Vouch will conclude — that comes from the backend.
+    const DTO = join('src', 'decision', 'dto.ts');
+    const MODEL = join('src', 'decision', 'model.ts');
+    const ADAPTER = join('src', 'decision', 'adapter.ts');
+    const SPINE = join('src', 'decision', 'DecisionSpine.tsx');
+    const WORKSPACE = join('src', 'decision', 'DecisionWorkspace.tsx');
+    const STAGES = join('src', 'decision', 'Stages.tsx');
+    const VIEWER = join('src', 'decision', 'SourceDocumentViewer.tsx');
+    const CONTEXT = join('src', 'decision', 'CaseContextColumn.tsx');
+    // These legitimately name dispositions: they are the type space and the
+    // presentation rules for whatever the backend returns.
+    const typeSpace = [DTO, MODEL, ADAPTER, SPINE, WORKSPACE, STAGES, VIEWER, CONTEXT];
+
+    const main = readFileSync(join(SRC, 'main.tsx'), 'utf8');
+    expect(main).not.toMatch(/QUARANTINE|RELEASE|INSUFFICIENT_EVIDENCE/);
+    expect(main).not.toMatch(/BLOCKED|C-417|C-418/);
+
+    // Scoped to the Hero A surface. The older fixture-driven screens carry
+    // their own demo data and are out of this gate's scope; what must be true
+    // is that nothing on the LIVE path presumes an outcome.
+    const heroSurface = productFiles.filter(
+      (p) => p.includes(join('src', 'decision')) && !typeSpace.some((t) => p.endsWith(t)),
+    );
+    expect(heroSurface.length).toBeGreaterThan(0);
+    for (const f of heroSurface) {
+      const src = readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/SPEC-A7/);
+    }
+  });
+
+  it('a presigned source reference is never persisted', () => {
+    for (const f of productFiles) {
+      const src = readFileSync(f, 'utf8');
+      // Nothing anywhere WRITES to persistent storage. A view ref could only
+      // leak through a write, and banning writes outright is stronger than
+      // trying to prove a particular value never reaches one.
+      expect(src, f).not.toMatch(/(localStorage|sessionStorage)\.setItem/);
+      expect(src, f).not.toMatch(/document\.cookie\s*=/);
+    }
+    const viewer = readFileSync(join(SRC, 'decision', 'SourceDocumentViewer.tsx'), 'utf8');
+    // Held in a ref, never in state that a render tree would retain.
+    expect(viewer).toMatch(/viewRef = useRef<string \| null>\(null\)/);
+    expect(viewer).toMatch(/noopener,noreferrer/);
+  });
+
+  it('no design HTML or reference markup ships', () => {
+    for (const f of productFiles) {
+      const src = readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/Vouch_Journey|\.dc\.html|sc-if|x-dc/);
+    }
+  });
+
+  it('no AWS SDK or credential reaches the browser', () => {
+    for (const f of productFiles) {
+      const src = readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/from ['"]@?aws-sdk/);
+      expect(src, f).not.toMatch(/AccessKeyId|SecretAccessKey|X-Amz-Signature/);
+      expect(src, f).not.toMatch(/AKIA[0-9A-Z]{16}/);
+    }
+  });
+
+  it('no observability surface exists in the product UI', () => {
+    // Sponsor-depth §7: observability is engineering proof, never product UI.
+    for (const f of productFiles) {
+      const src = readFileSync(f, 'utf8');
+      expect(src, f).not.toMatch(/CloudWatch|X-Ray|OpenTelemetry|OTEL_|trace[_ ]?id/i);
+      expect(src, f).not.toMatch(/AgentCore|Bedrock|Textract|Amazon/i);
     }
   });
 

@@ -373,6 +373,17 @@ class BriefProducer:
             system_prompt=self.prompt,
             name=self.role,
             tools=tools.strands_tools(self.tool_names),
+            # Sponsor depth, security: Strands defaults to PrintingCallbackHandler,
+            # which prints the model's <thinking> blocks to stdout — and in the
+            # deployed runtime stdout IS a durable CloudWatch log group. That put
+            # reasoning tokens into a second durable store while the contract says
+            # hidden chain-of-thought is not an audit artifact (AGENTS.md §6).
+            # `None` selects Strands' null_callback_handler.
+            #
+            # This changes what is PRINTED, never what is decided: no prompt, no
+            # tool, no temperature and no output shape moves. The audit record is
+            # still the typed brief plus lifecycle events.
+            callback_handler=None,
         )
 
         # The lot context is data, not instruction. No supplier text is placed
@@ -535,6 +546,11 @@ class ConfinedModelExtractor:
             system_prompt=EXTRACTOR_PROMPT,
             name="confined_extractor",
             tools=[],  # zero capability, by construction
+            # This model is the ONE that sees raw supplier bytes, so printing its
+            # stream to a durable log would copy untrusted document content into
+            # CloudWatch verbatim. Silenced for the same reason as above, and more
+            # urgently.
+            callback_handler=None,
         )
         # Untrusted content is fenced as data and clearly framed as such.
         task = (

@@ -248,12 +248,34 @@ def _build_production() -> Composition:
     # production either inspects with Bedrock or refuses the artifact.
     detector = BedrockGuardrailDetector() if env_var("GUARDRAIL_ID") else None
 
+    # Sponsor depth. Both are additive and both are OFF unless configured, so a
+    # runtime that sets neither behaves exactly as it did before.
+    #
+    # Structure recovery: only reached for a PDF the deterministic parser could
+    # not represent, so an ordinary text COA never pays for it.
+    from .aws import TextractTableExtractor
+    from .telemetry import SpanSink, install_redaction
+
+    # Strip prompt/completion text from spans this code does not create.
+    # Strands puts the full system prompt on its own `invoke_agent` span, which
+    # no env var and no guard of ours can reach — live qualification found it.
+    install_redaction()
+
+    structured_extractor = (
+        TextractTableExtractor() if env_var("TEXTRACT_ENABLED") else None
+    )
+    # Spans are mirrored from the lifecycle log. `SpanSink` no-ops when no OTel
+    # tracer is installed, so this is safe to construct unconditionally.
+    span_sink = SpanSink()
+
     workflow = VouchV2(
         corpus,
         evidence_store=evidence_store,
         capabilities=capabilities,
         record_store=record_store,
         detector=detector,
+        structured_extractor=structured_extractor,
+        span_sink=span_sink,
     )
     return Composition(workflow, corpus, backend, capabilities, record_store)
 

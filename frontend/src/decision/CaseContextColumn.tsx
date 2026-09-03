@@ -1,0 +1,234 @@
+/**
+ * The persistent inner-left column: the source, and what has been established.
+ *
+ * It is sticky because its job is to stay true while stages move past it. The
+ * reference calls the second panel "CASE — DURABLE FACTS", and the name is the
+ * constraint: only facts that cannot later be retracted go here. A disposition
+ * is not one of them until it has actually been computed, which is why
+ * `holdTruth` is null for most of a run.
+ */
+
+import { Eyebrow, Field, GhostButton, INK, MONO, N, Panel, Pill, SANS, HAIR } from './primitives';
+import type { EstablishedTruthVM, SourceArtifactVM } from './model';
+
+const TRUST_COPY: Record<SourceArtifactVM['trustClass'], { label: string; color: string }> = {
+  supplier_untrusted: { label: 'Supplier-declared · Untrusted', color: '#9A5A2A' },
+  quarantined: { label: 'Quarantined · excluded', color: '#9A5A2A' },
+  human_authorized: { label: 'Human-authorized', color: '#3E6B54' },
+  internal: { label: 'Authoritative internal', color: '#3E6B54' },
+};
+
+/**
+ * A miniature of the document, with the bound value called out in rust.
+ *
+ * Not decorative: it is the cue that a specific number in a specific document
+ * is what the decision turned on. The highlighted bar sits where that value is.
+ */
+function DocumentThumbnail({ fact }: { fact: string | null }) {
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        background: '#fff',
+        border: '1px solid rgba(0,0,0,.14)',
+        borderRadius: 4,
+        padding: '13px 14px',
+        boxShadow: '0 1px 4px rgba(0,0,0,.08)',
+      }}
+      aria-hidden
+    >
+      <div style={{ height: 7, width: '55%', background: '#e3ded3', borderRadius: 2 }} />
+      {['82%', '72%', '78%'].map((w, i) => (
+        <div
+          key={w}
+          style={{
+            height: 5,
+            width: w,
+            background: '#eee9df',
+            borderRadius: 2,
+            marginTop: i === 0 ? 8 : 5,
+          }}
+        />
+      ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 9 }}>
+        <div style={{ height: 9, width: '38%', background: '#f2d9c9', borderRadius: 2 }} />
+        {fact && (
+          <span style={{ font: `600 8.5px ${MONO}`, color: '#9A5A2A' }}>{fact}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CaseContextColumn({
+  sources,
+  selectedId,
+  truth,
+  pending = false,
+  onSelect,
+  onOpenSource,
+}: {
+  sources: SourceArtifactVM[];
+  selectedId: string | null;
+  truth: EstablishedTruthVM;
+  /**
+   * An artifact is known to exist but has not arrived yet. Distinguishes
+   * "not persisted yet" from "does not exist" — two different facts.
+   */
+  pending?: boolean;
+  onSelect: (artifactId: string) => void;
+  onOpenSource: (artifactId: string) => void;
+}) {
+  const selected = sources.find((s) => s.artifactId === selectedId) ?? sources[0] ?? null;
+  const alternates = sources.filter((s) => s.artifactId !== selected?.artifactId);
+
+  const meta = selected
+    ? [
+        selected.pageCount ? `${selected.pageCount} pp` : null,
+        selected.documentType?.toUpperCase(),
+        selected.versionId ? `v${selected.versionId.slice(0, 6)}` : null,
+        selected.hashSummary ? `hash ${selected.hashSummary}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+
+  const keyFact =
+    selected?.claims.find((c) => c.value)?.value ??
+    (selected?.securityState === 'quarantined' ? '⊘ hold' : null);
+
+  return (
+    <div style={{ position: 'sticky', top: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <Panel>
+        <Eyebrow>SOURCE EVIDENCE</Eyebrow>
+
+        {selected ? (
+          <>
+            <DocumentThumbnail fact={keyFact} />
+            <div style={{ font: `600 12.5px ${SANS}`, color: INK.primary, marginTop: 11 }}>
+              {selected.displayName}
+            </div>
+            <div style={{ font: `400 10px ${MONO}`, color: INK.label, marginTop: 2 }}>{meta}</div>
+
+            <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span
+                style={{
+                  font: `600 8px ${MONO}`,
+                  letterSpacing: '.05em',
+                  color: TRUST_COPY[selected.trustClass].color,
+                  border: `1px solid ${TRUST_COPY[selected.trustClass].color}55`,
+                  borderRadius: 4,
+                  padding: '2px 6px',
+                }}
+              >
+                {TRUST_COPY[selected.trustClass].label.toUpperCase()}
+              </span>
+              {selected.securityState === 'quarantined' && (
+                <Pill tone="quarantine">⊘ EXCLUDED</Pill>
+              )}
+            </div>
+
+            {/* Sponsor depth: the compact EXTRACTION row, in the existing
+                provenance area. Meaning first; method is secondary metadata. */}
+            {selected.extraction && (
+              <div
+                style={{
+                  marginTop: 10,
+                  paddingTop: 9,
+                  borderTop: `1px solid rgba(0,0,0,.08)`,
+                }}
+                data-testid="extraction-row"
+              >
+                <div style={{ font: `500 9px ${MONO}`, letterSpacing: '.06em', color: INK.label }}>
+                  EXTRACTION
+                </div>
+                <div style={{ font: `600 11px ${SANS}`, color: INK.dense, marginTop: 3 }}>
+                  {selected.extraction.headline}
+                  {selected.extraction.claimCount > 0 &&
+                    ` · ${selected.extraction.claimCount} claim${selected.extraction.claimCount === 1 ? '' : 's'}`}
+                </div>
+                <div style={{ font: `400 9.5px ${MONO}`, color: INK.label, marginTop: 2 }}>
+                  {selected.extraction.confidenceGatePassed === false
+                    ? 'confidence gate not met'
+                    : selected.extraction.confidenceGatePassed
+                      ? 'confidence gate passed'
+                      : ''}
+                  {selected.extraction.method ? ` · ${selected.extraction.method.toLowerCase()}` : ''}
+                </div>
+                {selected.extraction.identityTrusted === false && (
+                  <div style={{ font: `400 9.5px ${MONO}`, color: '#9A5A2A', marginTop: 3 }}>
+                    identity not established from this reading
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: 11 }}>
+              <GhostButton
+                onClick={() => onOpenSource(selected.artifactId)}
+                disabled={!selected.openable}
+                title={selected.openable ? undefined : 'No signed reference available'}
+              >
+                Open source
+              </GhostButton>
+            </div>
+
+            {alternates.length > 0 && (
+              <div style={{ marginTop: 11 }}>
+                <div style={{ font: `500 9px ${MONO}`, letterSpacing: '.06em', color: INK.label }}>
+                  ALTERNATE SOURCES
+                </div>
+                {alternates.map((a) => (
+                  <button
+                    key={a.artifactId}
+                    type="button"
+                    onClick={() => onSelect(a.artifactId)}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      marginTop: 6,
+                      background: N.nested,
+                      border: `1px solid ${HAIR}`,
+                      borderRadius: 7,
+                      padding: '7px 9px',
+                      cursor: 'pointer',
+                      font: `600 10.5px ${MONO}`,
+                      color: INK.dense,
+                    }}
+                  >
+                    {a.displayName}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          /* "Not persisted yet" and "does not exist" are different facts.
+             While a decision is in flight the artifact is being received and
+             the record is not yet queryable, so the honest statement is that
+             it is arriving — not that there is none. */
+          <div
+            data-testid="source-pending"
+            style={{ font: `400 11px ${MONO}`, color: INK.placeholder, marginTop: 10 }}
+          >
+            {pending ? 'Receiving source evidence…' : 'No source artifact yet.'}
+          </div>
+        )}
+      </Panel>
+
+      <Panel style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+        <Eyebrow>CASE — DURABLE FACTS</Eyebrow>
+        <Field label="LOT" value={truth.lotLine || '—'} />
+        {/* Em-dash until the Investigator's brief actually resolves the basis.
+            Showing anything else would imply it was known earlier than it was. */}
+        <Field label="GOVERNING BASIS" value={truth.governingBasis ?? '—'} />
+        <Field
+          label="BOUND FACT"
+          value={truth.boundFact ? `${truth.boundFact.value}` : '—'}
+        />
+        {truth.holdTruth && <Field label="STATE" value={truth.holdTruth} />}
+      </Panel>
+    </div>
+  );
+}

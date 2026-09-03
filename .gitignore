@@ -161,3 +161,10 @@ graphify-out/
 frontend/dist/
 frontend/dist-harness-check/
 *.tsbuildinfo
+
+# ---- e2e run artifacts ------------------------------------------------------
+# The HARNESSES (e2e/*.mjs) are source and stay tracked. What they PRODUCE —
+# screenshots, live qualification reports, baseline manifests — is regenerated
+# output describing one run, not source. Same rule as *_report.json above.
+frontend/e2e/shots/
+frontend/e2e/baseline/

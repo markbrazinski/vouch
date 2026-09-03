@@ -222,6 +222,20 @@ class ExternalEvidenceArtifact(BaseModel):
     extraction_text: str = ""
     parse_confidence: float = 1.0
     parse_error: str = ""
+    #: Sponsor depth: did structure recovery (Textract TABLES) run for this
+    #: artifact, and what did it establish? False for every ordinary document,
+    #: because structure recovery is an exception path rather than a stage.
+    structured_extraction: bool = False
+    #: Whether the recovered structure was trusted to establish the document's
+    #: OWN identity. Separate from `structured_extraction` on purpose: a table
+    #: may be good enough to read measurements from and still not good enough
+    #: to bind a lot id to (see IDENTITY_CONFIDENCE_FLOOR).
+    structured_identity_trusted: bool = False
+    #: Why the ordinary path was insufficient. Empty when it was sufficient.
+    structured_reason: str = ""
+    #: Per-claim source locations recovered from the table: page, table index,
+    #: row/column label and cell. Feeds the Source viewer.
+    structured_locators: tuple[dict, ...] = ()
 
 
 # ==========================================================================
@@ -233,6 +247,11 @@ class ExtractionMethod(str, Enum):
     DETERMINISTIC_PARSER = "DETERMINISTIC_PARSER"
     MODEL_FALLBACK = "MODEL_FALLBACK"
     HUMAN_SUPPLIED = "HUMAN_SUPPLIED"
+    #: Sponsor depth. The claim text came from Textract table-structure
+    #: recovery, then through the SAME deterministic parser as any other
+    #: document. It is a different way of reading the page, not a different
+    #: way of deciding what a claim is.
+    TEXTRACT_TABLES = "TEXTRACT_TABLES"
 
 
 class CanonicalEvidenceClaim(BaseModel):

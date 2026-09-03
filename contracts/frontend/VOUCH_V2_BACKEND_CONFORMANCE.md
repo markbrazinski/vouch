@@ -741,3 +741,61 @@ prompts, decision semantics, disposition, authority or mutation.
 ---
 
 VOUCH V2 BACKEND CONFORMANCE COMPLETE
+
+---
+
+# Addendum — Sponsor Depth Implementation Gate
+
+Two admitted deltas implemented. EventBridge remains DEFERRED; Gateway/Cedar
+and all other candidates remain REJECTED. No change to Investigator semantics,
+Verifier independence, reconciliation, disposition, policy/capability,
+mutation, consequence/recovery, hostile ordering, human continuation, or the
+event vocabulary.
+
+## Suite
+
+`656 passed, 19 skipped` (Python) · `52 passed` (frontend).
+Baseline before this gate was `573 passed, 19 skipped`.
+
+## 1. Textract structured extraction
+
+| Aspect | Fact |
+|---|---|
+| Insertion point | `evidence.ingest`, behind `text_for_content_type` — the single existing extraction seam |
+| Gating | `structure_needed()`: runs only when parse confidence is 0, or no measurement lines parsed, or confidence < `LOW_CONFIDENCE` |
+| API | `AnalyzeDocument`, `FeatureTypes=["TABLES"]` only. Sync path only; oversized artifacts are refused, never truncated |
+| Reflow | `aws.reflow_tables()` — pure function over a Textract response; rebuilds `name: value units (method, condition)` and re-uses the SAME `parse_deterministic` |
+| Method | `ExtractionMethod.TEXTRACT_TABLES`; version `coa-parser-1+textract-tables-1` |
+| New event | **None.** `EVIDENCE_EXTRACTED` gains `structured_extraction` |
+| Identity floor | `IDENTITY_CONFIDENCE_FLOOR = 0.99`; below it the document states no identity and cannot bind |
+| Ordering | Detection runs BEFORE structure recovery; a quarantined artifact never reaches the extractor |
+| Status | `IMPLEMENTED_NOT_LIVE_VERIFIED` — `textract:AnalyzeDocument` is denied to `gatehouse-dev` pending the CloudShell grant |
+
+Measured, before/after, on the same document:
+
+| Path | claims | extraction confidence | outcome |
+|---|---|---|---|
+| `pypdf` on a table COA | 0 | 0.0 | `EXTRACTION_LOW_CONFIDENCE` |
+| plain OCR shape | 0 | 0.0 | unchanged — OCR alone does not help |
+| `AnalyzeDocument` TABLES + reflow | 2–3 | 1.0 | `RELEASE` through the normal pipeline |
+
+## 2. AgentCore / CloudWatch observability
+
+| Aspect | Fact |
+|---|---|
+| Mechanism | `telemetry.SpanSink`, a SECOND `EventLog` sink. No new event, no payload change, no emit-site change |
+| Spans | `vouch.investigator` and `vouch.verifier` are distinct, independently timed |
+| Deploy | `AGENT_OBSERVABILITY_ENABLED`, `OTEL_PYTHON_DISTRO=aws_distro`, `OTEL_SERVICE_NAME=vouch-v2` |
+| Content capture | **Disabled** — both GenAI capture switches false, plus structural redaction |
+| Failure mode | Best-effort; a tracer outage cannot fail a decision (tested) |
+| Status | `AWS_LIVE_VERIFIED` against real Nova Pro |
+
+Live: `RELEASE` in 14.18s, 58 spans, Investigator 7.67s / Verifier 7.85s,
+17,537 and 16,265 input tokens, **0 prompt/reasoning/content leaks**.
+
+### `EVIDENCE_EXTRACTED` reclassification
+
+Previously `ADAPTER (no page_count/locators in payload)`. Locators now exist
+for structured extractions and are carried on the artifact and the extraction
+summary as `source_locators` (page, table, rowLabel, columnLabel, cell, line,
+confidence). For ordinary documents the classification is unchanged.

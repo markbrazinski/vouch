@@ -34,6 +34,18 @@ describe('production build excludes the dev fixture harness', () => {
     expect(bundle.length).toBeGreaterThan(0);
   });
 
+  it('ships no deterministic visual baseline', () => {
+    // The baseline replays a captured real decision so screenshot diffs mean a
+    // rendering change rather than a different model run. It is DEV-only
+    // apparatus: shipping it would put a frozen QUARANTINE in the product, and
+    // an operator could see a decision that did not happen on their material.
+    expect(bundle).not.toMatch(/visual-baseline/);
+    expect(bundle).not.toMatch(/data-baseline-state/);
+    expect(bundle).not.toMatch(/VISUAL_BASELINE/);
+    // The captured record id must not leak either — it names a real decision.
+    expect(bundle).not.toMatch(/DR-c127f2c38a8b/);
+  });
+
   it('exposes no prototype state bar or fold overlay', () => {
     expect(bundle).not.toMatch(/PROTOTYPE STATES/);
     expect(bundle).not.toMatch(/1440 × 900 FOLD/);
@@ -42,7 +54,49 @@ describe('production build excludes the dev fixture harness', () => {
 
   it('ships the product surface', () => {
     expect(bundle).toMatch(/ÅBY/);
-    expect(bundle).toMatch(/need a Quality decision/);
+    // The Hero A entry: an arrival awaiting a decision, and the decision
+    // spine's independence label. Both are product copy, not fixture data.
+    expect(bundle).toMatch(/AWAITING A QUALITY DECISION/);
+    expect(bundle).toMatch(/INVESTIGATION/);
+  });
+
+  it('ships no hard-coded decision outcome', () => {
+    // Care is needed about what "hard-coded" means here.
+    //
+    // The bundle legitimately contains the supplier's COA verbatim — including
+    // "Specification SPEC-A7 Revision B" and "462 MPa" — because that document
+    // is the INPUT Hero A evaluates. A certificate claiming a revision is a
+    // supplier claim, not Vouch's answer; whether that revision still governs
+    // is precisely what the run determines.
+    //
+    // What must never be baked in is the OUTCOME: the governing basis Vouch
+    // resolved, the disposition it reached, or the consequence it computed.
+    const heroDoc = bundle.indexOf('Certificate of Analysis');
+    expect(heroDoc).toBeGreaterThan(-1);
+
+    // The resolved basis (revision C) is the Investigator's finding and must
+    // come from the backend, never the bundle.
+    expect(bundle).not.toMatch(/SPEC-A7:C/);
+    // No pre-declared verdict for this lot.
+    expect(bundle).not.toMatch(/LOT-1002[^]{0,80}QUARANTINE/);
+    // No pre-computed consequence.
+    expect(bundle).not.toMatch(/C-417[^]{0,40}BLOCKED/);
+    expect(bundle).not.toMatch(/short by 900/);
+  });
+
+  it('ships no scripted lifecycle sequence', () => {
+    // A poll is permitted — it asks the server what happened. A scripted event
+    // sequence is not.
+    //
+    // Note this cannot be a keyword scan: React DOM itself contains "Playback"
+    // and "autoPlay" as media-attribute names, so /playback|autoplay/i matches
+    // a bundle with no demo apparatus in it whatsoever. The honest test is for
+    // the SHAPE of a fabricated run — a literal array of lifecycle event names,
+    // which is what the design reference used and nothing in the product does.
+    expect(bundle).not.toMatch(/\["INVESTIGATOR_STARTED"|'INVESTIGATOR_STARTED',/);
+    expect(bundle).not.toMatch(/maxStep|stepIndex|seek\(/);
+    // No transport controls in the product chrome.
+    expect(bundle).not.toMatch(/PROTOTYPE STATES|Restart|▶|⏸/);
   });
 });
 

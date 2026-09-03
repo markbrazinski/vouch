@@ -140,6 +140,8 @@ class VouchV2:
         model_fallback=None,
         scanner=None,
         record_store=None,
+        structured_extractor=None,
+        span_sink=None,
     ) -> None:
         self.corpus = corpus
         self.evidence_store = evidence_store or LocalEvidenceStore()
@@ -148,6 +150,14 @@ class VouchV2:
         self.detector = detector
         self.model_fallback = model_fallback
         self.scanner = scanner
+        #: Sponsor depth: structure recovery for documents the deterministic
+        #: parser cannot represent (table COAs). None in local mode, so the
+        #: default composition behaves exactly as it did before.
+        self.structured_extractor = structured_extractor
+        #: Sponsor depth: a second event sink mirroring the lifecycle onto OTel
+        #: spans. Evidence only — it decides nothing and is best-effort, so a
+        #: telemetry outage can never fail a decision.
+        self.span_sink = span_sink
         # P1-1/P1-2: durable by default. InMemoryRecordStore is explicitly
         # labeled non-durable and is only chosen by a caller that wants it.
         self.record_store = record_store or InMemoryRecordStore()
@@ -189,7 +199,10 @@ class VouchV2:
         """
         if events is not None:
             return events
-        return EventLog(sinks=[self._persist_event])
+        sinks = [self._persist_event]
+        if self.span_sink is not None:
+            sinks.append(self.span_sink)
+        return EventLog(sinks=sinks)
 
     def _persist_event(self, event: LifecycleEvent) -> None:
         """Append one event to the durable store, at its live sequence.
@@ -278,6 +291,7 @@ class VouchV2:
             detector=self.detector,
             scanner=self.scanner,
             trust_label=trust_label,
+            structured_extractor=self.structured_extractor,
         )
 
         inspection = artifact.security_inspection
@@ -330,11 +344,21 @@ class VouchV2:
         candidates, method, confidence = extract(
             artifact, artifact.extraction_text, events, decision_record_id,
             self.model_fallback, parse_confidence=artifact.parse_confidence,
+            structured=artifact.structured_extraction,
         )
         summary["extraction_method"] = method.value
         summary["extraction_confidence"] = confidence
         summary["low_confidence"] = confidence < LOW_CONFIDENCE
         summary["parse_error"] = artifact.parse_error
+        # Sponsor depth: optional, backward-compatible provenance. Present as
+        # `False`/absent for every ordinary document, so a consumer that has
+        # never heard of structure recovery reads exactly what it read before.
+        summary["structured_extraction"] = artifact.structured_extraction
+        if artifact.structured_extraction:
+            summary["confidence_gate_passed"] = confidence >= LOW_CONFIDENCE
+            summary["identity_trusted"] = artifact.structured_identity_trusted
+            summary["structured_reason"] = artifact.structured_reason
+            summary["source_locators"] = [dict(l) for l in artifact.structured_locators]
 
         if artifact.status is not ArtifactStatus.RECEIVED:
             # F3/F4: mismatch, self-conflict or no identity at all. No claims

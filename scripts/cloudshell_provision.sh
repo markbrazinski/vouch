@@ -125,6 +125,72 @@ aws iam put-role-policy \
 echo "    attached"
 
 # ---------------------------------------------------------------------------
+# 1b-ii. The two grants the sponsor-depth implementation gate needs.
+#
+# Both are runtime-role grants, and both were found by watching the DEPLOYED
+# runtime fail rather than by reading policy:
+#
+#   dynamodb:Query on index/*  — `GatehouseRuntimeAccess` grants Query on the
+#       TABLE arn only, so the decisions-by-recency query in 1c below returns
+#       AccessDeniedException and `list_decisions` (Records + Incoming) is
+#       broken live. The tracked iam/agent_runtime_policy.json has always named
+#       "${TABLE_ARN}/index/*"; it was simply never attached as a whole.
+#
+#   textract:AnalyzeDocument   — table-formatted COAs parse to ZERO claims on
+#       the pypdf path, so a legible certificate escalates to a human. This is
+#       the ONLY Textract action granted: DetectDocumentText is deliberately
+#       omitted because plain OCR was measured and does not recover claims, and
+#       the async Start*/Get* pair is omitted because multi-page async intake is
+#       not in scope for this gate.
+#
+# Written as a separate inline policy rather than by editing GatehouseRuntimeAccess,
+# so re-running cannot clobber grants this script did not author.
+# ---------------------------------------------------------------------------
+STATE_TABLE_FOR_GRANT="${VOUCH_STATE_TABLE:-gatehouse-dev-state}"
+echo "==> granting ${RUNTIME_ROLE} index Query + textract:AnalyzeDocument"
+aws iam put-role-policy \
+  --role-name "${RUNTIME_ROLE}" \
+  --policy-name "VouchSponsorDepth" \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Sid\": \"QueryDecisionIndex\",
+        \"Effect\": \"Allow\",
+        \"Action\": [\"dynamodb:Query\"],
+        \"Resource\": \"arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${STATE_TABLE_FOR_GRANT}/index/*\"
+      },
+      {
+        \"Sid\": \"AnalyzeStructuredEvidence\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"textract:AnalyzeDocument\",
+        \"Resource\": \"*\"
+      }
+    ]
+  }"
+echo "    attached"
+
+# The local dev identity needs AnalyzeDocument too, but ONLY to qualify the
+# adapter against real AWS. It is not granted the index Query: reading the
+# decision index is the runtime's job, not the developer's.
+echo "==> granting ${USER_NAME} textract:AnalyzeDocument (qualification only)"
+aws iam put-user-policy \
+  --user-name "${USER_NAME}" \
+  --policy-name "VouchTextractQualification" \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Sid\": \"AnalyzeStructuredEvidence\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"textract:AnalyzeDocument\",
+        \"Resource\": \"*\"
+      }
+    ]
+  }"
+echo "    attached"
+
+# ---------------------------------------------------------------------------
 # 1c. Add the decision-enumeration index to the state table.
 #
 # `DynamoRecordStore.list_ids` raises on purpose: the single-table layout keys

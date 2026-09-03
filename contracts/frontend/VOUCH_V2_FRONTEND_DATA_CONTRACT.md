@@ -570,3 +570,84 @@ chronology → `ActivityEvent`; causal state → `DecisionSpine`; source content
 ---
 
 VOUCH V2 FRONTEND DATA CONTRACT READY FOR BACKEND CONFORMANCE
+
+---
+
+# Addendum — Sponsor Depth (Textract structured extraction)
+
+**Status:** backend implemented, AWS-qualified locally; live Textract call
+pending the external IAM grant. **Additive and fully optional.** Every field
+below is absent for ordinary documents, so a consumer written before this
+addendum reads exactly what it read before, unchanged.
+
+## Why this exists
+
+A table-formatted COA — the dominant real-world COA layout — parsed to ZERO
+claims on the ordinary path (`pypdf` recovered every character;
+`extraction_confidence` was `0.0`) and escalated to a human. Structure recovery
+closes that. What the UI must convey is *why the claims became usable*, never
+which vendor did it.
+
+## Optional fields on the extraction projection
+
+```ts
+interface ExtractionProvenance {
+  // Present on EVERY artifact. `false` for ordinary documents.
+  structuredExtraction: boolean
+
+  // Present ONLY when structuredExtraction === true.
+  confidenceGatePassed?: boolean   // extraction confidence >= 0.75
+  identityTrusted?: boolean        // recognition good enough to bind a lot id
+  structuredReason?: string        // why the ordinary path was insufficient
+  sourceLocators?: SourceLocator[] // one per recovered claim
+}
+
+interface SourceLocator {
+  page: number         // 1-based
+  table: number        // 1-based, within the page
+  rowLabel: string     // e.g. "tensile_strength"
+  columnLabel: string  // e.g. "result"
+  cell: string         // e.g. "r2c4"
+  line: number         // line in the emitted text, for claim -> row mapping
+  confidence: number   // 0-1, the WORST cell confidence in that row
+}
+```
+
+`extractionMethod` gains one value: `"TEXTRACT_TABLES"`, alongside
+`DETERMINISTIC_PARSER`, `MODEL_FALLBACK` and `HUMAN_SUPPLIED`. **Treat this
+field as an open value set** — render it, do not exhaustively switch on it.
+
+## Lifecycle events
+
+**No new event type.** `EVIDENCE_EXTRACTED` carries one added payload key,
+`structured_extraction: boolean`, and its existing `method` field now admits
+`TEXTRACT_TABLES`. The operator-visible semantic is unchanged: *evidence was
+extracted into usable claims*.
+
+## `identityTrusted` — the one genuinely new UI state
+
+A document may be readable enough to yield measurements yet **not** readable
+enough to bind a lot id. That combination cannot occur today and is a security
+control, not a quality signal: a wrong measurement is caught downstream by
+deterministic recompute against the governing spec, but a mis-read `LOT-1OO1`
+binds evidence to the wrong lot and every later check then uses the wrong id.
+
+When `identityTrusted === false` the artifact states no identity, binds to
+nothing, and routes to a human — the same fail-closed outcome an unreadable
+scan produces today.
+
+## What must NOT be surfaced
+
+- Textract, Amazon or AWS branding in any decision surface.
+- Structure recovery as a separate pipeline stage. It sits behind the single
+  existing extraction seam; there is one ingestion path by design.
+- A second confidence number competing with `extractionConfidence`.
+- Any implication that a *model* read the document. Textract is a deterministic
+  extractor and is not the confined model fallback.
+- Raw Textract response JSON. Only the shaped `SourceLocator` above.
+
+## Hostile path unchanged
+
+Security still halts the spine before extraction. A quarantined artifact
+produces no claims, no locators, and no extraction presentation, and never
+reaches the extractor at all (`test_a_quarantined_artifact_never_reaches_textract`).
