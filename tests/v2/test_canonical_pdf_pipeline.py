@@ -200,3 +200,38 @@ def test_the_hostile_lot_is_not_refused_for_being_unqualified(runtime):
     lot = runtime._CORPUS.lot("LOT-1004")
     qualification = runtime._CORPUS.qualification(lot.supplier_id, lot.material_id)
     assert qualification.covers(when=lot.received_at, site_id=lot.supplier_site)
+
+
+# ==========================================================================
+# PDF 2's AWS-live meaning, pinned
+# ==========================================================================
+
+
+def test_pdf2_identity_floor_is_not_quietly_lowered() -> None:
+    """The 0.99 floor is what makes PDF 2's outcome meaningful.
+
+    Live qualification (runtime v26): Textract recovered all three
+    measurements, but its worst-cell confidence was 0.9341 — below this floor —
+    so the document bound to no lot and the evidence went unused.
+
+    That is the approved canonical behaviour: structured extraction SUCCEEDED,
+    autonomous use of the evidence was REFUSED. Lowering this constant would
+    convert a deliberate abstention into a release and silently delete the
+    distinction, so the value is pinned here rather than left to a code review.
+    """
+    from vouch.v2.aws import IDENTITY_CONFIDENCE_FLOOR
+
+    assert IDENTITY_CONFIDENCE_FLOOR == 0.99
+
+
+def test_pdf2_is_not_expected_to_release() -> None:
+    """Guards the documentation against reverting to the old expectation.
+
+    The qualification plan originally predicted `RELEASE` for this document.
+    Live AWS disproved it. The manifest now states the corrected outcome, and a
+    future edit that reinstates "-> RELEASE" for PDF 2 should fail here.
+    """
+    manifest = (EVIDENCE / "MANIFEST.md").read_text()
+    assert "identityTrusted = false" in manifest
+    assert "EVIDENCE_UNBOUND" in manifest
+    assert "NOT expected to reach RELEASE" in manifest

@@ -347,3 +347,31 @@ demo copy "C-417 · 900 kg uncovered" would be backed by real state. The fixture
 is now 900.0, reseeded, redeployed and re-qualified: both Heroes still CLEAN,
 and live `get_today` now reads `short by 900.0`. See
 `tests/v2/test_canonical_demo_data.py`.
+
+
+---
+
+## 10. AWS-live qualification update — runtime v26, 2026-09-04
+
+**Append-only correction to §8.** The admin step ran. Three rows change:
+
+| Path | Was | Now |
+|---|---|---|
+| `list_decisions` | BLOCKED | **AWS_LIVE_VERIFIED** — GSI `ACTIVE`; 30 real rows with server-computed `row_state` and joined display names |
+| Textract | BLOCKED | **AWS_LIVE_VERIFIED** — real `AnalyzeDocument(TABLES)`, 3 claims, exact cell provenance, median 3.30s |
+| `identityTrusted === false` (§6) | implemented, unqualified | **AWS_LIVE_VERIFIED** — a real artifact fell below the 0.99 identity floor and bound to nothing |
+
+§6 is confirmed by live observation rather than assumed: `extractionMethod`
+returned `TEXTRACT_TABLES`, `structuredExtraction` was `true`, and
+`sourceLocators` carried page / table / row label / column label / cell /
+confidence exactly as specified. **No contract change was needed** — the
+predicted risk (column-header naming) did not materialise.
+
+One canonical-data change landed alongside: `LOT-1004` now belongs to
+`SUP-CENTRAL` / Central Forgeworks / `SITE-C1`, so the three demo documents come
+from three organisations. Live `list_decisions` and `get_decision` both reflect
+it. No decision semantics moved; the supplier is qualified on the same terms as
+every other alloy source, so the hostile lot still halts at security.
+
+The BFF (Lambda / API Gateway) remains `LOCAL_VERIFIED` — `lambda:*` and
+`apigateway:*` are still denied to `gatehouse-dev`.

@@ -41,7 +41,14 @@ certificate is represented, and each document says so on its face.
 | Supporting synthetic facts | heat H-4471 · C 0.41% · Mn 1.12% · diameter 50.0 mm |
 | SHA-256 | `3e9af50d2b56e9dc59151c1b9dd3005916e375baa23053c5bb3604300aae0ccf` |
 | Intended path | **`Textract AnalyzeDocument(TABLES)`** — results live in a real table |
-| Qualified outcome | ordinary extraction yields **0 claims** → `structure_needed()` fires → identity still `BOUND` → abstains safely with no mutation until structure recovery runs |
+| Qualified outcome (**AWS-live**, runtime v26) | ordinary extraction yields **0 claims** → structure recovery → real `AnalyzeDocument(TABLES)` recovers **3 claims** with exact cell provenance → worst-cell confidence **0.9341** is below the **0.99** identity floor → `identityTrusted = false` → `EVIDENCE_UNBOUND` / `UNBOUND_NO_IDENTITY` → no mutation |
+
+> **Textract succeeded; autonomous use of the evidence did not.** Structured
+> extraction recovered the measurements. The binding gate separately refused
+> to attach them to a lot identity it could not establish safely, so the
+> evidence is retained and unused rather than acted upon. These are two
+> different mechanisms and the distinction is deliberate — this document is
+> NOT expected to reach RELEASE.
 
 ## central-forgeworks-coa-lot-1004.pdf
 
