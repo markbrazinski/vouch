@@ -38,6 +38,7 @@ def test_supplier_identities_match_the_corpus(brief, corpus) -> None:
         ("SUP-NORTH", "Northern Alloys"),
         ("SUP-EAST", "Eastern Metals"),
         ("SUP-WEST", "Western Polymers"),
+        ("SUP-CENTRAL", "Central Forgeworks"),
     ]:
         assert corpus.get("supplier", supplier_id).name == name
         assert supplier_id in brief and name in brief
@@ -48,7 +49,7 @@ def test_every_documented_lot_matches_the_corpus(brief, corpus) -> None:
     for lot_id, supplier_id, site, material_id, quantity, po in [
         ("LOT-1002", "SUP-EAST", "SITE-E1", "MAT-ALLOY-7", 400.0, "PO-78"),   # PDF 1
         ("LOT-1001", "SUP-NORTH", "SITE-N1", "MAT-ALLOY-7", 500.0, "PO-77"),  # PDF 2
-        ("LOT-1004", "SUP-EAST", "SITE-E1", "MAT-ALLOY-7", 200.0, "PO-80"),   # PDF 3
+        ("LOT-1004", "SUP-CENTRAL", "SITE-C1", "MAT-ALLOY-7", 200.0, "PO-80"),  # PDF 3
     ]:
         lot = corpus.lot(lot_id)
         assert lot.supplier_id == supplier_id

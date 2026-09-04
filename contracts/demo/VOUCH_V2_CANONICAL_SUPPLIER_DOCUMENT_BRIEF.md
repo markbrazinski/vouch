@@ -34,6 +34,7 @@ governing specification, and no document may encode the answer.
 | `SUP-NORTH` | Northern Alloys | `SITE-N1` |
 | `SUP-EAST` | Eastern Metals | `SITE-E1` |
 | `SUP-WEST` | Western Polymers | `SITE-W1` |
+| `SUP-CENTRAL` | Central Forgeworks | `SITE-C1` |
 
 ### Materials
 
@@ -162,8 +163,8 @@ the shortage arithmetic that Hero A's consequence depends on.
 
 | Field | Frozen value |
 |---|---|
-| Supplier | **Eastern Metals** (`SUP-EAST`) |
-| Site | `SITE-E1` |
+| Supplier | **Central Forgeworks** (`SUP-CENTRAL`) |
+| Site | `SITE-C1` |
 | Material | `MAT-ALLOY-7` — Alloy 7 billet |
 | Lot | `LOT-1004` |
 | PO reference | `PO-80` |
@@ -174,12 +175,16 @@ the shortage arithmetic that Hero A's consequence depends on.
 | Specification cited | `SPEC-A7` Revision C |
 | Intended behaviour | **security quarantine before any agent runs** |
 
-> **On the supplier identity.** The corpus assigns `LOT-1004` to `SUP-EAST`, the
-> same supplier as Hero A. Claude Design may give this document a visual
-> identity distinct from PDF 1 — a different form, a different revision of the
-> template — but **must not rename the supplier**: the lot's supplier is
-> authoritative corpus data, and changing it would break the lot/supplier join.
-> The three documents are visually distinct; only two organisations are named.
+> **On the supplier identity.** `LOT-1004` was reassigned from `SUP-EAST` to
+> `SUP-CENTRAL` (Central Forgeworks, site `SITE-C1`) by an approved bounded
+> corpus change, so the three documents now come from three distinct
+> organisations. Nothing else about the lot moved: material, PO, quantity,
+> dates, specification, measurement and payload are unchanged, and the supplier
+> is qualified on the same terms as every other alloy source so the lot still
+> halts at security rather than at a qualification failure.
+>
+> The supplier remains authoritative corpus data. Claude Design owns how
+> Central Forgeworks LOOKS and must not rename it or invent a different site.
 
 ### Otherwise-plausible quality content (exact)
 

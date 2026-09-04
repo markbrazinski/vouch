@@ -69,10 +69,16 @@ def build_corpus() -> Corpus:
         ("SUP-NORTH", "Northern Alloys"),
         ("SUP-EAST", "Eastern Metals"),
         ("SUP-WEST", "Western Polymers"),
+        # LOT-1004's supplier. Separated from SUP-EAST so the hostile document
+        # comes from its own organisation: the demo shows three distinct
+        # supplier identities, and an attack attributed to the same supplier as
+        # the Hero A lot would blur two unrelated stories.
+        ("SUP-CENTRAL", "Central Forgeworks"),
     ]:
         corpus.put("supplier", supplier_id, Supplier(supplier_id, name))
     for site_id, supplier_id in [
         ("SITE-N1", "SUP-NORTH"), ("SITE-E1", "SUP-EAST"), ("SITE-W1", "SUP-WEST"),
+        ("SITE-C1", "SUP-CENTRAL"),
     ]:
         corpus.put("supplier_site", site_id, SupplierSite(site_id, supplier_id))
 
@@ -143,6 +149,10 @@ def build_corpus() -> Corpus:
         ("QUAL-2", "SUP-EAST", "MAT-ALLOY-7", ("SITE-E1",)),
         ("QUAL-3", "SUP-WEST", "MAT-RESIN-3", ("SITE-W1",)),
         ("QUAL-4", "SUP-NORTH", "MAT-SUB-9", ("SITE-N1",)),
+        # Qualified on the same terms as every other alloy source. LOT-1004 must
+        # halt at SECURITY_QUARANTINE, so its supplier must not be independently
+        # disqualified - that would give the refusal a second, confounding cause.
+        ("QUAL-5", "SUP-CENTRAL", "MAT-ALLOY-7", ("SITE-C1",)),
     ]:
         corpus.put(
             "supplier_qualification", f"{supplier}:{material}",
@@ -192,8 +202,8 @@ def build_corpus() -> Corpus:
     )
     corpus.put(
         "lot", "LOT-1004",
-        Lot("LOT-1004", "SUP-EAST", "MAT-ALLOY-7", "PO-80", 200.0,
-            supplier_site="SITE-E1", manufactured_at="2026-02-12", received_at="2026-03-04"),
+        Lot("LOT-1004", "SUP-CENTRAL", "MAT-ALLOY-7", "PO-80", 200.0,
+            supplier_site="SITE-C1", manufactured_at="2026-02-12", received_at="2026-03-04"),
     )
     corpus.put(
         "lot", "LOT-8001",
