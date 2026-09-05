@@ -89,7 +89,7 @@ def build() -> Path:
     return ARCHIVE
 
 
-def deploy(archive: Path) -> int:
+def deploy(archive: Path, guardrails: dict[str, str] | None = None) -> int:
     import boto3
 
     config = load()
@@ -99,6 +99,10 @@ def deploy(archive: Path) -> int:
     session.client("s3").upload_file(
         str(archive), config.evidence_bucket, S3_PREFIX
     )
+
+    # Refuse before the update call, not after: a half-applied deploy is worse
+    # than one that never started.
+    guardrails = guardrail_config() if guardrails is None else guardrails
 
     print(f"==> updating runtime {RUNTIME_ID}")
     control = session.client("bedrock-agentcore-control")
@@ -129,10 +133,10 @@ def deploy(archive: Path) -> int:
             # docs/architecture/v2/AWS_STATUS.md, which says so plainly.
             "VOUCH_ISSUANCE_KEY": "vouch-demo-issuance-key",
             "AWS_REGION": config.region,
-            # Real prompt-attack inspection on the deployed path. Absent this,
-            # the runtime falls back to no detector rather than to a heuristic
-            # pretending to be Guardrails.
-            "VOUCH_GUARDRAIL_ID": os.environ.get("VOUCH_GUARDRAIL_ID", ""),
+            # Real prompt-attack inspection on the deployed path. Validated by
+            # `guardrail_config()` BEFORE anything is built or uploaded — an
+            # absent id refuses the deploy rather than shipping no detector.
+            **guardrails,
             # Sponsor depth: structure recovery for table/scanned COAs. Off
             # unless set, so a deploy that omits it behaves exactly as before.
             "VOUCH_TEXTRACT_ENABLED": os.environ.get("VOUCH_TEXTRACT_ENABLED", ""),
@@ -165,6 +169,7 @@ def deploy(archive: Path) -> int:
     for _ in range(30):
         status = control.get_agent_runtime(agentRuntimeId=RUNTIME_ID)["status"]
         if status == "READY":
+            verify_deployed_guardrail(control, guardrails, version)
             print(f"    READY (version {version})")
             return 0
         if status.endswith("FAILED"):
@@ -176,12 +181,105 @@ def deploy(archive: Path) -> int:
     return 1
 
 
+class DeploymentRefused(RuntimeError):
+    """A deployment was stopped because its security configuration is absent."""
+
+
+#: The env var that lets a deploy proceed without Guardrails. Deliberately
+#: long and unpleasant to type: it must never be set by habit, and it must be
+#: obvious in shell history that a security control was waived on purpose.
+UNSAFE_OPT_IN = "VOUCH_DEPLOY_WITHOUT_GUARDRAILS"
+
+
+def guardrail_config(env: dict[str, str] | None = None) -> dict[str, str]:
+    """The Guardrails configuration this deploy will ship, or refuse.
+
+    Runtime v25 deployed successfully with no Guardrails at all: this script
+    read `VOUCH_GUARDRAIL_ID` with a `""` default, the runtime saw an empty id
+    and fell back to no detector, and nothing anywhere said so. A deploy that
+    forgets a security control must not be indistinguishable from a deploy that
+    never wanted one, so an absent id is now a hard stop.
+
+    Returns the environment fragment to merge into the runtime configuration.
+    Raises `DeploymentRefused` rather than returning a degraded default: there
+    is no safe value to fall back TO.
+    """
+    env = os.environ if env is None else env
+    guardrail_id = (env.get("VOUCH_GUARDRAIL_ID") or "").strip()
+    version = (env.get("VOUCH_GUARDRAIL_VERSION") or "").strip() or "DRAFT"
+
+    if guardrail_id:
+        return {
+            "VOUCH_GUARDRAIL_ID": guardrail_id,
+            "VOUCH_GUARDRAIL_VERSION": version,
+        }
+
+    # No id. The ONLY way past this point is an explicit, named waiver.
+    if (env.get(UNSAFE_OPT_IN) or "").strip() == "i-accept-no-prompt-attack-detection":
+        print(
+            "    WARNING: deploying with NO prompt-attack detection because "
+            f"{UNSAFE_OPT_IN} is set.\n"
+            "    This runtime is NOT qualified for demo or production use.",
+            file=sys.stderr,
+        )
+        return {"VOUCH_GUARDRAIL_ID": "", "VOUCH_GUARDRAIL_VERSION": ""}
+
+    raise DeploymentRefused(
+        "VOUCH_GUARDRAIL_ID is empty or unset, so this deploy would ship a "
+        "runtime with NO prompt-attack detection.\n\n"
+        "  Set it to the Bedrock Guardrail backing the deployed security path:\n"
+        "      export VOUCH_GUARDRAIL_ID=<guardrail-id>\n"
+        "      export VOUCH_GUARDRAIL_VERSION=DRAFT   # or a published version\n\n"
+        f"  A deploy WITHOUT Guardrails requires an explicit waiver:\n"
+        f"      export {UNSAFE_OPT_IN}=i-accept-no-prompt-attack-detection\n"
+        "  Such a runtime is not qualified for demo or production use."
+    )
+
+
+def verify_deployed_guardrail(control, expected: dict[str, str], version: str) -> None:
+    """Read the deployed configuration back and confirm it carries what we sent.
+
+    Sending the right value is not the same as the runtime HAVING it. v25 was
+    caught by diffing deployed environment variables by hand; this does that
+    automatically, on every deploy, before the script reports success.
+    """
+    deployed = control.get_agent_runtime(
+        agentRuntimeId=RUNTIME_ID, agentRuntimeVersion=version
+    ).get("environmentVariables", {})
+
+    for key, want in expected.items():
+        got = deployed.get(key, "")
+        if got != want:
+            raise DeploymentRefused(
+                f"deployed runtime version {version} has {key}={got!r}, "
+                f"expected {want!r}. The security configuration did not land."
+            )
+    if expected.get("VOUCH_GUARDRAIL_ID"):
+        print(
+            f"    guardrails verified: {expected['VOUCH_GUARDRAIL_ID']}"
+            f":{expected['VOUCH_GUARDRAIL_VERSION']}"
+        )
+
+
 def main() -> int:
     print(f"identity: {assert_vouch_identity()}")
+
+    # Validate security configuration BEFORE spending three minutes vendoring
+    # dependencies. A deploy that is going to be refused should be refused now.
+    try:
+        guardrails = guardrail_config()
+    except DeploymentRefused as refusal:
+        print(f"\nDEPLOYMENT REFUSED\n\n{refusal}\n", file=sys.stderr)
+        return 2
+
     archive = build()
     if "--build-only" in sys.argv:
         return 0
-    return deploy(archive)
+    try:
+        return deploy(archive, guardrails)
+    except DeploymentRefused as refusal:
+        print(f"\nDEPLOYMENT REFUSED\n\n{refusal}\n", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

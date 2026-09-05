@@ -271,15 +271,24 @@ class BedrockGuardrailDetector:
     def __init__(
         self,
         guardrail_id: str | None = None,
-        guardrail_version: str = "DRAFT",
+        guardrail_version: str | None = None,
         *,
         region: str | None = None,
     ) -> None:
         from ..config import env_var
 
         self.guardrail_id = guardrail_id or env_var("GUARDRAIL_ID") or ""
-        self.guardrail_version = guardrail_version
-        self.__name__ = f"bedrock-guardrails:{self.guardrail_id}:{guardrail_version}"
+        # The version is configuration, not a constant. A published version is
+        # reproducible — DRAFT moves whenever the guardrail is edited, so a run
+        # recorded against DRAFT cannot be replayed against the same policy.
+        # DRAFT remains the default because it is what the account currently
+        # has; naming it here means the audit record says which one was used.
+        self.guardrail_version = (
+            guardrail_version or env_var("GUARDRAIL_VERSION") or "DRAFT"
+        )
+        self.__name__ = (
+            f"bedrock-guardrails:{self.guardrail_id}:{self.guardrail_version}"
+        )
         self._region = region
         self._runtime = None
 
