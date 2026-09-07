@@ -36,7 +36,14 @@ def runtime_arn(monkeypatch):
 
 @pytest.fixture
 def invoked(monkeypatch):
-    """Capture what would have been sent to AgentCore, and send nothing."""
+    """Every payload that would reach AgentCore, by either path, sending none.
+
+    Writes are now scheduled onto a background invocation rather than awaited,
+    so a fixture that watched only `invoke_runtime` would see nothing for
+    `evaluate`/`evidence` and quietly stop testing them. Both paths are captured
+    here so the allowlist and validation guarantees are asserted against the
+    payload that actually reaches the runtime, whichever way it travels.
+    """
     calls = []
 
     def fake(payload, session_id=None):
@@ -44,6 +51,8 @@ def invoked(monkeypatch):
         return {"ok": True, "action": payload["action"], "echo": payload}
 
     monkeypatch.setattr(bff, "invoke_runtime", fake)
+    monkeypatch.setattr(bff, "FUNCTION_NAME", "vouch-bff")
+    monkeypatch.setattr(bff, "start_background", lambda payload: calls.append(payload))
     return calls
 
 
@@ -91,7 +100,9 @@ ROUTES = [
 def test_every_authorized_action_reaches_the_runtime(method, path, body, action, invoked):
     status, payload = _call(method, path, body)
 
-    assert status == 200, payload
+    # Reads answer with the result; writes answer 202 once the work is
+    # scheduled. Either way exactly one payload reaches the runtime.
+    assert status == (202 if action in bff.ASYNC_ACTIONS else 200), payload
     assert [call["action"] for call in invoked] == [action]
 
 
@@ -126,7 +137,7 @@ def test_an_action_named_in_the_body_cannot_override_the_route(invoked):
     """The route decides the action; the body never does."""
     status, _ = _call("POST", "/api/evaluate", {"lot_id": "LOT-1", "action": "ledger"})
 
-    assert status == 200
+    assert status == 202
     assert invoked[0]["action"] == "evaluate_lot"
 
 
@@ -355,3 +366,202 @@ def test_the_bff_does_not_invent_lifecycle_events():
     source = (ROOT / "bff" / "handler.py").read_text()
     for event in ("EVIDENCE_RECEIVED", "DISPOSITION_COMPUTED", "DECISION_RESUMED"):
         assert event not in source
+
+
+# ======================================================================
+# the async contract
+#
+# API Gateway's HTTP API times out at 30s and cannot be raised. A real
+# two-agent evaluation measured 35-110s, so the synchronous BFF returned 503
+# on decisions the runtime went on to complete correctly. These tests pin the
+# repair: a write is STARTED and answered immediately, and the outcome is
+# reached by polling the record the caller was told about.
+# ======================================================================
+
+
+@pytest.fixture
+def scheduled(monkeypatch):
+    """Capture background dispatches instead of invoking Lambda."""
+    calls = []
+    monkeypatch.setattr(bff, "FUNCTION_NAME", "vouch-bff")
+    monkeypatch.setattr(bff, "start_background", lambda payload: calls.append(payload))
+    return calls
+
+
+WRITE_ROUTES = [
+    ("POST", "/api/evaluate", {"lot_id": "LOT-1002"}, "evaluate_lot"),
+    (
+        "POST",
+        "/api/evidence",
+        {
+            "decision_record_id": "DR-abc123",
+            "lot_id": "LOT-1003",
+            "authority_source": "PLANT-QA-LAB",
+            "document": "x",
+        },
+        "supply_evidence",
+    ),
+]
+
+
+@pytest.mark.parametrize("method,path,body,action", WRITE_ROUTES)
+def test_a_write_is_started_and_never_awaited(method, path, body, action, scheduled, monkeypatch):
+    """The POST must not wait for the decision.
+
+    If it awaited the runtime, a 35-110s evaluation would exceed the gateway
+    ceiling and the browser would see 503 for a decision that succeeded.
+    """
+    inline = []
+    monkeypatch.setattr(bff, "invoke_runtime", lambda p, session_id=None: inline.append(p))
+
+    status, payload = _call(method, path, body)
+
+    assert status == 202, payload
+    assert payload["status"] == "STARTED"
+    # Nothing was invoked inline; the work was handed to the background.
+    assert inline == []
+    assert [call["action"] for call in scheduled] == [action]
+
+
+@pytest.mark.parametrize("method,path,body,action", WRITE_ROUTES)
+def test_a_write_answers_with_the_pollable_record_id(method, path, body, action, scheduled):
+    """The id is the whole mechanism: without it the UI cannot poll anything."""
+    _, payload = _call(method, path, body)
+
+    record_id = payload["decision_record_id"]
+    assert bff.RECORD_ID.match(record_id), record_id
+    # The background work must target the SAME record the caller was told to
+    # poll, or the UI would watch a decision nothing is writing to.
+    assert scheduled[0]["decision_record_id"] == record_id
+
+
+def test_a_supplied_record_id_is_preserved(scheduled):
+    """Hero B Run 2 continues an existing record rather than opening a new one."""
+    _, payload = _call(
+        "POST",
+        "/api/evidence",
+        {
+            "decision_record_id": "DR-abc123",
+            "lot_id": "LOT-1003",
+            "authority_source": "QA-LEAD",
+            "document": "x",
+        },
+    )
+    assert payload["decision_record_id"] == "DR-abc123"
+    assert scheduled[0]["decision_record_id"] == "DR-abc123"
+
+
+@pytest.mark.parametrize("method,path,body,action", WRITE_ROUTES)
+def test_a_started_write_carries_no_disposition(method, path, body, action, scheduled):
+    """A 202 knows nothing about the material, and must not imply it does."""
+    _, payload = _call(method, path, body)
+
+    for key in ("disposition", "failure_category", "mutation", "consequences"):
+        assert key not in payload, f"a STARTED response must not carry {key}"
+
+
+@pytest.mark.parametrize("method,path,body,action", WRITE_ROUTES)
+def test_a_long_runtime_call_cannot_delay_the_response(method, path, body, action, monkeypatch):
+    """The gateway ceiling, expressed as a test.
+
+    `invoke_runtime` is made to fail if called during the request. A handler
+    that still awaited the runtime would trip it; one that schedules does not.
+    """
+    monkeypatch.setattr(bff, "FUNCTION_NAME", "vouch-bff")
+    dispatched = []
+    monkeypatch.setattr(bff, "start_background", lambda payload: dispatched.append(payload))
+
+    def too_slow(payload, session_id=None):
+        raise AssertionError("the request awaited the runtime and would have timed out")
+
+    monkeypatch.setattr(bff, "invoke_runtime", too_slow)
+
+    status, _ = _call(method, path, body)
+    assert status == 202
+    assert len(dispatched) == 1
+
+
+@pytest.mark.parametrize("method,path,body,action", WRITE_ROUTES)
+def test_a_startup_failure_is_reported_immediately(method, path, body, action, monkeypatch):
+    """If nothing was scheduled, polling would never terminate. Say so now."""
+    monkeypatch.setattr(bff, "FUNCTION_NAME", "vouch-bff")
+
+    def cannot_start(payload):
+        raise RuntimeError("no")
+
+    monkeypatch.setattr(bff, "start_background", cannot_start)
+
+    status, payload = _call(method, path, body)
+    assert status == 502
+    assert payload["ok"] is False
+    assert payload["failure_class"] == "TECHNICAL_FAILURE"
+    assert "disposition" not in payload
+
+
+def test_reads_are_still_answered_synchronously(invoked):
+    """Only writes are deferred. A read that returned 202 would break the UI."""
+    status, payload = _call("GET", "/api/today")
+    assert status == 200
+    assert [call["action"] for call in invoked] == ["get_today"]
+
+
+def test_the_worker_runs_the_action_it_was_given(monkeypatch):
+    ran = []
+    monkeypatch.setattr(bff, "invoke_runtime", lambda p, session_id=None: ran.append(p))
+
+    result = bff.handler(
+        {bff.WORKER_MARKER: True, "payload": {"action": "evaluate_lot", "lot_id": "LOT-1002"}}
+    )
+
+    assert result == {"ok": True}
+    assert [call["action"] for call in ran] == ["evaluate_lot"]
+
+
+def test_a_worker_failure_does_not_echo_the_request(monkeypatch, caplog):
+    """No caller is left to answer, so it is logged — but never with content."""
+
+    def boom(payload, session_id=None):
+        raise RuntimeError("secret document text")
+
+    monkeypatch.setattr(bff, "invoke_runtime", boom)
+
+    with caplog.at_level(logging.ERROR):
+        assert bff.handler({bff.WORKER_MARKER: True, "payload": {"action": "evaluate_lot"}})
+    assert "secret document text" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        # The marker inside a request body.
+        {
+            "requestContext": {"http": {"method": "POST"}},
+            "rawPath": "/api/evaluate",
+            "body": json.dumps(
+                {"lot_id": "L", bff.WORKER_MARKER: True, "payload": {"action": "get_today"}}
+            ),
+        },
+        # The marker smuggled alongside a real HTTP event.
+        {
+            "requestContext": {"http": {"method": "POST"}},
+            "rawPath": "/api/evaluate",
+            bff.WORKER_MARKER: True,
+            "payload": {"action": "get_today"},
+            "body": json.dumps({"lot_id": "L"}),
+        },
+    ],
+)
+def test_an_http_request_can_never_become_the_worker(event, monkeypatch):
+    """The worker skips validation, so HTTP must not be able to reach it.
+
+    Guarded by SHAPE, not by trust: anything carrying HTTP request keys is a
+    request, whatever else it claims.
+    """
+    monkeypatch.setattr(bff, "FUNCTION_NAME", "vouch-bff")
+    ran = []
+    monkeypatch.setattr(bff, "invoke_runtime", lambda p, session_id=None: ran.append(p))
+    monkeypatch.setattr(bff, "start_background", lambda payload: None)
+
+    bff.handler(event)
+
+    assert ran == [], "an HTTP request entered the unvalidated worker branch"

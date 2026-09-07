@@ -21,6 +21,24 @@ Two rules do the security work:
 The presigned URL in a `get_source` response passes through to the caller and is
 never logged: it carries its own authorization, so a log line holding one is an
 unauthenticated copy of evidence that outlives the request.
+
+WRITES ARE STARTED, NOT AWAITED. API Gateway's HTTP API has a hard 30s
+integration timeout that cannot be raised, and a real two-agent evaluation
+measured 35-110s. Waiting therefore returned 503 on decisions the runtime went
+on to complete correctly — the browser was told the decision failed while it
+was still being made. So `evaluate` and `evidence` hand the work to a background
+invocation of THIS SAME function and return 202 with the decision id.
+
+That id is the whole mechanism: the runtime accepts a caller-supplied
+`decision_record_id` and continues that record rather than replacing it, so the
+UI can poll `/events` and `/decisions/{id}` for a decision it named before the
+work began. Nothing here waits, and nothing here decides.
+
+Self-invocation is deliberate over a queue or a step function: the work is
+already one `InvokeAgentRuntime` call, so a second Lambda, an SQS queue or a
+state machine would add an orchestration layer that carries no logic and one
+more place for a decision to get lost. The cost is one narrowly-scoped IAM
+statement — `lambda:InvokeFunction` on this function alone.
 """
 
 from __future__ import annotations
@@ -160,6 +178,47 @@ def _validated(action: str, body: dict) -> dict:
     return payload
 
 
+#: Actions whose runtime work outlives an API Gateway request. Started in the
+#: background; the browser polls the decision record it named.
+ASYNC_ACTIONS = frozenset({"evaluate_lot", "supply_evidence"})
+
+#: Marks an invocation that IS the background worker, so it runs the action
+#: instead of dispatching it again. Internal only — it is never read from an
+#: HTTP request, so a caller cannot set it to make a request run inline.
+WORKER_MARKER = "__vouch_worker__"
+
+FUNCTION_NAME = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "")
+
+_lambda_client = None
+
+
+def lambda_client():
+    global _lambda_client
+    if _lambda_client is None:
+        _lambda_client = boto3.client("lambda")
+    return _lambda_client
+
+
+def start_background(payload: dict) -> None:
+    """Hand one already-validated payload to a background copy of this function.
+
+    `InvocationType="Event"` returns as soon as AWS has accepted the payload, so
+    the caller answers in well under the gateway's ceiling while the real work
+    runs for as long as it needs.
+
+    The payload forwarded is the VALIDATED one. Re-validating in the worker
+    would be the only guard if a raw body were passed, and a background path is
+    the worst place to discover an identifier was hostile.
+    """
+    if not FUNCTION_NAME:
+        raise RuntimeError("AWS_LAMBDA_FUNCTION_NAME is not set")
+    lambda_client().invoke(
+        FunctionName=FUNCTION_NAME,
+        InvocationType="Event",
+        Payload=json.dumps({WORKER_MARKER: True, "payload": payload}).encode(),
+    )
+
+
 def _route(method: str, path: str, query: dict) -> tuple[str, dict]:
     """Map an HTTP route to one allowlisted action.
 
@@ -247,6 +306,34 @@ def invoke_runtime(payload: dict, session_id: str | None = None) -> dict:
 
 
 def handler(event, context=None):  # noqa: ARG001
+    # The background worker. Reached only by `start_background`.
+    #
+    # The marker alone is not the guard: an HTTP request must be rejected even
+    # if one somehow carried the key. A proxied request always brings
+    # `requestContext`, `rawPath`/`path` or `httpMethod` with it, so requiring
+    # their ABSENCE means the worker branch is unreachable over HTTP by shape
+    # rather than by trust.
+    #
+    # The payload was validated by the request that scheduled it. Failures are
+    # logged and swallowed because there is no caller left to answer — the
+    # decision's own authoritative state is what the UI reads, and a background
+    # crash must not retry a decision the runtime may already have applied.
+    http_shaped = any(
+        key in event for key in ("requestContext", "rawPath", "path", "httpMethod")
+    ) if isinstance(event, dict) else False
+    if isinstance(event, dict) and event.get(WORKER_MARKER) and not http_shaped:
+        work = event.get("payload") or {}
+        # The action name only. The same rule as the request path: a document
+        # and an authority source are in here, and a log is the wrong place for
+        # either — so nothing but the verb is ever written.
+        action = work.get("action")
+        log.info("vouch bff worker action=%s", action)
+        try:
+            invoke_runtime(work)
+        except Exception as exc:  # noqa: BLE001
+            log.error("background invocation failed: %s", type(exc).__name__)
+        return {"ok": True}
+
     method = (
         event.get("requestContext", {}).get("http", {}).get("method")
         or event.get("httpMethod")
@@ -293,6 +380,25 @@ def handler(event, context=None):  # noqa: ARG001
     # Log the action, never the payload: documents and authority sources are in
     # there, and a log is the wrong place for either.
     log.info("vouch bff action=%s", action)
+
+    if action in ASYNC_ACTIONS:
+        # The runtime names the record when the caller does not, but the caller
+        # cannot poll an id it has not been told. Generating it here keeps the
+        # 202 answerable and matches the id shape the runtime already accepts.
+        record_id = payload.get("decision_record_id") or f"DR-{uuid.uuid4().hex[:12]}"
+        payload["decision_record_id"] = record_id
+        try:
+            start_background(payload)
+        except Exception as exc:  # noqa: BLE001
+            # A startup failure is real and immediate: nothing was scheduled, so
+            # no amount of polling would ever produce a terminal state. It is
+            # reported now rather than leaving the UI watching a decision that
+            # does not exist.
+            log.error("could not start background work: %s", type(exc).__name__)
+            return _failure(502, "the decision service could not be started", "TECHNICAL_FAILURE")
+        # 202, not 200: the work is accepted and running, and there is
+        # deliberately no disposition here to mistake for an outcome.
+        return _respond(202, {"ok": True, "action": action, "decision_record_id": record_id, "status": "STARTED"})
 
     try:
         result = invoke_runtime(payload)

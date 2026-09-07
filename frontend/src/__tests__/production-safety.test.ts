@@ -59,11 +59,15 @@ describe('the product surface carries no demo apparatus', () => {
   it('the one permitted interval only polls the backend', () => {
     const src = readFileSync(join(SRC, 'decision', 'useDecisionRun.ts'), 'utf8');
 
-    // Exactly one interval, and it calls the poll and nothing else.
+    // Exactly one interval, and it only ever drives the watcher.
+    //
+    // The tick used to call `pollOnce` directly. It now calls `tick`, which
+    // polls events AND asks the backend whether the decision is terminal —
+    // both are reads. What matters is unchanged and is asserted below: the
+    // timer fetches, and authors nothing.
     const intervals = src.match(/setInterval\(/g) ?? [];
     expect(intervals).toHaveLength(1);
-    expect(src).toMatch(/setInterval\(\(\) => void pollOnce\(/);
-    expect(src).toMatch(/POLL_MS\)/);
+    expect(src).toMatch(/setInterval\(\(\) => void tick\(\), POLL_MS\)/);
 
     // It is always cleared: an orphaned poll would keep asking about a decision
     // nobody is watching.
@@ -73,6 +77,14 @@ describe('the product surface carries no demo apparatus', () => {
     // names and no dispositions are authored on a tick.
     const tick = src.slice(src.indexOf('const pollOnce'), src.indexOf('const start'));
     expect(tick).not.toMatch(/DISPOSITION|QUARANTINE|RELEASE|INVESTIGATOR_STARTED/);
+
+    // Whether the run stopped is READ from the record, never inferred from
+    // which events happened to arrive. Inferring it would put "which event ends
+    // this path" — domain logic — into the client.
+    expect(src).toMatch(/document\.terminal === true/);
+    expect(src).toMatch(/review_status === 'OPEN'/);
+    // The terminal check is throttled, not driven by a second timer.
+    expect(src).toMatch(/TERMINAL_CHECK_TICKS/);
   });
 
   it('the client owns a decision id before any decision runs', () => {

@@ -213,7 +213,7 @@ export function HeroAApp({ entry }: { entry: HeroAEntry }) {
           </header>
 
           {surface === 'incoming' && !openRecordId ? (
-            <HeroAPage entry={entry} />
+            <HeroAPage entry={entry} onOpenRecord={setOpenRecordId} />
           ) : (
             <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
               {openRecordId ? (

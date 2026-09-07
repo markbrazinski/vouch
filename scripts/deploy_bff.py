@@ -6,6 +6,13 @@
 
     browser -> API Gateway (HTTP API) -> Lambda (bff/handler.py) -> AgentCore
 
+Writes do not travel that path synchronously. API Gateway's 30s ceiling is
+lower than a real evaluation (measured 35-110s), so `evaluate` and `evidence`
+are handed to a background invocation of this same function and answered 202
+with the decision id the browser then polls. That needs one extra grant —
+`lambda:InvokeFunction` on this function alone — which `ensure_self_invoke`
+attaches below.
+
 The BFF exists because `InvokeAgentRuntime` is SigV4-signed and AgentCore has
 no CORS surface. It is transport and authorization ONLY: it holds no
 applicability, disposition, policy, recovery or view-model logic, and it
@@ -41,7 +48,13 @@ API_NAME = "vouch-bff-api"
 EXEC_ROLE_NAME = "VouchBffLambdaRole"
 RUNTIME_ID = "Gatehouse-IWAmEp93XP"
 HANDLER = "handler.handler"
-TIMEOUT_SECONDS = 90  # AgentCore evaluations run 15-60s.
+#: The BACKGROUND worker's budget, not the browser's.
+#:
+#: API Gateway caps a request at 30s and cannot be raised, so `evaluate` and
+#: `evidence` are scheduled onto a background copy of this function and answered
+#: 202 immediately. Only that copy runs long, and measured evaluations reached
+#: 110s — so this is the worker's ceiling, well clear of the observed spread.
+TIMEOUT_SECONDS = 300
 MEMORY_MB = 512
 
 
@@ -152,6 +165,58 @@ def ensure_function(lam, config, origin: str) -> str:
     raise DeploymentRefused("the function did not become Active")
 
 
+def ensure_self_invoke(iam, config) -> None:
+    """Let the BFF schedule background work on itself, and nothing else.
+
+    The narrowest grant that makes the async path possible: `InvokeFunction` on
+    THIS function's ARN alone. Not `lambda:*`, not a wildcard resource, and no
+    second function or queue to hold a permission of its own.
+
+    The alternative designs each cost more authority than they save: SQS or
+    EventBridge would need a queue/bus plus its own policy, and Step Functions a
+    state machine and an execution role — all to carry a single
+    `InvokeAgentRuntime` call this function already knows how to make.
+    """
+    document = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": "lambda:InvokeFunction",
+                "Resource": (
+                    f"arn:aws:lambda:{config.region}:{config.account_id}"
+                    f":function:{FUNCTION_NAME}"
+                ),
+            }
+        ],
+    }
+    try:
+        iam.put_role_policy(
+            RoleName=EXEC_ROLE_NAME,
+            PolicyName="VouchBffSelfInvoke",
+            PolicyDocument=json.dumps(document),
+        )
+        print(f"==> scoped self-invoke for {FUNCTION_NAME}")
+        return
+    except Exception as exc:  # noqa: BLE001
+        if "AccessDenied" not in type(exc).__name__ and "AccessDenied" not in str(exc):
+            raise
+
+    # `gatehouse-dev` cannot write IAM, by design. If the admin step has already
+    # attached the policy this is simply not our job; if it has not, the async
+    # path would fail at runtime rather than here, so verify instead of guessing.
+    try:
+        iam.get_role_policy(RoleName=EXEC_ROLE_NAME, PolicyName="VouchBffSelfInvoke")
+        print("==> self-invoke already granted by the admin step")
+    except Exception as exc:  # noqa: BLE001
+        raise DeploymentRefused(
+            "the BFF execution role cannot invoke itself, so `evaluate` and "
+            "`evidence` would be scheduled and never run.\n\n"
+            "  Apply step 1b of docs/sponsor-depth/ADMIN_STEP_BFF.md as your "
+            "admin identity, then re-run this.\n"
+        ) from exc
+
+
 def ensure_api(apigw, lam, config, function_arn: str, origin: str) -> str:
     """Create or reuse the HTTP API. Returns its invoke URL."""
     existing = next(
@@ -218,8 +283,10 @@ def main() -> int:
     session = boto3.Session(region_name=config.region)
     lam = session.client("lambda")
     apigw = session.client("apigatewayv2")
+    iam = session.client("iam")
 
     try:
+        ensure_self_invoke(iam, config)
         function_arn = ensure_function(lam, config, origin)
         url = ensure_api(apigw, lam, config, function_arn, origin)
     except DeploymentRefused as refusal:

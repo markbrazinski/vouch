@@ -1,11 +1,14 @@
 /**
  * The Hero A entry surface.
  *
- * §9 of the gate: the real `list_decisions` path is blocked pending the admin
- * GSI/IAM step, so full Incoming is NOT built here and no fake production rows
- * are fabricated. What exists instead is the minimum honest shell needed to
- * enter a Decision Workspace, and it says plainly why the list is empty rather
- * than inventing content to fill it.
+ * The arrival that has not been decided yet, above the decisions that have.
+ *
+ * `list_decisions` was blocked when this surface was first built, so it carried
+ * a notice saying enumeration was unprovisioned. That notice outlived the
+ * blocker: the `decisions-by-recency` GSI is ACTIVE and the endpoint returns
+ * real rows, so the text had become a false statement about the product on the
+ * first screen a reader sees. It is gone, and the live list renders beneath the
+ * arrival — every row served by the backend, none fabricated here.
  *
  * There is deliberately no "Start Vouch" button in the production frame. A
  * decision begins because material arrived, not because someone pressed a
@@ -18,7 +21,8 @@ import { useMemo, useState } from 'react';
 import { DecisionWorkspace } from './DecisionWorkspace';
 import { project } from './adapter';
 import { useDecisionRun } from './useDecisionRun';
-import { INK, MONO, N, Pill, SANS, HAIR } from './primitives';
+import { INK, MONO, N, Pill, HAIR } from './primitives';
+import { IncomingSurface } from '../features/Surfaces';
 
 export interface HeroAEntry {
   lotId: string;
@@ -28,45 +32,13 @@ export interface HeroAEntry {
   contentType?: string;
 }
 
-/**
- * Incoming, in its honest blocked state.
- *
- * This is not a placeholder standing in for a finished list — it is the
- * truthful rendering of a surface whose live endpoint returns
- * PERSISTENCE_FAILURE today.
- */
-export function IncomingBlockedNotice({ detail }: { detail?: string }) {
-  return (
-    <div
-      data-testid="incoming-blocked"
-      style={{
-        margin: '18px 26px',
-        background: N.fill,
-        border: `1px solid ${HAIR}`,
-        borderLeft: '5px solid #8A8478',
-        borderRadius: 13,
-        padding: '15px 22px',
-        maxWidth: 720,
-      }}
-    >
-      <div style={{ font: `600 9px ${MONO}`, letterSpacing: '.1em', color: INK.label }}>
-        INCOMING
-      </div>
-      <div style={{ font: `800 17px ${SANS}`, color: INK.muted, marginTop: 3 }}>
-        Decision enumeration is not available in this environment
-      </div>
-      <div style={{ font: `400 12.5px/1.5 ${SANS}`, color: INK.prose, marginTop: 6 }}>
-        Listing decisions needs an index on the authoritative table that has not been provisioned
-        yet. Decisions themselves are unaffected — each one is durable and can be opened directly.
-      </div>
-      {detail && (
-        <div style={{ font: `400 10.5px ${MONO}`, color: INK.label, marginTop: 8 }}>{detail}</div>
-      )}
-    </div>
-  );
-}
-
-export function HeroAPage({ entry }: { entry: HeroAEntry }) {
+export function HeroAPage({
+  entry,
+  onOpenRecord,
+}: {
+  entry: HeroAEntry;
+  onOpenRecord?: (decisionRecordId: string) => void;
+}) {
   const run = useDecisionRun();
   const [started, setStarted] = useState(false);
 
@@ -107,9 +79,8 @@ export function HeroAPage({ entry }: { entry: HeroAEntry }) {
     // already waiting". Opening it is what causes Vouch to evaluate — the same
     // causality the real Incoming list will have once its endpoint qualifies.
     return (
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <IncomingBlockedNotice />
-        <div style={{ margin: '0 26px', maxWidth: 720 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ margin: '18px 26px 0', maxWidth: 720 }}>
           <div
             style={{
               font: `600 9px ${MONO}`,
@@ -154,6 +125,11 @@ export function HeroAPage({ entry }: { entry: HeroAEntry }) {
             <span style={{ font: `400 14px ${MONO}`, color: INK.chevron }}>›</span>
           </button>
         </div>
+
+        {/* The decisions already on record. Real rows from `list_decisions`,
+            with their own loading, empty, blocked and failure states driven by
+            the backend envelope rather than by anything asserted here. */}
+        <IncomingSurface onOpen={onOpenRecord} />
       </div>
     );
   }
