@@ -39,10 +39,10 @@ def test_the_requirement_is_still_coverable():
     corpus = build_corpus()
     total = sum(
         corpus.get("inventory", lot).quantity
-        for lot in ("LOT-1001", "LOT-1002", "LOT-1004")
+        for lot in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004")
     )
     required = build_corpus().order("C-417").requirements[0].quantity
-    assert total == 1100.0
+    assert total == 1550.0
     assert required < total, "C-417 could never be covered"
 
 
@@ -53,7 +53,7 @@ def test_no_alloy_stock_is_usable_before_a_release():
     """
     corpus = build_corpus()
     assert corpus.usable_inventory("LOT-1001") == 0
-    for lot in ("LOT-1001", "LOT-1002", "LOT-1004"):
+    for lot in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004"):
         assert corpus.get("inventory", lot).usable is False
 
 

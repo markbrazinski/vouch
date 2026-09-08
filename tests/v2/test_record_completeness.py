@@ -39,7 +39,7 @@ def escalated():
     """A complete ESCALATED record: ambiguous evidence abstains."""
     corpus = build_corpus()
     vouch = VouchV2(corpus)
-    outcome = vouch.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     assert outcome.quality_decision_required, "fixture must actually escalate"
     return outcome.record
 

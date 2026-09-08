@@ -30,10 +30,10 @@ FORBIDDEN = ("chain_of_thought", "reasoning", "rationale", "raw_prompt", "prompt
 
 def _resolve(vouch, record_id):
     """The Hero B shape: abstain on ambiguous evidence, then resolve it."""
-    first = vouch.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    first = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     vouch.supply_human_evidence(
         decision_record_id=first.decision_record_id,
-        lot_id="LOT-1003",
+        lot_id="LOT-1005",
         raw=QA_RETEST,
         authority_source="PLANT-QA-LAB",
     )
@@ -49,7 +49,7 @@ def test_run_one_survives_the_run_that_replaces_it():
     corpus = build_corpus()
     vouch = VouchV2(corpus, record_store=InMemoryRecordStore())
 
-    first = vouch.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    first = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = first.decision_record_id
     live = vouch._record_for(record_id)
     run_one_hash = live.investigator.brief_hash
@@ -57,7 +57,7 @@ def test_run_one_survives_the_run_that_replaces_it():
     assert first.quality_decision_required
 
     vouch.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1003",
+        decision_record_id=record_id, lot_id="LOT-1005",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 
@@ -114,7 +114,7 @@ def test_a_single_run_case_has_no_archive_but_still_reports_one_run():
     """Hero A never resumes; `runs()` must still answer sensibly."""
     corpus = build_corpus()
     vouch = VouchV2(corpus, record_store=InMemoryRecordStore())
-    outcome = vouch.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
 
     record = vouch._record_for(outcome.decision_record_id)
     assert record.archived_runs == []
@@ -207,14 +207,14 @@ def test_archiving_does_not_change_the_decision():
     corpus = build_corpus()
     vouch = VouchV2(corpus, record_store=InMemoryRecordStore())
 
-    first = vouch.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    first = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     outcome = vouch.supply_human_evidence(
-        decision_record_id=first.decision_record_id, lot_id="LOT-1003",
+        decision_record_id=first.decision_record_id, lot_id="LOT-1005",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 
     assert outcome.disposition == "RELEASE"
-    assert corpus.lot("LOT-1003").status == "RELEASED"
+    assert corpus.lot("LOT-1005").status == "RELEASED"
     assert outcome.record.human.review_status == "RESOLVED"
 
 
@@ -225,7 +225,7 @@ def test_a_replay_archives_nothing():
     record_id = _resolve(vouch, None)
 
     vouch.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1003",
+        decision_record_id=record_id, lot_id="LOT-1005",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 

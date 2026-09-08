@@ -33,16 +33,18 @@ from vouch.v2.fixtures import build_corpus
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = ROOT / "demo" / "evidence"
 
+PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
-PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1001.pdf"
+PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1003.pdf"
 PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
 
 #: The exact bytes that were qualified. A changed hash means a new document,
 #: and a new document has not been through the pipeline.
 SHA256 = {
-    PDF1: "4d36065a15b5a60bfd90d8004784c81de24da0b0a6768fdd2caa296b05ca5ac7",
-    PDF2: "3e9af50d2b56e9dc59151c1b9dd3005916e375baa23053c5bb3604300aae0ccf",
-    PDF3: "fd78264210f4314b69d801262e5a127f8f7b40ba82e80010fdd7f59d65c6ce75",
+    PDF0: "765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181",
+    PDF1: "bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be",
+    PDF2: "3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a",
+    PDF3: "5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947",
 }
 
 #: Substrings of the approved hostile payload. Only PDF 3 may contain these.
@@ -102,7 +104,7 @@ def test_the_manifest_records_every_asset_and_hash() -> None:
 
 @pytest.mark.parametrize(
     "path,lot_id",
-    [(PDF1, "LOT-1002"), (PDF2, "LOT-1001"), (PDF3, "LOT-1004")],
+    [(PDF0, "LOT-1001"), (PDF1, "LOT-1002"), (PDF2, "LOT-1003"), (PDF3, "LOT-1004")],
 )
 def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus) -> None:
     """Identifiers, quantity and dates must match the authoritative lot."""
@@ -122,8 +124,9 @@ def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus)
 @pytest.mark.parametrize(
     "path,lot_id,material_id,supplier_id,site_id",
     [
+        (PDF0, "LOT-1001", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
         (PDF1, "LOT-1002", "MAT-ALLOY-7", "SUP-EAST", "SITE-E1"),
-        (PDF2, "LOT-1001", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
+        (PDF2, "LOT-1003", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
         (PDF3, "LOT-1004", "MAT-ALLOY-7", "SUP-CENTRAL", "SITE-C1"),
     ],
 )
@@ -210,7 +213,7 @@ def test_pdf2_defeats_the_ordinary_parser_and_requires_structure() -> None:
 
 
 def test_only_pdf2_needs_structure_recovery() -> None:
-    for path, expected in ((PDF1, False), (PDF2, True), (PDF3, False)):
+    for path, expected in ((PDF0, False), (PDF1, False), (PDF2, True), (PDF3, False)):
         text = _text(path)
         _claims, confidence = parse_deterministic(text)
         needed, _ = structure_needed(text, confidence)
@@ -222,7 +225,7 @@ def test_only_pdf2_needs_structure_recovery() -> None:
 # ==========================================================================
 
 
-@pytest.mark.parametrize("path", [PDF1, PDF2])
+@pytest.mark.parametrize("path", [PDF0, PDF1, PDF2])
 def test_the_benign_documents_carry_no_hostile_payload(path: Path) -> None:
     text = _text(path)
     detected, why = heuristic_detector(text)

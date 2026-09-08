@@ -223,7 +223,7 @@ def test_human_evidence_for_the_wrong_lot_is_also_rejected(vouch):
     """
     corpus, v = vouch
     claims, summary = v.ingest_evidence(
-        decision_record_id="DR-x", lot_id="LOT-1003",
+        decision_record_id="DR-x", lot_id="LOT-1005",
         raw=b"Plant QA Laboratory Retest - Lot LOT-9999\nviscosity: 305 cP (ASTM-D2196, 25C)\n",
         events=EventLog(), trust_label=TrustLabel.HUMAN_AUTHORIZED,
     )

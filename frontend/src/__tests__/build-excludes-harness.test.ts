@@ -91,7 +91,7 @@ describe('production build excludes the dev fixture harness', () => {
     // Frozen in demo/evidence/MANIFEST.md and re-checked by
     // tests/v2/test_canonical_pdf_assets.py. If this differs, the UI is
     // submitting bytes that were never qualified.
-    expect(shipped).toBe('4d36065a15b5a60bfd90d8004784c81de24da0b0a6768fdd2caa296b05ca5ac7');
+    expect(shipped).toBe('bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be');
 
     // The resolved basis (revision C) is the Investigator's finding and must
     // come from the backend, never the bundle.

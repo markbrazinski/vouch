@@ -144,7 +144,7 @@ def test_a_valid_but_divergent_verifier_still_produces_an_observable_disagreemen
     """Category C stays observable: two contract-valid briefs, both recorded.
 
     This is the case validation must NOT absorb — the seam the architecture
-    exists to expose. LOT-1003's viscosity claim was measured by ASTM-D445 at
+    exists to expose. LOT-1005's viscosity claim was measured by ASTM-D445 at
     40C against a requirement of ASTM-D2196 at 25C, with the only equivalence
     scoped to 25C. Whether it still establishes the requirement is a genuine
     judgment, so the two briefs below are both valid and honestly differ.
@@ -173,7 +173,7 @@ def test_a_valid_but_divergent_verifier_still_produces_an_observable_disagreemen
         verifier=DivergentSufficiency(corpus),
         record_store=InMemoryRecordStore(),
     )
-    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     record = outcome.record
 
     assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason

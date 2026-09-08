@@ -26,8 +26,9 @@ ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = ROOT / "demo" / "evidence"
 ENTRYPOINT = ROOT / "app" / "Gatehouse" / "main.py"
 
+PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
-PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1001.pdf"
+PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1003.pdf"
 PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
 
 
@@ -122,7 +123,7 @@ def test_pdf2_cannot_be_read_by_the_ordinary_path_and_mutates_nothing(runtime):
     disposition, no mutation. An abstention is a first-class outcome, and it is
     emphatically not a quality finding against the lot.
     """
-    outcome = _evaluate(runtime, PDF2, "LOT-1001", "MILL_TEST_REPORT")
+    outcome = _evaluate(runtime, PDF2, "LOT-1003", "MILL_TEST_REPORT")
     assert outcome["ok"]
     assert outcome["disposition"] == ""
     assert outcome["quality_decision_required"] is True
@@ -130,14 +131,14 @@ def test_pdf2_cannot_be_read_by_the_ordinary_path_and_mutates_nothing(runtime):
 
     events = _events(outcome)
     assert "MUTATION_COMPLETED" not in events
-    assert runtime._CORPUS.lot("LOT-1001").status == "RECEIVED"
+    assert runtime._CORPUS.lot("LOT-1003").status == "RECEIVED"
 
 
 def test_pdf2_is_not_treated_as_defective_merely_for_being_unreadable(runtime):
     """Absence of evidence is an escalation, never a defect finding."""
-    outcome = _evaluate(runtime, PDF2, "LOT-1001", "MILL_TEST_REPORT")
+    outcome = _evaluate(runtime, PDF2, "LOT-1003", "MILL_TEST_REPORT")
     assert outcome["disposition"] != "QUARANTINE"
-    assert runtime._CORPUS.lot("LOT-1001").status != "QUARANTINED"
+    assert runtime._CORPUS.lot("LOT-1003").status != "QUARANTINED"
 
 
 # ==========================================================================

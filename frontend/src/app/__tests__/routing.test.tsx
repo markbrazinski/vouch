@@ -25,7 +25,7 @@ const ENTRY = {
 };
 
 const lotRow = (over: Record<string, unknown> = {}) => ({
-  decision_record_id: 'DR-000000000001',
+  decision_record_id: 'DR-0000000001',
   lot_id: 'LOT-1002',
   material_id: 'MAT-ALLOY-7',
   material_name: 'Alloy 7 billet',
@@ -120,7 +120,7 @@ describe('the route is where you are', () => {
   it('/records renders the audit ledger, not the arrivals list', async () => {
     vi.stubGlobal(
       'fetch',
-      backend([lotRow(), lotRow({ decision_record_id: 'DR-000000000002' })]).fetchMock,
+      backend([lotRow(), lotRow({ decision_record_id: 'DR-0000000002' })]).fetchMock,
     );
     shell('/records');
     await waitFor(() => expect(screen.getByTestId('records-page')).toBeTruthy());

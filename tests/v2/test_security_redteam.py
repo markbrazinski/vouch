@@ -167,13 +167,13 @@ def test_out_of_scope_deviation_is_refused(vouch):
 
 
 def test_out_of_scope_equivalence_does_not_apply(vouch):
-    """EQV-1 covers ASTM-D445 only at 25C. LOT-1003's evidence is at 40C."""
+    """EQV-1 covers ASTM-D445 only at 25C. LOT-1005's evidence is at 40C."""
     from vouch.v2.fixtures import COA_AMBIGUOUS
 
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     assert outcome.disposition == "INSUFFICIENT_EVIDENCE"
-    assert corpus.lot("LOT-1003").status == "PENDING_QA"
+    assert corpus.lot("LOT-1005").status == "PENDING_QA"
 
 
 # -- 6. stale deviation ----------------------------------------------------

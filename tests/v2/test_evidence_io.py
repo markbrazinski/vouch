@@ -300,12 +300,12 @@ def test_evidence_arrays_stay_aligned_when_a_run_resumes(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1003", "document": COA_AMBIGUOUS.decode(),
+        "action": "evaluate_lot", "lot_id": "LOT-1005", "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
     runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1003", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
 
@@ -409,12 +409,12 @@ def test_human_authorized_evidence_is_distinguishable_from_supplier(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1003", "document": COA_AMBIGUOUS.decode(),
+        "action": "evaluate_lot", "lot_id": "LOT-1005", "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
     runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1003", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
 

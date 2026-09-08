@@ -222,7 +222,7 @@ def test_events_stay_gapless_across_a_resumed_run(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1003",
+        "action": "evaluate_lot", "lot_id": "LOT-1005",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
@@ -231,7 +231,7 @@ def test_events_stay_gapless_across_a_resumed_run(runtime):
 
     resumed = runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1003", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
     assert resumed["decision_record_id"] == record_id
@@ -294,13 +294,13 @@ def test_get_decision_carries_both_runs_after_a_resume(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1003",
+        "action": "evaluate_lot", "lot_id": "LOT-1005",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
     runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1003", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
 
@@ -460,13 +460,13 @@ def test_human_authorized_evidence_is_labeled_as_such(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1003",
+        "action": "evaluate_lot", "lot_id": "LOT-1005",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
     runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1003", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
 

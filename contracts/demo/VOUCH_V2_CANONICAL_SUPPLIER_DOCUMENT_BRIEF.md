@@ -1,7 +1,16 @@
 # Vouch V2 — Canonical Supplier / Document Brief
 
-**Status: FROZEN**, Remaining Product Surfaces + Canonical Supplier World Gate.
-**Authority for:** the three synthetic supplier PDFs Claude Design will produce.
+**Status: FROZEN (rev 2)**, Remaining Product Surfaces + Canonical Supplier World Gate.
+**Authority for:** the four synthetic supplier PDFs Claude Design will produce.
+
+> **Rev 2 — Four-Lot Ladder gate.** The demo now runs an intentional
+> increasing-complexity ladder: `LOT-1001` RELEASE, `LOT-1002` QUARANTINE,
+> `LOT-1003` EVIDENCE_UNBOUND, `LOT-1004` SECURITY_QUARANTINE. A fourth
+> document (§2b, the clean Northern Alloys COA) was added, the structured MTR
+> moved from `LOT-1001` to a new alloy `LOT-1003`, and the MAT-RESIN-3 polymer
+> vertical moved intact to `LOT-1005` (§9). §2 and §4 are unchanged in content;
+> both were re-exported, so their hashes moved and are re-pinned in
+> `demo/evidence/MANIFEST.md`.
 
 This document freezes the **content** the demo documents must carry. It does not
 describe their appearance — layout, typography and visual identity belong to the
@@ -109,10 +118,9 @@ step it exists to demonstrate stops meaning anything.
 
 ---
 
-## 3. Supplier B — structured / table-heavy · Textract path
+## 2b. Supplier A2 — clean baseline · ordinary extraction
 
-Exercises structured extraction. Its facts are chosen so it does **not** disturb
-the Hero A or Hero B outcomes.
+Carries the **`RELEASE`** rung. It teaches the normal Vouch grammar.
 
 | Field | Frozen value |
 |---|---|
@@ -124,6 +132,42 @@ the Hero A or Hero B outcomes.
 | Quantity | 500 kg |
 | Manufactured | 2026-02-01 |
 | Received | 2026-03-01 |
+| Document type | Certificate of Analysis (COA) |
+| Specification cited | `SPEC-A7` **Revision C** (the governing revision) |
+| Intended extraction path | **ordinary extraction** — Textract NOT required |
+
+### Measurements (exact)
+
+| Characteristic | Value | Units | Method | Condition |
+|---|---|---|---|---|
+| tensile_strength | **512** | MPa | `ASTM-E8` | `room_temp` |
+| hardness | **31** | HRC | `HRC` | `as_received` |
+
+The supplier states the lot **CONFORMS**. Here that claim survives scrutiny:
+512 ≥ 480 under the governing revision, hardness is mid-band, and receipt date
+resolves to Revision C — the revision the document already cites. Measurements
+must live in flat `key: value (method, condition)` lines, NOT a table, or this
+document stops being the ordinary-extraction control.
+
+---
+
+## 3. Supplier B — structured / table-heavy · Textract path
+
+Carries the **`EVIDENCE_UNBOUND`** rung of the ladder.
+
+Exercises structured extraction. Its facts are chosen so it does **not** disturb
+the Hero A or Hero B outcomes.
+
+| Field | Frozen value |
+|---|---|
+| Supplier | **Northern Alloys** (`SUP-NORTH`) |
+| Site | `SITE-N1` |
+| Material | `MAT-ALLOY-7` — Alloy 7 billet |
+| Lot | `LOT-1003` |
+| PO reference | `PO-82` |
+| Quantity | 450 kg |
+| Manufactured | 2026-02-15 |
+| Received | 2026-03-06 |
 | Document type | Mill test / material test report |
 | Specification cited | `SPEC-A7` **Revision C** (the governing one) |
 | Intended extraction path | **`Textract AnalyzeDocument(TABLES)`** when live-qualified |
@@ -153,9 +197,19 @@ table-shaped and give `sourceLocators` a real cell to point at.
 
 ### Why 512 and Revision C
 
-512 passes Revision C (≥ 480), so this lot is a clean release. It must not
-compete with Hero A for attention, and a second failing alloy lot would muddy
-the shortage arithmetic that Hero A's consequence depends on.
+512 passes Revision C (≥ 480), so nothing about the MEASUREMENTS is in doubt.
+That is deliberate: this document must fail for an identity reason alone, and a
+failing measurement would give the refusal a second, confounding cause.
+
+### Why it does not release
+
+The lot id is printed in the page HEADER, and `AnalyzeDocument(TABLES)` returns
+table cells only — so `LOT-1003` never appears in the recovered text. Structure
+recovery succeeds; identity binding separately refuses. The worst-cell
+confidence (0.7737 at qualification) is set by the small-type chemical
+composition rows, **not** by the lot id. Anyone re-rendering this document must
+preserve the header/table split and those rows' type size, or the control stops
+firing for the reason it is documented to fire for.
 
 ---
 
@@ -251,6 +305,16 @@ No document may contain a phrase that states or implies the Vouch outcome:
 no "QUARANTINE", no "BLOCKED", no "REJECTED", no "approved by Quality" (outside
 the hostile payload, where it is the attack). A supplier's own "CONFORMS" is
 legitimate — that is a supplier claim, and testing it is the product.
+
+---
+
+## 9. The polymer vertical (`LOT-1005`) — no document
+
+`LOT-1005` (Western Polymers, `MAT-RESIN-3`, `PO-79`, 300 kg) carries the
+abstain → human continuation → RELEASE story and is exercised by plain-text
+fixtures (`COA_AMBIGUOUS`, `QA_RETEST`), not by a designed PDF. It is
+deliberately outside the four-lot ladder. It is the only lot `SPEC-R3` and
+`EQV-1` govern, so it must not be deleted to simplify the ladder.
 
 ---
 

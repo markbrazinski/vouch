@@ -59,7 +59,7 @@ def test_a_case_resumes_after_the_process_is_destroyed(durable):
     a new instance over the same durable stores, add human evidence.
     """
     first = _workflow(durable)
-    initial = first.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    initial = first.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = initial.decision_record_id
     assert initial.quality_decision_required
     assert initial.record.run_count == 1
@@ -68,7 +68,7 @@ def test_a_case_resumes_after_the_process_is_destroyed(durable):
     assert events_before, "the first run must have persisted events"
     prior_evidence = list(initial.record.evidence.source_artifact_hashes)
     prior_sequences = [row["sequence"] for row in events_before]
-    lot_version_before = durable["corpus"].version_of("lot", "LOT-1003")
+    lot_version_before = durable["corpus"].version_of("lot", "LOT-1005")
 
     # -- the restart ---------------------------------------------------
     del initial
@@ -79,7 +79,7 @@ def test_a_case_resumes_after_the_process_is_destroyed(durable):
     assert resumed.records == {}, "a new instance must start with no cached case"
 
     outcome = resumed.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1003",
+        decision_record_id=record_id, lot_id="LOT-1005",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 
@@ -101,11 +101,11 @@ def test_a_case_resumes_after_the_process_is_destroyed(durable):
     assert sequences[: len(prior_sequences)] == prior_sequences, "history was overwritten"
     # correct CURRENT lot version was used, and the mutation happened once
     assert outcome.disposition == "RELEASE"
-    assert durable["corpus"].lot("LOT-1003").status == "RELEASED"
-    assert durable["corpus"].version_of("lot", "LOT-1003") == lot_version_before + 1
+    assert durable["corpus"].lot("LOT-1005").status == "RELEASED"
+    assert durable["corpus"].version_of("lot", "LOT-1005") == lot_version_before + 1
     releases = [
         entry for entry in durable["capabilities"].ledger
-        if entry["action"] == "release_lot" and entry["target_id"] == "LOT-1003"
+        if entry["action"] == "release_lot" and entry["target_id"] == "LOT-1005"
     ]
     assert len(releases) == 1, "the final mutation must occur exactly once"
 
@@ -113,17 +113,17 @@ def test_a_case_resumes_after_the_process_is_destroyed(durable):
 def test_a_restart_after_the_mutation_cannot_replay_it(durable):
     """F8: restart after mutation cannot replay the capability or the delta."""
     first = _workflow(durable)
-    initial = first.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    initial = first.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = initial.decision_record_id
     resolved = first.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1003",
+        decision_record_id=record_id, lot_id="LOT-1005",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
     assert resolved.disposition == "RELEASE"
 
     capability_id = resolved.record.capability.capability_id
-    version_after = durable["corpus"].version_of("lot", "LOT-1003")
-    inventory_after = durable["corpus"].get("inventory", "LOT-1003").usable
+    version_after = durable["corpus"].version_of("lot", "LOT-1005")
+    inventory_after = durable["corpus"].get("inventory", "LOT-1005").usable
     ledger_after = len(durable["capabilities"].ledger)
 
     del resolved
@@ -134,14 +134,14 @@ def test_a_restart_after_the_mutation_cannot_replay_it(durable):
     # A new process re-presents the SAME evidence for the SAME case.
     resumed = _workflow(durable)
     replay = resumed.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1003",
+        decision_record_id=record_id, lot_id="LOT-1005",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 
     assert "already attached" in replay.reason
     assert replay.record.run_count == 2, "a replay must not open a third run"
-    assert durable["corpus"].version_of("lot", "LOT-1003") == version_after
-    assert durable["corpus"].get("inventory", "LOT-1003").usable is inventory_after
+    assert durable["corpus"].version_of("lot", "LOT-1005") == version_after
+    assert durable["corpus"].get("inventory", "LOT-1005").usable is inventory_after
     assert len(durable["capabilities"].ledger) == ledger_after
 
     # The spent capability is still spent, from any process.
@@ -152,7 +152,7 @@ def test_a_restart_after_the_mutation_cannot_replay_it(durable):
 def test_a_resumed_record_carries_its_claims(durable):
     """F8: claims are part of the durable record, not process state."""
     first = _workflow(durable)
-    initial = first.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    initial = first.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = initial.decision_record_id
     claim_ids = [c.claim_id for c in first.claims[record_id]]
     assert claim_ids
@@ -174,7 +174,7 @@ def test_resuming_an_unknown_record_is_a_typed_failure(durable):
     assert workflow.resume("DR-does-not-exist") is None
     with pytest.raises(VouchFailure) as caught:
         workflow.supply_human_evidence(
-            decision_record_id="DR-does-not-exist", lot_id="LOT-1003",
+            decision_record_id="DR-does-not-exist", lot_id="LOT-1005",
             raw=QA_RETEST, authority_source="PLANT-QA-LAB",
         )
     assert caught.value.category is FailureCategory.PERSISTENCE_FAILURE
@@ -183,7 +183,7 @@ def test_resuming_an_unknown_record_is_a_typed_failure(durable):
 def test_evaluate_lot_on_an_existing_record_id_continues_it(durable):
     """F8: re-entering a case must not erase its prior runs."""
     first = _workflow(durable)
-    initial = first.evaluate_lot("LOT-1003", documents=[{"raw": COA_AMBIGUOUS}])
+    initial = first.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = initial.decision_record_id
     first.records[record_id].rerun()
     first._persist(first.records[record_id], __import__(
@@ -195,7 +195,7 @@ def test_evaluate_lot_on_an_existing_record_id_continues_it(durable):
     gc.collect()
 
     resumed = _workflow(durable)
-    again = resumed.evaluate_lot("LOT-1003", decision_record_id=record_id)
+    again = resumed.evaluate_lot("LOT-1005", decision_record_id=record_id)
     assert again.record.run_count == 2, "prior runs were erased by a fresh record"
 
 

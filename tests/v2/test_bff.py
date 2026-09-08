@@ -87,7 +87,7 @@ ROUTES = [
         "/api/evidence",
         {
             "decision_record_id": "DR-abc123",
-            "lot_id": "LOT-1003",
+            "lot_id": "LOT-1005",
             "authority_source": "PLANT-QA-LAB",
             "document": "x",
         },
@@ -395,7 +395,7 @@ WRITE_ROUTES = [
         "/api/evidence",
         {
             "decision_record_id": "DR-abc123",
-            "lot_id": "LOT-1003",
+            "lot_id": "LOT-1005",
             "authority_source": "PLANT-QA-LAB",
             "document": "x",
         },
@@ -442,7 +442,7 @@ def test_a_supplied_record_id_is_preserved(scheduled):
         "/api/evidence",
         {
             "decision_record_id": "DR-abc123",
-            "lot_id": "LOT-1003",
+            "lot_id": "LOT-1005",
             "authority_source": "QA-LEAD",
             "document": "x",
         },
