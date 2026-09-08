@@ -1,0 +1,3748 @@
+{
+ "note": "VERBATIM capture from the live production backend (get_decision + get_events) for DR-herob000001, a 2-run Hero B decision. Not hand-written.",
+ "decision_record_id": "DR-herob000001",
+ "record": {
+  "record_id": "DR-herob000001",
+  "created_at": "2026-09-07T22:41:22.569295+00:00",
+  "run_count": 2,
+  "identity": {
+   "record_id": "DR-herob000001",
+   "lot_id": "LOT-1003",
+   "material_id": "MAT-RESIN-3",
+   "supplier_id": "SUP-WEST",
+   "supplier_site": "SITE-W1"
+  },
+  "evidence": {
+   "source_artifact_hashes": [
+    "1712824b8bdc356567e73c30a681c92d140e8b01be1a951c1fdce8378d5dad68",
+    "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989"
+   ],
+   "document_identities": [
+    "COA",
+    "QA_RETEST"
+   ],
+   "receipt_timestamps": [
+    "2026-09-07T22:41:23.180896+00:00",
+    "2026-09-07T22:45:35.299858+00:00"
+   ],
+   "storage_refs": [
+    "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-527f6b5f4e9a",
+    "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af"
+   ],
+   "object_versions": [
+    "JD53aPzTFdVps7nSneqWy_VY0xlZGEZq",
+    "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu"
+   ],
+   "claimed_identities": [
+    {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    }
+   ],
+   "canonical_claims": [
+    {
+     "claim_id": "CLM-527f6b5f4e9a-00",
+     "evidence_artifact_id": "ART-527f6b5f4e9a",
+     "lot_id": "LOT-1003",
+     "material_id": "MAT-RESIN-3",
+     "claim_type": "measurement",
+     "characteristic": "viscosity",
+     "value": 268.0,
+     "units": "cP",
+     "method": "ASTM-D445",
+     "condition": "40C",
+     "claimed_spec": "SPEC-R3 rev A",
+     "source_locator": "line:3",
+     "extraction_method": "DETERMINISTIC_PARSER",
+     "extraction_version": "coa-parser-1",
+     "extraction_confidence": 1.0,
+     "trust_label": "UNTRUSTED_SUPPLIER",
+     "source_hash": "1712824b8bdc356567e73c30a681c92d140e8b01be1a951c1fdce8378d5dad68"
+    },
+    {
+     "claim_id": "CLM-8b0313fcb5af-00",
+     "evidence_artifact_id": "ART-8b0313fcb5af",
+     "lot_id": "LOT-1003",
+     "material_id": "MAT-RESIN-3",
+     "claim_type": "measurement",
+     "characteristic": "viscosity",
+     "value": 305.0,
+     "units": "cP",
+     "method": "ASTM-D2196",
+     "condition": "25C",
+     "claimed_spec": "",
+     "source_locator": "line:2",
+     "extraction_method": "DETERMINISTIC_PARSER",
+     "extraction_version": "coa-parser-1",
+     "extraction_confidence": 1.0,
+     "trust_label": "HUMAN_AUTHORIZED",
+     "source_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989"
+    }
+   ],
+   "binding_statuses": [
+    "BOUND",
+    "BOUND"
+   ],
+   "content_types": [
+    "text/plain",
+    "text/plain"
+   ]
+  },
+  "security": {
+   "inspection_performed": true,
+   "config_version": "vouch-sec-1",
+   "detector": "bedrock-guardrails:wok5lemdo1ze:DRAFT",
+   "guardrail_outcome": "CLEAN",
+   "guardrail_id": "wok5lemdo1ze",
+   "guardrail_version": "DRAFT",
+   "inspected_at": "2026-09-07T22:41:23.180711+00:00",
+   "malware_scan": "NOT_RUN",
+   "prompt_attack_detected": false,
+   "malware_found": false,
+   "blocked": false,
+   "quarantined_artifact_ids": [],
+   "binding_mismatches": [],
+   "rejected_artifact_ids": [],
+   "unbound_artifact_ids": [],
+   "identity_conflicts": []
+  },
+  "extraction": {
+   "per_claim": {
+    "CLM-527f6b5f4e9a-00": {
+     "method": "DETERMINISTIC_PARSER",
+     "version": "coa-parser-1",
+     "confidence": 1.0,
+     "locator": "line:3",
+     "source_hash": "1712824b8bdc356567e73c30a681c92d140e8b01be1a951c1fdce8378d5dad68",
+     "trust_label": "UNTRUSTED_SUPPLIER"
+    },
+    "CLM-8b0313fcb5af-00": {
+     "method": "DETERMINISTIC_PARSER",
+     "version": "coa-parser-1",
+     "confidence": 1.0,
+     "locator": "line:2",
+     "source_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+     "trust_label": "HUMAN_AUTHORIZED"
+    }
+   },
+   "model_fallback_used": false,
+   "low_confidence_routed_to_human": false
+  },
+  "snapshot": {
+   "snapshot_id": "SNAP-2da4ae5aed9f",
+   "claim_set_hash": "b4e79e35808e8ad3e4ae9b96b12f799cd1e6ed2bfd33f7ea6853a3beff813df0",
+   "lot_state_version": 2,
+   "order_state_versions": {
+    "C-418": 2,
+    "C-419": 1
+   }
+  },
+  "investigator": {
+   "model_id": "us.amazon.nova-pro-v1:0",
+   "prompt_version": "investigator-v2.2",
+   "prompt_hash": "f054d21f62e34cbdd2565e4dd594b05472433804f5de9c46bdb5c1d73d2af0ad",
+   "temperature": 0.0,
+   "input_claim_set_hash": "b4e79e35808e8ad3e4ae9b96b12f799cd1e6ed2bfd33f7ea6853a3beff813df0",
+   "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe",
+   "tool_events": [
+    {
+     "agent": "investigator",
+     "tool": "list_candidate_specs",
+     "category": "specification",
+     "authority_class": "authoritative",
+     "result_count": 1,
+     "object_refs": [
+      "SPEC-R3:A"
+     ],
+     "elapsed_ms": 4.86,
+     "status": "OK",
+     "arguments": {
+      "material_id": "MAT-RESIN-3"
+     },
+     "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+    },
+    {
+     "agent": "investigator",
+     "tool": "get_spec_requirement",
+     "category": "specification",
+     "authority_class": "authoritative",
+     "result_count": 1,
+     "object_refs": [
+      "SPEC-R3:A"
+     ],
+     "elapsed_ms": 0.03,
+     "status": "OK",
+     "arguments": {
+      "spec_id": "SPEC-R3",
+      "revision": "A"
+     },
+     "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+    },
+    {
+     "agent": "investigator",
+     "tool": "get_evidence_snapshot",
+     "category": "evidence",
+     "authority_class": "frozen_claims",
+     "result_count": 2,
+     "object_refs": [
+      "CLM-527f6b5f4e9a-00",
+      "CLM-8b0313fcb5af-00"
+     ],
+     "elapsed_ms": 0.03,
+     "status": "OK",
+     "arguments": {},
+     "result_ref": "249e5ba4a68618de066ca4443f384eb94cef88ac44b568a460181b2ecc632171"
+    },
+    {
+     "agent": "investigator",
+     "tool": "list_equivalence_records",
+     "category": "equivalence",
+     "authority_class": "authoritative",
+     "result_count": 1,
+     "object_refs": [
+      "EQV-1"
+     ],
+     "elapsed_ms": 4.68,
+     "status": "OK",
+     "arguments": {
+      "material_id": "MAT-RESIN-3"
+     },
+     "result_ref": "8f020a26729fd3d69c15493b9785ea1232e107322fb0f8870b43dc5d0781f82c"
+    },
+    {
+     "agent": "investigator",
+     "tool": "list_applicable_deviations",
+     "category": "deviation",
+     "authority_class": "authoritative",
+     "result_count": 0,
+     "object_refs": [],
+     "elapsed_ms": 4.66,
+     "status": "OK",
+     "arguments": {
+      "material_id": "MAT-RESIN-3"
+     },
+     "result_ref": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+   ],
+   "schema_valid": true,
+   "precedent_consulted": [],
+   "failure": "",
+   "failure_category": "",
+   "attempts": 1,
+   "brief_rejected": false,
+   "brief": {
+    "governing_basis": {
+     "spec_id": "SPEC-R3",
+     "revision": "A"
+    },
+    "required_tests": [
+     {
+      "name": "viscosity",
+      "threshold": "[200.0, 400.0] cP",
+      "required_method": "ASTM-D2196",
+      "required_condition": "25C"
+     }
+    ],
+    "coverage": [
+     {
+      "test": "viscosity",
+      "evidence_ref": "CLM-8b0313fcb5af-00",
+      "method_match": true,
+      "equivalence_record_id": null,
+      "value": "305.0",
+      "units": "cP"
+     }
+    ],
+    "deviations_applied": [],
+    "sufficiency": "SUFFICIENT",
+    "missing": [],
+    "investigation_notes": "The first claim for viscosity using method ASTM-D445 at 40C does not apply due to condition mismatch. The second claim for viscosity using method ASTM-D2196 at 25C applies and is sufficient.",
+    "precedent_consulted": []
+   }
+  },
+  "verifier": {
+   "model_id": "us.amazon.nova-pro-v1:0",
+   "prompt_version": "verifier-v2.2",
+   "prompt_hash": "9637533a556a350387cbb5d88a3412c0f1d66211be0e782d9427381be05d57f9",
+   "temperature": 0.0,
+   "input_claim_set_hash": "b4e79e35808e8ad3e4ae9b96b12f799cd1e6ed2bfd33f7ea6853a3beff813df0",
+   "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe",
+   "tool_events": [
+    {
+     "agent": "verifier",
+     "tool": "list_candidate_specs",
+     "category": "specification",
+     "authority_class": "authoritative",
+     "result_count": 1,
+     "object_refs": [
+      "SPEC-R3:A"
+     ],
+     "elapsed_ms": 0.03,
+     "status": "OK",
+     "arguments": {
+      "material_id": "MAT-RESIN-3"
+     },
+     "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+    },
+    {
+     "agent": "verifier",
+     "tool": "get_spec_requirement",
+     "category": "specification",
+     "authority_class": "authoritative",
+     "result_count": 1,
+     "object_refs": [
+      "SPEC-R3:A"
+     ],
+     "elapsed_ms": 0.04,
+     "status": "OK",
+     "arguments": {
+      "spec_id": "SPEC-R3",
+      "revision": "A"
+     },
+     "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+    },
+    {
+     "agent": "verifier",
+     "tool": "get_evidence_snapshot",
+     "category": "evidence",
+     "authority_class": "frozen_claims",
+     "result_count": 2,
+     "object_refs": [
+      "CLM-527f6b5f4e9a-00",
+      "CLM-8b0313fcb5af-00"
+     ],
+     "elapsed_ms": 0.02,
+     "status": "OK",
+     "arguments": {},
+     "result_ref": "249e5ba4a68618de066ca4443f384eb94cef88ac44b568a460181b2ecc632171"
+    },
+    {
+     "agent": "verifier",
+     "tool": "list_applicable_deviations",
+     "category": "deviation",
+     "authority_class": "authoritative",
+     "result_count": 0,
+     "object_refs": [],
+     "elapsed_ms": 0.02,
+     "status": "OK",
+     "arguments": {
+      "material_id": "MAT-RESIN-3"
+     },
+     "result_ref": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+     "agent": "verifier",
+     "tool": "list_equivalence_records",
+     "category": "equivalence",
+     "authority_class": "authoritative",
+     "result_count": 1,
+     "object_refs": [
+      "EQV-1"
+     ],
+     "elapsed_ms": 0.02,
+     "status": "OK",
+     "arguments": {
+      "material_id": "MAT-RESIN-3"
+     },
+     "result_ref": "8f020a26729fd3d69c15493b9785ea1232e107322fb0f8870b43dc5d0781f82c"
+    }
+   ],
+   "schema_valid": true,
+   "precedent_consulted": [],
+   "failure": "",
+   "failure_category": "",
+   "attempts": 1,
+   "brief_rejected": false,
+   "brief": {
+    "governing_basis": {
+     "spec_id": "SPEC-R3",
+     "revision": "A"
+    },
+    "required_tests": [
+     {
+      "name": "viscosity",
+      "threshold": "[200.0, 400.0] cP",
+      "required_method": "ASTM-D2196",
+      "required_condition": "25C"
+     }
+    ],
+    "coverage": [
+     {
+      "test": "viscosity",
+      "evidence_ref": "CLM-8b0313fcb5af-00",
+      "method_match": true,
+      "equivalence_record_id": null,
+      "value": "305.0",
+      "units": "cP"
+     }
+    ],
+    "deviations_applied": [],
+    "sufficiency": "SUFFICIENT",
+    "missing": [],
+    "investigation_notes": "",
+    "precedent_consulted": []
+   }
+  },
+  "reconciliation": {
+   "outcome": "NON_MATERIAL_DIFFERENCE",
+   "differing_fields": [],
+   "investigator_values": {},
+   "verifier_values": {}
+  },
+  "corpus": {
+   "objects": {
+    "SPEC-R3:A": {
+     "kind": "spec_revision",
+     "spec_id": "SPEC-R3",
+     "revision": "A",
+     "status": "ACTIVE",
+     "effective_date": "2024-01-01",
+     "effective_to": null,
+     "effective_basis": "date_of_receipt"
+    },
+    "REQ-R3-A-1": {
+     "kind": "requirement",
+     "characteristic": "viscosity",
+     "method": "ASTM-D2196",
+     "condition": "25C",
+     "min_value": 200.0,
+     "max_value": 400.0
+    }
+   },
+   "corpus_hash": "fbc3bbfba8a96c6df8a447b2f5e33f4695cefdae0a01ab828e44efce85751cf6"
+  },
+  "basis": {
+   "spec_id": "SPEC-R3",
+   "revision": "A",
+   "checks_passed": true,
+   "check_failures": []
+  },
+  "disposition": {
+   "disposition": "RELEASE",
+   "reason": "viscosity: 305.0cP within [200.0, 400.0] cP"
+  },
+  "policy": {
+   "policy_version": "vouch-policy-2.1",
+   "gate_decision": "ALLOWED",
+   "refusal_reason": ""
+  },
+  "capability": {
+   "capability_id": "CAP-463ad535fb5645bd",
+   "issued": true,
+   "consumed": true,
+   "refusal_reason": ""
+  },
+  "mutation": {
+   "target_type": "lot",
+   "target_id": "LOT-1003",
+   "action": "release_lot",
+   "before_version": 2,
+   "after_version": 3,
+   "inventory_delta": 0.0,
+   "inventory_before": {
+    "usable": false,
+    "quantity": 300.0
+   },
+   "inventory_after": {
+    "usable": true,
+    "quantity": 300.0
+   },
+   "ledger_sequence": "DR-herob000001#CAP-463ad535fb5645bd",
+   "result": "lot LOT-1003 RELEASED"
+  },
+  "consequences": {
+   "coverage_changes": [
+    {
+     "order_id": "C-418",
+     "coverage": [
+      {
+       "material_id": "MAT-RESIN-3",
+       "required": 400.0,
+       "available": 900.0,
+       "short_by": 0.0,
+       "ratio": 2.25
+      }
+     ]
+    },
+    {
+     "order_id": "C-419",
+     "coverage": [
+      {
+       "material_id": "MAT-RESIN-3",
+       "required": 200.0,
+       "available": 900.0,
+       "short_by": 0.0,
+       "ratio": 4.5
+      }
+     ]
+    }
+   ],
+   "readiness_changes": [],
+   "recovery": {},
+   "caused_by": []
+  },
+  "human": {
+   "evidence_supplied": [
+    "CLM-8b0313fcb5af-00"
+   ],
+   "authority_source": "QA-LEAD",
+   "content_hashes": [
+    "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989"
+   ],
+   "resumed_run_ids": [
+    "DR-herob000001#run2"
+   ],
+   "review_id": "QA-DR-herob000001",
+   "review_status": "OPEN",
+   "final_outcome": ""
+  },
+  "storage": {
+   "evidence_store": "AWS_S3",
+   "record_store": "AWS_DYNAMODB",
+   "record_ref": "dynamodb://gatehouse-dev-state/RECORD#DR-herob000001",
+   "event_count": 84,
+   "last_event_sequence": 168
+  },
+  "archived_runs": [
+   {
+    "run_number": 1,
+    "investigator": {
+     "model_id": "us.amazon.nova-pro-v1:0",
+     "prompt_version": "investigator-v2.2",
+     "prompt_hash": "f054d21f62e34cbdd2565e4dd594b05472433804f5de9c46bdb5c1d73d2af0ad",
+     "temperature": 0.0,
+     "input_claim_set_hash": "f3583787d44e6dae090ca0e4f05499fe04d955126fbf7e6dec29023258078564",
+     "brief_hash": "f67977e226d7807c989781de090b240f0d1c65680bfcebb4bb0c588860b13f98",
+     "tool_events": [
+      {
+       "agent": "investigator",
+       "tool": "list_candidate_specs",
+       "category": "specification",
+       "authority_class": "authoritative",
+       "result_count": 1,
+       "object_refs": [
+        "SPEC-R3:A"
+       ],
+       "elapsed_ms": 0.04,
+       "status": "OK",
+       "arguments": {
+        "material_id": "MAT-RESIN-3"
+       },
+       "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+      },
+      {
+       "agent": "investigator",
+       "tool": "get_spec_requirement",
+       "category": "specification",
+       "authority_class": "authoritative",
+       "result_count": 1,
+       "object_refs": [
+        "SPEC-R3:A"
+       ],
+       "elapsed_ms": 0.03,
+       "status": "OK",
+       "arguments": {
+        "spec_id": "SPEC-R3",
+        "revision": "A"
+       },
+       "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+      },
+      {
+       "agent": "investigator",
+       "tool": "get_evidence_snapshot",
+       "category": "evidence",
+       "authority_class": "frozen_claims",
+       "result_count": 1,
+       "object_refs": [
+        "CLM-527f6b5f4e9a-00"
+       ],
+       "elapsed_ms": 0.03,
+       "status": "OK",
+       "arguments": {},
+       "result_ref": "2b91ec4968e20531497673965c2ea34b318fd3019ef0e6e910dcac9437b94af4"
+      },
+      {
+       "agent": "investigator",
+       "tool": "list_applicable_deviations",
+       "category": "deviation",
+       "authority_class": "authoritative",
+       "result_count": 0,
+       "object_refs": [],
+       "elapsed_ms": 0.02,
+       "status": "OK",
+       "arguments": {
+        "material_id": "MAT-RESIN-3"
+       },
+       "result_ref": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      }
+     ],
+     "schema_valid": true,
+     "precedent_consulted": [],
+     "failure": "",
+     "failure_category": "",
+     "attempts": 2,
+     "brief_rejected": false,
+     "brief": {
+      "governing_basis": {
+       "spec_id": "SPEC-R3",
+       "revision": "A"
+      },
+      "required_tests": [
+       {
+        "name": "viscosity",
+        "threshold": "[200.0, 400.0] cP",
+        "required_method": "ASTM-D2196",
+        "required_condition": "25C"
+       }
+      ],
+      "coverage": [
+       {
+        "test": "viscosity",
+        "evidence_ref": "CLM-527f6b5f4e9a-00",
+        "method_match": false,
+        "equivalence_record_id": null,
+        "value": "268.0",
+        "units": "cP"
+       }
+      ],
+      "deviations_applied": [],
+      "sufficiency": "INSUFFICIENT_EVIDENCE",
+      "missing": [
+       {
+        "test": "viscosity",
+        "reason": "The evidence uses a different method (ASTM-D445) and condition (40C) than required (ASTM-D2196 at 25C), and no equivalence record covers this difference."
+       }
+      ],
+      "investigation_notes": "",
+      "precedent_consulted": []
+     }
+    },
+    "verifier": {
+     "model_id": "us.amazon.nova-pro-v1:0",
+     "prompt_version": "verifier-v2.2",
+     "prompt_hash": "9637533a556a350387cbb5d88a3412c0f1d66211be0e782d9427381be05d57f9",
+     "temperature": 0.0,
+     "input_claim_set_hash": "f3583787d44e6dae090ca0e4f05499fe04d955126fbf7e6dec29023258078564",
+     "brief_hash": "f67977e226d7807c989781de090b240f0d1c65680bfcebb4bb0c588860b13f98",
+     "tool_events": [
+      {
+       "agent": "verifier",
+       "tool": "list_candidate_specs",
+       "category": "specification",
+       "authority_class": "authoritative",
+       "result_count": 1,
+       "object_refs": [
+        "SPEC-R3:A"
+       ],
+       "elapsed_ms": 0.03,
+       "status": "OK",
+       "arguments": {
+        "material_id": "MAT-RESIN-3"
+       },
+       "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+      },
+      {
+       "agent": "verifier",
+       "tool": "get_spec_requirement",
+       "category": "specification",
+       "authority_class": "authoritative",
+       "result_count": 1,
+       "object_refs": [
+        "SPEC-R3:A"
+       ],
+       "elapsed_ms": 0.03,
+       "status": "OK",
+       "arguments": {
+        "spec_id": "SPEC-R3",
+        "revision": "A"
+       },
+       "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+      },
+      {
+       "agent": "verifier",
+       "tool": "get_evidence_snapshot",
+       "category": "evidence",
+       "authority_class": "frozen_claims",
+       "result_count": 1,
+       "object_refs": [
+        "CLM-527f6b5f4e9a-00"
+       ],
+       "elapsed_ms": 0.02,
+       "status": "OK",
+       "arguments": {},
+       "result_ref": "2b91ec4968e20531497673965c2ea34b318fd3019ef0e6e910dcac9437b94af4"
+      },
+      {
+       "agent": "verifier",
+       "tool": "list_equivalence_records",
+       "category": "equivalence",
+       "authority_class": "authoritative",
+       "result_count": 1,
+       "object_refs": [
+        "EQV-1"
+       ],
+       "elapsed_ms": 0.03,
+       "status": "OK",
+       "arguments": {
+        "material_id": "MAT-RESIN-3"
+       },
+       "result_ref": "8f020a26729fd3d69c15493b9785ea1232e107322fb0f8870b43dc5d0781f82c"
+      }
+     ],
+     "schema_valid": true,
+     "precedent_consulted": [],
+     "failure": "",
+     "failure_category": "",
+     "attempts": 1,
+     "brief_rejected": false,
+     "brief": {
+      "governing_basis": {
+       "spec_id": "SPEC-R3",
+       "revision": "A"
+      },
+      "required_tests": [
+       {
+        "name": "viscosity",
+        "threshold": "[200.0, 400.0] cP",
+        "required_method": "ASTM-D2196",
+        "required_condition": "25C"
+       }
+      ],
+      "coverage": [
+       {
+        "test": "viscosity",
+        "evidence_ref": "CLM-527f6b5f4e9a-00",
+        "method_match": false,
+        "equivalence_record_id": null,
+        "value": "268.0",
+        "units": "cP"
+       }
+      ],
+      "deviations_applied": [],
+      "sufficiency": "INSUFFICIENT_EVIDENCE",
+      "missing": [
+       {
+        "test": "viscosity",
+        "reason": "Evidence measured using a different method and condition than required."
+       }
+      ],
+      "investigation_notes": "",
+      "precedent_consulted": []
+     }
+    },
+    "reconciliation": {
+     "outcome": "MATCH",
+     "differing_fields": [],
+     "investigator_values": {},
+     "verifier_values": {}
+    },
+    "basis": {
+     "spec_id": "SPEC-R3",
+     "revision": "A",
+     "checks_passed": true,
+     "check_failures": []
+    },
+    "disposition": {
+     "disposition": "INSUFFICIENT_EVIDENCE",
+     "reason": "viscosity: method ASTM-D445 does not establish the requirement (ASTM-D2196) and no equivalence applies"
+    },
+    "snapshot": {
+     "snapshot_id": "SNAP-ae82ce80e6e7",
+     "claim_set_hash": "f3583787d44e6dae090ca0e4f05499fe04d955126fbf7e6dec29023258078564",
+     "lot_state_version": 1,
+     "order_state_versions": {
+      "C-418": 2,
+      "C-419": 1
+     }
+    },
+    "failure_category": "",
+    "archived_at": "2026-09-07T22:45:35.336748+00:00"
+   }
+  ],
+  "failure_category": "",
+  "terminal": true,
+  "events": [
+   {
+    "event": "EVIDENCE_RECEIVED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.011222+00:00",
+    "artifact_id": "ART-8b0313fcb5af",
+    "source": "QA-LEAD",
+    "content_type": "text/plain",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+    "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+    "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+    "store_kind": "AWS_S3",
+    "trust_label": "HUMAN_AUTHORIZED",
+    "byte_length": 78
+   },
+   {
+    "event": "EVIDENCE_SECURITY_COMPLETED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.299918+00:00",
+    "artifact_id": "ART-8b0313fcb5af",
+    "detection_ran": true,
+    "result": "RECEIVED",
+    "guardrail_outcome": "CLEAN",
+    "guardrail_id": "wok5lemdo1ze",
+    "guardrail_version": "DRAFT",
+    "malware_scan": "NOT_RUN",
+    "prompt_attack_detected": false,
+    "quarantined": false,
+    "binding_mismatches": [],
+    "binding_status": "BOUND",
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "version": "vouch-sec-1"
+   },
+   {
+    "event": "EVIDENCE_BINDING_COMPLETED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.309538+00:00",
+    "artifact_id": "ART-8b0313fcb5af",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "binding_status": "BOUND",
+    "bound": true,
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "identity_stated": true,
+    "reasons": [],
+    "result": "RECEIVED"
+   },
+   {
+    "event": "EVIDENCE_EXTRACTED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.318893+00:00",
+    "artifact_id": "ART-8b0313fcb5af",
+    "method": "DETERMINISTIC_PARSER",
+    "confidence": 1.0,
+    "claim_count": 1,
+    "low_confidence": false,
+    "version": "coa-parser-1",
+    "structured_extraction": false
+   },
+   {
+    "event": "HUMAN_EVIDENCE_RECEIVED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.328511+00:00",
+    "lot_id": "LOT-1003",
+    "authority_source": "QA-LEAD",
+    "document_identity": "QA_RETEST",
+    "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+    "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+    "trust_label": "HUMAN_AUTHORIZED",
+    "claim_ids": [
+     "CLM-8b0313fcb5af-00"
+    ],
+    "binding_status": "BOUND"
+   },
+   {
+    "event": "DECISION_RESUMED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.336774+00:00",
+    "lot_id": "LOT-1003",
+    "run_count": 2,
+    "resumed_run_ids": [
+     "DR-herob000001#run2"
+    ],
+    "trigger": "HUMAN_EVIDENCE",
+    "total_claims": 2
+   },
+   {
+    "event": "EVIDENCE_SNAPSHOT_CREATED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.366455+00:00",
+    "snapshot_id": "SNAP-2da4ae5aed9f",
+    "claim_count": 2,
+    "snapshot_hash": "b4e79e35808e8ad3e4ae9b96b12f799cd1e6ed2bfd33f7ea6853a3beff813df0",
+    "state_versions": {
+     "lot": 2,
+     "C-418": 2,
+     "C-419": 1
+    }
+   },
+   {
+    "event": "INVESTIGATOR_STARTED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:35.375174+00:00",
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:37.666655+00:00",
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:37.675610+00:00",
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 4.86
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:38.965865+00:00",
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:38.974621+00:00",
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:40.107484+00:00",
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:40.116849+00:00",
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00",
+     "CLM-8b0313fcb5af-00"
+    ],
+    "elapsed_ms": 0.03
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:41.340754+00:00",
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:41.349884+00:00",
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 4.68
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:42.640527+00:00",
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:42.649955+00:00",
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 4.66
+   },
+   {
+    "event": "APPLICABILITY_BRIEF_COMPLETED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:45.101031+00:00",
+    "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "SUFFICIENT"
+   },
+   {
+    "event": "VERIFIER_STARTED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:45.112205+00:00",
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "verifier-v2.2",
+    "temperature": 0.0
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:47.497028+00:00",
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:47.506329+00:00",
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:48.967441+00:00",
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:48.976048+00:00",
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.04
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:50.243162+00:00",
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:50.252319+00:00",
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00",
+     "CLM-8b0313fcb5af-00"
+    ],
+    "elapsed_ms": 0.02
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:52.191637+00:00",
+    "agent": "verifier",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_CALLED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:52.193248+00:00",
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:52.203024+00:00",
+    "agent": "verifier",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 0.02
+   },
+   {
+    "event": "TOOL_RESULT_BOUND",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:52.232178+00:00",
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.02
+   },
+   {
+    "event": "VERIFIER_BRIEF_COMPLETED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:54.743591+00:00",
+    "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe"
+   },
+   {
+    "event": "RECONCILIATION_COMPLETED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:54.752228+00:00",
+    "outcome": "NON_MATERIAL_DIFFERENCE",
+    "differing_fields": []
+   },
+   {
+    "event": "DISPOSITION_COMPUTED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:54.763103+00:00",
+    "disposition": "RELEASE",
+    "basis": "SPEC-R3:A",
+    "failing_test_count": 0,
+    "missing_test_count": 0
+   },
+   {
+    "event": "POLICY_EVALUATED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:54.942274+00:00",
+    "policy_version": "vouch-policy-2.1",
+    "gate_decision": "ALLOWED",
+    "action": "release_lot"
+   },
+   {
+    "event": "CAPABILITY_ISSUED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:54.950988+00:00",
+    "capability_id": "CAP-463ad535fb5645bd",
+    "target": "LOT-1003",
+    "action": "release_lot",
+    "expiry": "2026-09-07T22:50:54.934279+00:00"
+   },
+   {
+    "event": "MUTATION_COMPLETED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:55.006193+00:00",
+    "before_version": 2,
+    "after_version": 3,
+    "ledger_seq": "DR-herob000001#CAP-463ad535fb5645bd",
+    "action": "release_lot",
+    "target": "LOT-1003"
+   },
+   {
+    "event": "CONSEQUENCE_RECALCULATED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:55.038535+00:00",
+    "order_id": "C-418",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   },
+   {
+    "event": "CONSEQUENCE_RECALCULATED",
+    "decision_record_id": "DR-herob000001",
+    "at": "2026-09-07T22:45:55.046640+00:00",
+    "order_id": "C-419",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  ],
+  "audit_hash": "3c2fdd744345efef12c0d22f158d5dec5579f6899bd09c83999d41db78959f48"
+ },
+ "sources": [
+  {
+   "artifact_id": "ART-527f6b5f4e9a",
+   "document_identity": "COA",
+   "content_type": "text/plain",
+   "trust_class": "UNTRUSTED_SUPPLIER",
+   "security_state": "CLEARED",
+   "content_hash": "1712824b8bdc356567e73c30a681c92d140e8b01be1a951c1fdce8378d5dad68",
+   "object_version": "JD53aPzTFdVps7nSneqWy_VY0xlZGEZq",
+   "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-527f6b5f4e9a",
+   "binding_status": "BOUND",
+   "received_at": "2026-09-07T22:41:22.891788+00:00",
+   "page_count": null,
+   "claim_count": 1,
+   "excluded_from_decision_use": false,
+   "prompt_attack_detected": false,
+   "view_ref": "https://gatehouse-dev-evidence-000000000000-us-east-1.s3.amazonaws.com/evidence/LOT-1003/ART-527f6b5f4e9a?versionId=JD53aPzTFdVps7nSneqWy_VY0xlZGEZq&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260908%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260908T164459Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Security-Token=EXAMPLESESSIONTOKEN&X-Amz-Signature=EXAMPLESIGNATURE"
+  },
+  {
+   "artifact_id": "ART-8b0313fcb5af",
+   "document_identity": "QA_RETEST",
+   "content_type": "text/plain",
+   "trust_class": "HUMAN_AUTHORIZED",
+   "security_state": "CLEARED",
+   "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+   "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+   "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+   "binding_status": "BOUND",
+   "received_at": "2026-09-07T22:45:35.011222+00:00",
+   "page_count": null,
+   "claim_count": 1,
+   "excluded_from_decision_use": false,
+   "prompt_attack_detected": false,
+   "view_ref": "https://gatehouse-dev-evidence-000000000000-us-east-1.s3.amazonaws.com/evidence/LOT-1003/ART-8b0313fcb5af?versionId=IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260908%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260908T164459Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Security-Token=EXAMPLESESSIONTOKEN&X-Amz-Signature=EXAMPLESIGNATURE"
+  }
+ ],
+ "events": [
+  {
+   "event_id": "DR-herob000001#000001",
+   "sequence": 1,
+   "event": "EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:22.891788+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "source": "supplier-portal",
+    "content_type": "text/plain",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-527f6b5f4e9a",
+    "content_hash": "1712824b8bdc356567e73c30a681c92d140e8b01be1a951c1fdce8378d5dad68",
+    "object_version": "JD53aPzTFdVps7nSneqWy_VY0xlZGEZq",
+    "store_kind": "AWS_S3",
+    "trust_label": "UNTRUSTED_SUPPLIER",
+    "byte_length": 107
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000002",
+   "sequence": 2,
+   "event": "EVIDENCE_SECURITY_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.180954+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "detection_ran": true,
+    "result": "RECEIVED",
+    "guardrail_outcome": "CLEAN",
+    "guardrail_id": "wok5lemdo1ze",
+    "guardrail_version": "DRAFT",
+    "malware_scan": "NOT_RUN",
+    "prompt_attack_detected": false,
+    "quarantined": false,
+    "binding_mismatches": [],
+    "binding_status": "BOUND",
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "version": "vouch-sec-1"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000003",
+   "sequence": 3,
+   "event": "EVIDENCE_BINDING_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.190854+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "binding_status": "BOUND",
+    "bound": true,
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "identity_stated": true,
+    "reasons": [],
+    "result": "RECEIVED"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000004",
+   "sequence": 4,
+   "event": "EVIDENCE_EXTRACTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.200047+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "method": "DETERMINISTIC_PARSER",
+    "confidence": 1.0,
+    "claim_count": 1,
+    "low_confidence": false,
+    "version": "coa-parser-1",
+    "structured_extraction": false
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000005",
+   "sequence": 5,
+   "event": "EVIDENCE_SNAPSHOT_CREATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.216005+00:00",
+   "payload": {
+    "snapshot_id": "SNAP-ae82ce80e6e7",
+    "claim_count": 1,
+    "snapshot_hash": "f3583787d44e6dae090ca0e4f05499fe04d955126fbf7e6dec29023258078564",
+    "state_versions": {
+     "lot": 1,
+     "C-418": 2,
+     "C-419": 1
+    }
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000006",
+   "sequence": 6,
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.225037+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000007",
+   "sequence": 7,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:25.509109+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000008",
+   "sequence": 8,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:25.517799+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 4.98
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000009",
+   "sequence": 9,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:26.655747+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000010",
+   "sequence": 10,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:26.665068+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000011",
+   "sequence": 11,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:28.034926+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000012",
+   "sequence": 12,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:28.044219+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 1,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000013",
+   "sequence": 13,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:29.466668+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000014",
+   "sequence": 14,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:29.476006+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 4.62
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000015",
+   "sequence": 15,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:30.540038+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000016",
+   "sequence": 16,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:30.549704+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 6.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000017",
+   "sequence": 17,
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:33.069640+00:00",
+   "payload": {
+    "brief_hash": "6b8201954ea6af381f69737414b0a4c93606beae5c4bb0967ca9b4c0eef7b853",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "INSUFFICIENT_EVIDENCE"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000018",
+   "sequence": 18,
+   "event": "BRIEF_VALIDATION_FAILED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:33.080264+00:00",
+   "payload": {
+    "agent": "investigator",
+    "attempt": 1,
+    "errors": [
+     "equivalence EQV-1 does not cover ASTM-D445->ASTM-D2196 for viscosity at 40C, so it cannot be cited here. Remove the equivalence_record_id from this coverage row; whether the evidence still applies without it is yours to decide.",
+     "sufficiency is INSUFFICIENT_EVIDENCE, but every required test (['viscosity']) has a coverage row naming evidence that resolves in this snapshot, so no required evidence is absent. sufficiency reports whether applicable evidence EXISTS for every required test; whether a measured value meets its limit is computed separately and is not what this field states. If you meant that a value fails its limit, leave sufficiency SUFFICIENT and report the measurement in its coverage row."
+    ],
+    "carried_forward": [
+     "equivalence EQV-1 does not cover ASTM-D445->ASTM-D2196 for viscosity at 40C, so it cannot be cited here. Remove the equivalence_record_id from this coverage row; whether the evidence still applies without it is yours to decide.",
+     "sufficiency is INSUFFICIENT_EVIDENCE, but every required test (['viscosity']) has a coverage row naming evidence that resolves in this snapshot, so no required evidence is absent. sufficiency reports whether applicable evidence EXISTS for every required test; whether a measured value meets its limit is computed separately and is not what this field states. If you meant that a value fails its limit, leave sufficiency SUFFICIENT and report the measurement in its coverage row."
+    ]
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000019",
+   "sequence": 19,
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:33.089949+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000020",
+   "sequence": 20,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:35.217884+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000021",
+   "sequence": 21,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:35.229872+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.04
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000022",
+   "sequence": 22,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:37.263564+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000023",
+   "sequence": 23,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:37.273054+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000024",
+   "sequence": 24,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:39.065204+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000025",
+   "sequence": 25,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:39.074507+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 1,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000026",
+   "sequence": 26,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:40.694424+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000027",
+   "sequence": 27,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:40.704605+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000028",
+   "sequence": 28,
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:43.703981+00:00",
+   "payload": {
+    "brief_hash": "f67977e226d7807c989781de090b240f0d1c65680bfcebb4bb0c588860b13f98",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "INSUFFICIENT_EVIDENCE"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000029",
+   "sequence": 29,
+   "event": "VERIFIER_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:43.713948+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "verifier-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000030",
+   "sequence": 30,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:45.172118+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000031",
+   "sequence": 31,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:45.181506+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000032",
+   "sequence": 32,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:46.230173+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000033",
+   "sequence": 33,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:46.239303+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000034",
+   "sequence": 34,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:47.349322+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000035",
+   "sequence": 35,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:47.358885+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "result_count": 1,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00"
+    ],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000036",
+   "sequence": 36,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:48.729809+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000037",
+   "sequence": 37,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:48.739154+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000038",
+   "sequence": 38,
+   "event": "VERIFIER_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.235607+00:00",
+   "payload": {
+    "brief_hash": "f67977e226d7807c989781de090b240f0d1c65680bfcebb4bb0c588860b13f98"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000039",
+   "sequence": 39,
+   "event": "RECONCILIATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.247240+00:00",
+   "payload": {
+    "outcome": "MATCH",
+    "differing_fields": []
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000040",
+   "sequence": 40,
+   "event": "DISPOSITION_COMPUTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.256785+00:00",
+   "payload": {
+    "disposition": "INSUFFICIENT_EVIDENCE",
+    "basis": "SPEC-R3:A",
+    "failing_test_count": 0,
+    "missing_test_count": 1
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000041",
+   "sequence": 41,
+   "event": "POLICY_EVALUATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.397402+00:00",
+   "payload": {
+    "policy_version": "vouch-policy-2.1",
+    "gate_decision": "ALLOWED",
+    "action": "create_qa_review"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000042",
+   "sequence": 42,
+   "event": "CAPABILITY_ISSUED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.406757+00:00",
+   "payload": {
+    "capability_id": "CAP-9c9c5c431eb243dc",
+    "target": "LOT-1003",
+    "action": "create_qa_review",
+    "expiry": "2026-09-07T22:46:51.271604+00:00"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000043",
+   "sequence": 43,
+   "event": "MUTATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.467673+00:00",
+   "payload": {
+    "before_version": 1,
+    "after_version": 2,
+    "ledger_seq": "DR-herob000001#CAP-9c9c5c431eb243dc",
+    "action": "create_qa_review",
+    "target": "LOT-1003"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000044",
+   "sequence": 44,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.658634+00:00",
+   "payload": {
+    "order_id": "C-418",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000045",
+   "sequence": 45,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.669479+00:00",
+   "payload": {
+    "order_id": "C-419",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000046",
+   "sequence": 46,
+   "event": "QUALITY_DECISION_REQUIRED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.678578+00:00",
+   "payload": {
+    "reason": "INSUFFICIENT",
+    "lot_id": "LOT-1003"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000047",
+   "sequence": 47,
+   "event": "EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:22.891788+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "source": "supplier-portal",
+    "content_type": "text/plain",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-527f6b5f4e9a",
+    "content_hash": "1712824b8bdc356567e73c30a681c92d140e8b01be1a951c1fdce8378d5dad68",
+    "object_version": "JD53aPzTFdVps7nSneqWy_VY0xlZGEZq",
+    "store_kind": "AWS_S3",
+    "trust_label": "UNTRUSTED_SUPPLIER",
+    "byte_length": 107
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000048",
+   "sequence": 48,
+   "event": "EVIDENCE_SECURITY_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.180954+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "detection_ran": true,
+    "result": "RECEIVED",
+    "guardrail_outcome": "CLEAN",
+    "guardrail_id": "wok5lemdo1ze",
+    "guardrail_version": "DRAFT",
+    "malware_scan": "NOT_RUN",
+    "prompt_attack_detected": false,
+    "quarantined": false,
+    "binding_mismatches": [],
+    "binding_status": "BOUND",
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "version": "vouch-sec-1"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000049",
+   "sequence": 49,
+   "event": "EVIDENCE_BINDING_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.190854+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "binding_status": "BOUND",
+    "bound": true,
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "identity_stated": true,
+    "reasons": [],
+    "result": "RECEIVED"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000050",
+   "sequence": 50,
+   "event": "EVIDENCE_EXTRACTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.200047+00:00",
+   "payload": {
+    "artifact_id": "ART-527f6b5f4e9a",
+    "method": "DETERMINISTIC_PARSER",
+    "confidence": 1.0,
+    "claim_count": 1,
+    "low_confidence": false,
+    "version": "coa-parser-1",
+    "structured_extraction": false
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000051",
+   "sequence": 51,
+   "event": "EVIDENCE_SNAPSHOT_CREATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.216005+00:00",
+   "payload": {
+    "snapshot_id": "SNAP-ae82ce80e6e7",
+    "claim_count": 1,
+    "snapshot_hash": "f3583787d44e6dae090ca0e4f05499fe04d955126fbf7e6dec29023258078564",
+    "state_versions": {
+     "lot": 1,
+     "C-418": 2,
+     "C-419": 1
+    }
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000052",
+   "sequence": 52,
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:23.225037+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000053",
+   "sequence": 53,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:25.509109+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000054",
+   "sequence": 54,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:25.517799+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 4.98
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000055",
+   "sequence": 55,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:26.655747+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000056",
+   "sequence": 56,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:26.665068+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000057",
+   "sequence": 57,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:28.034926+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000058",
+   "sequence": 58,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:28.044219+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 1,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000059",
+   "sequence": 59,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:29.466668+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000060",
+   "sequence": 60,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:29.476006+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 4.62
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000061",
+   "sequence": 61,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:30.540038+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000062",
+   "sequence": 62,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:30.549704+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 6.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000063",
+   "sequence": 63,
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:33.069640+00:00",
+   "payload": {
+    "brief_hash": "6b8201954ea6af381f69737414b0a4c93606beae5c4bb0967ca9b4c0eef7b853",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "INSUFFICIENT_EVIDENCE"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000064",
+   "sequence": 64,
+   "event": "BRIEF_VALIDATION_FAILED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:33.080264+00:00",
+   "payload": {
+    "agent": "investigator",
+    "attempt": 1,
+    "errors": [
+     "equivalence EQV-1 does not cover ASTM-D445->ASTM-D2196 for viscosity at 40C, so it cannot be cited here. Remove the equivalence_record_id from this coverage row; whether the evidence still applies without it is yours to decide.",
+     "sufficiency is INSUFFICIENT_EVIDENCE, but every required test (['viscosity']) has a coverage row naming evidence that resolves in this snapshot, so no required evidence is absent. sufficiency reports whether applicable evidence EXISTS for every required test; whether a measured value meets its limit is computed separately and is not what this field states. If you meant that a value fails its limit, leave sufficiency SUFFICIENT and report the measurement in its coverage row."
+    ],
+    "carried_forward": [
+     "equivalence EQV-1 does not cover ASTM-D445->ASTM-D2196 for viscosity at 40C, so it cannot be cited here. Remove the equivalence_record_id from this coverage row; whether the evidence still applies without it is yours to decide.",
+     "sufficiency is INSUFFICIENT_EVIDENCE, but every required test (['viscosity']) has a coverage row naming evidence that resolves in this snapshot, so no required evidence is absent. sufficiency reports whether applicable evidence EXISTS for every required test; whether a measured value meets its limit is computed separately and is not what this field states. If you meant that a value fails its limit, leave sufficiency SUFFICIENT and report the measurement in its coverage row."
+    ]
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000065",
+   "sequence": 65,
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:33.089949+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000066",
+   "sequence": 66,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:35.217884+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000067",
+   "sequence": 67,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:35.229872+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.04
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000068",
+   "sequence": 68,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:37.263564+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000069",
+   "sequence": 69,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:37.273054+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000070",
+   "sequence": 70,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:39.065204+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000071",
+   "sequence": 71,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:39.074507+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 1,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000072",
+   "sequence": 72,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:40.694424+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000073",
+   "sequence": 73,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:40.704605+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000074",
+   "sequence": 74,
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:43.703981+00:00",
+   "payload": {
+    "brief_hash": "f67977e226d7807c989781de090b240f0d1c65680bfcebb4bb0c588860b13f98",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "INSUFFICIENT_EVIDENCE"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000075",
+   "sequence": 75,
+   "event": "VERIFIER_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:43.713948+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "verifier-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000076",
+   "sequence": 76,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:45.172118+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000077",
+   "sequence": 77,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:45.181506+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000078",
+   "sequence": 78,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:46.230173+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000079",
+   "sequence": 79,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:46.239303+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000080",
+   "sequence": 80,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:47.349322+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000081",
+   "sequence": 81,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:47.358885+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "result_count": 1,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00"
+    ],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000082",
+   "sequence": 82,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:48.729809+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000083",
+   "sequence": 83,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:48.739154+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000084",
+   "sequence": 84,
+   "event": "VERIFIER_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.235607+00:00",
+   "payload": {
+    "brief_hash": "f67977e226d7807c989781de090b240f0d1c65680bfcebb4bb0c588860b13f98"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000085",
+   "sequence": 85,
+   "event": "RECONCILIATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.247240+00:00",
+   "payload": {
+    "outcome": "MATCH",
+    "differing_fields": []
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000086",
+   "sequence": 86,
+   "event": "DISPOSITION_COMPUTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.256785+00:00",
+   "payload": {
+    "disposition": "INSUFFICIENT_EVIDENCE",
+    "basis": "SPEC-R3:A",
+    "failing_test_count": 0,
+    "missing_test_count": 1
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000087",
+   "sequence": 87,
+   "event": "POLICY_EVALUATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.397402+00:00",
+   "payload": {
+    "policy_version": "vouch-policy-2.1",
+    "gate_decision": "ALLOWED",
+    "action": "create_qa_review"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000088",
+   "sequence": 88,
+   "event": "CAPABILITY_ISSUED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.406757+00:00",
+   "payload": {
+    "capability_id": "CAP-9c9c5c431eb243dc",
+    "target": "LOT-1003",
+    "action": "create_qa_review",
+    "expiry": "2026-09-07T22:46:51.271604+00:00"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000089",
+   "sequence": 89,
+   "event": "MUTATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.467673+00:00",
+   "payload": {
+    "before_version": 1,
+    "after_version": 2,
+    "ledger_seq": "DR-herob000001#CAP-9c9c5c431eb243dc",
+    "action": "create_qa_review",
+    "target": "LOT-1003"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000090",
+   "sequence": 90,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.658634+00:00",
+   "payload": {
+    "order_id": "C-418",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000091",
+   "sequence": 91,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.669479+00:00",
+   "payload": {
+    "order_id": "C-419",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000092",
+   "sequence": 92,
+   "event": "QUALITY_DECISION_REQUIRED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:41:51.678578+00:00",
+   "payload": {
+    "reason": "INSUFFICIENT",
+    "lot_id": "LOT-1003"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000093",
+   "sequence": 93,
+   "event": "EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.011222+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "source": "QA-LEAD",
+    "content_type": "text/plain",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+    "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+    "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+    "store_kind": "AWS_S3",
+    "trust_label": "HUMAN_AUTHORIZED",
+    "byte_length": 78
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000094",
+   "sequence": 94,
+   "event": "EVIDENCE_SECURITY_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.299918+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "detection_ran": true,
+    "result": "RECEIVED",
+    "guardrail_outcome": "CLEAN",
+    "guardrail_id": "wok5lemdo1ze",
+    "guardrail_version": "DRAFT",
+    "malware_scan": "NOT_RUN",
+    "prompt_attack_detected": false,
+    "quarantined": false,
+    "binding_mismatches": [],
+    "binding_status": "BOUND",
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "version": "vouch-sec-1"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000095",
+   "sequence": 95,
+   "event": "EVIDENCE_BINDING_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.309538+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "binding_status": "BOUND",
+    "bound": true,
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "identity_stated": true,
+    "reasons": [],
+    "result": "RECEIVED"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000096",
+   "sequence": 96,
+   "event": "EVIDENCE_EXTRACTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.318893+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "method": "DETERMINISTIC_PARSER",
+    "confidence": 1.0,
+    "claim_count": 1,
+    "low_confidence": false,
+    "version": "coa-parser-1",
+    "structured_extraction": false
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000097",
+   "sequence": 97,
+   "event": "HUMAN_EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.328511+00:00",
+   "payload": {
+    "lot_id": "LOT-1003",
+    "authority_source": "QA-LEAD",
+    "document_identity": "QA_RETEST",
+    "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+    "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+    "trust_label": "HUMAN_AUTHORIZED",
+    "claim_ids": [
+     "CLM-8b0313fcb5af-00"
+    ],
+    "binding_status": "BOUND"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000098",
+   "sequence": 98,
+   "event": "DECISION_RESUMED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.336774+00:00",
+   "payload": {
+    "lot_id": "LOT-1003",
+    "run_count": 2,
+    "resumed_run_ids": [
+     "DR-herob000001#run2"
+    ],
+    "trigger": "HUMAN_EVIDENCE",
+    "total_claims": 2
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000099",
+   "sequence": 99,
+   "event": "EVIDENCE_SNAPSHOT_CREATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.366455+00:00",
+   "payload": {
+    "snapshot_id": "SNAP-2da4ae5aed9f",
+    "claim_count": 2,
+    "snapshot_hash": "b4e79e35808e8ad3e4ae9b96b12f799cd1e6ed2bfd33f7ea6853a3beff813df0",
+    "state_versions": {
+     "lot": 2,
+     "C-418": 2,
+     "C-419": 1
+    }
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000100",
+   "sequence": 100,
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.375174+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000101",
+   "sequence": 101,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:37.666655+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000102",
+   "sequence": 102,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:37.675610+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 4.86
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000103",
+   "sequence": 103,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:38.965865+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000104",
+   "sequence": 104,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:38.974621+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000105",
+   "sequence": 105,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:40.107484+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000106",
+   "sequence": 106,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:40.116849+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00",
+     "CLM-8b0313fcb5af-00"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000107",
+   "sequence": 107,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:41.340754+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000108",
+   "sequence": 108,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:41.349884+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 4.68
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000109",
+   "sequence": 109,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:42.640527+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000110",
+   "sequence": 110,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:42.649955+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 4.66
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000111",
+   "sequence": 111,
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:45.101031+00:00",
+   "payload": {
+    "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "SUFFICIENT"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000112",
+   "sequence": 112,
+   "event": "VERIFIER_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:45.112205+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "verifier-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000113",
+   "sequence": 113,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:47.497028+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000114",
+   "sequence": 114,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:47.506329+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000115",
+   "sequence": 115,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:48.967441+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000116",
+   "sequence": 116,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:48.976048+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.04
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000117",
+   "sequence": 117,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:50.243162+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000118",
+   "sequence": 118,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:50.252319+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00",
+     "CLM-8b0313fcb5af-00"
+    ],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000119",
+   "sequence": 119,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.191637+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000120",
+   "sequence": 120,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.203024+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000121",
+   "sequence": 121,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.193248+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000122",
+   "sequence": 122,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.232178+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000123",
+   "sequence": 123,
+   "event": "VERIFIER_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.743591+00:00",
+   "payload": {
+    "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000124",
+   "sequence": 124,
+   "event": "RECONCILIATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.752228+00:00",
+   "payload": {
+    "outcome": "NON_MATERIAL_DIFFERENCE",
+    "differing_fields": []
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000125",
+   "sequence": 125,
+   "event": "DISPOSITION_COMPUTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.763103+00:00",
+   "payload": {
+    "disposition": "RELEASE",
+    "basis": "SPEC-R3:A",
+    "failing_test_count": 0,
+    "missing_test_count": 0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000126",
+   "sequence": 126,
+   "event": "POLICY_EVALUATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.942274+00:00",
+   "payload": {
+    "policy_version": "vouch-policy-2.1",
+    "gate_decision": "ALLOWED",
+    "action": "release_lot"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000127",
+   "sequence": 127,
+   "event": "CAPABILITY_ISSUED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.950988+00:00",
+   "payload": {
+    "capability_id": "CAP-463ad535fb5645bd",
+    "target": "LOT-1003",
+    "action": "release_lot",
+    "expiry": "2026-09-07T22:50:54.934279+00:00"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000128",
+   "sequence": 128,
+   "event": "MUTATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:55.006193+00:00",
+   "payload": {
+    "before_version": 2,
+    "after_version": 3,
+    "ledger_seq": "DR-herob000001#CAP-463ad535fb5645bd",
+    "action": "release_lot",
+    "target": "LOT-1003"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000129",
+   "sequence": 129,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:55.038535+00:00",
+   "payload": {
+    "order_id": "C-418",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000130",
+   "sequence": 130,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:55.046640+00:00",
+   "payload": {
+    "order_id": "C-419",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000131",
+   "sequence": 131,
+   "event": "EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.011222+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "source": "QA-LEAD",
+    "content_type": "text/plain",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+    "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+    "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+    "store_kind": "AWS_S3",
+    "trust_label": "HUMAN_AUTHORIZED",
+    "byte_length": 78
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000132",
+   "sequence": 132,
+   "event": "EVIDENCE_SECURITY_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.299918+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "detection_ran": true,
+    "result": "RECEIVED",
+    "guardrail_outcome": "CLEAN",
+    "guardrail_id": "wok5lemdo1ze",
+    "guardrail_version": "DRAFT",
+    "malware_scan": "NOT_RUN",
+    "prompt_attack_detected": false,
+    "quarantined": false,
+    "binding_mismatches": [],
+    "binding_status": "BOUND",
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "version": "vouch-sec-1"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000133",
+   "sequence": 133,
+   "event": "EVIDENCE_BINDING_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.309538+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "requested_lot": "LOT-1003",
+    "requested_material": "MAT-RESIN-3",
+    "binding_status": "BOUND",
+    "bound": true,
+    "claimed_identity": {
+     "claimed_lot": "LOT-1003",
+     "claimed_material": "",
+     "claimed_supplier": "",
+     "claimed_supplier_site": "",
+     "claimed_lots": [
+      "LOT-1003"
+     ],
+     "claimed_materials": [],
+     "claimed_suppliers": [],
+     "claimed_supplier_sites": []
+    },
+    "identity_stated": true,
+    "reasons": [],
+    "result": "RECEIVED"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000134",
+   "sequence": 134,
+   "event": "EVIDENCE_EXTRACTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.318893+00:00",
+   "payload": {
+    "artifact_id": "ART-8b0313fcb5af",
+    "method": "DETERMINISTIC_PARSER",
+    "confidence": 1.0,
+    "claim_count": 1,
+    "low_confidence": false,
+    "version": "coa-parser-1",
+    "structured_extraction": false
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000135",
+   "sequence": 135,
+   "event": "HUMAN_EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.328511+00:00",
+   "payload": {
+    "lot_id": "LOT-1003",
+    "authority_source": "QA-LEAD",
+    "document_identity": "QA_RETEST",
+    "content_hash": "1b5f5e73fdedecaa7f2246982367023ddfe871ee1501162ae28b09c3039a8989",
+    "storage_ref": "s3://gatehouse-dev-evidence-000000000000-us-east-1/evidence/LOT-1003/ART-8b0313fcb5af",
+    "object_version": "IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu",
+    "trust_label": "HUMAN_AUTHORIZED",
+    "claim_ids": [
+     "CLM-8b0313fcb5af-00"
+    ],
+    "binding_status": "BOUND"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000136",
+   "sequence": 136,
+   "event": "DECISION_RESUMED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.336774+00:00",
+   "payload": {
+    "lot_id": "LOT-1003",
+    "run_count": 2,
+    "resumed_run_ids": [
+     "DR-herob000001#run2"
+    ],
+    "trigger": "HUMAN_EVIDENCE",
+    "total_claims": 2
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000137",
+   "sequence": 137,
+   "event": "EVIDENCE_SNAPSHOT_CREATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.366455+00:00",
+   "payload": {
+    "snapshot_id": "SNAP-2da4ae5aed9f",
+    "claim_count": 2,
+    "snapshot_hash": "b4e79e35808e8ad3e4ae9b96b12f799cd1e6ed2bfd33f7ea6853a3beff813df0",
+    "state_versions": {
+     "lot": 2,
+     "C-418": 2,
+     "C-419": 1
+    }
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000138",
+   "sequence": 138,
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:35.375174+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000139",
+   "sequence": 139,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:37.666655+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000140",
+   "sequence": 140,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:37.675610+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 4.86
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000141",
+   "sequence": 141,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:38.965865+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000142",
+   "sequence": 142,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:38.974621+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000143",
+   "sequence": 143,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:40.107484+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000144",
+   "sequence": 144,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:40.116849+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00",
+     "CLM-8b0313fcb5af-00"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000145",
+   "sequence": 145,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:41.340754+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000146",
+   "sequence": 146,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:41.349884+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 4.68
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000147",
+   "sequence": 147,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:42.640527+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000148",
+   "sequence": 148,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:42.649955+00:00",
+   "payload": {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 4.66
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000149",
+   "sequence": 149,
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:45.101031+00:00",
+   "payload": {
+    "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe",
+    "basis": "SPEC-R3:A",
+    "required_test_count": 1,
+    "sufficiency": "SUFFICIENT"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000150",
+   "sequence": 150,
+   "event": "VERIFIER_STARTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:45.112205+00:00",
+   "payload": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "verifier-v2.2",
+    "temperature": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000151",
+   "sequence": 151,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:47.497028+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000152",
+   "sequence": 152,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:47.506329+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000153",
+   "sequence": 153,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:48.967441+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000154",
+   "sequence": 154,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:48.976048+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.04
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000155",
+   "sequence": 155,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:50.243162+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000156",
+   "sequence": 156,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:50.252319+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-527f6b5f4e9a-00",
+     "CLM-8b0313fcb5af-00"
+    ],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000157",
+   "sequence": 157,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.191637+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000158",
+   "sequence": 158,
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.193248+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000159",
+   "sequence": 159,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.203024+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_applicable_deviations",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000160",
+   "sequence": 160,
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:52.232178+00:00",
+   "payload": {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.02
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000161",
+   "sequence": 161,
+   "event": "VERIFIER_BRIEF_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.743591+00:00",
+   "payload": {
+    "brief_hash": "97bf6cf799c055dfb4ecf99f0f2e0e9e98fd4ee09209d5801d715d3e9a3c68fe"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000162",
+   "sequence": 162,
+   "event": "RECONCILIATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.752228+00:00",
+   "payload": {
+    "outcome": "NON_MATERIAL_DIFFERENCE",
+    "differing_fields": []
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000163",
+   "sequence": 163,
+   "event": "DISPOSITION_COMPUTED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.763103+00:00",
+   "payload": {
+    "disposition": "RELEASE",
+    "basis": "SPEC-R3:A",
+    "failing_test_count": 0,
+    "missing_test_count": 0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000164",
+   "sequence": 164,
+   "event": "POLICY_EVALUATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.942274+00:00",
+   "payload": {
+    "policy_version": "vouch-policy-2.1",
+    "gate_decision": "ALLOWED",
+    "action": "release_lot"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000165",
+   "sequence": 165,
+   "event": "CAPABILITY_ISSUED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:54.950988+00:00",
+   "payload": {
+    "capability_id": "CAP-463ad535fb5645bd",
+    "target": "LOT-1003",
+    "action": "release_lot",
+    "expiry": "2026-09-07T22:50:54.934279+00:00"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000166",
+   "sequence": 166,
+   "event": "MUTATION_COMPLETED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:55.006193+00:00",
+   "payload": {
+    "before_version": 2,
+    "after_version": 3,
+    "ledger_seq": "DR-herob000001#CAP-463ad535fb5645bd",
+    "action": "release_lot",
+    "target": "LOT-1003"
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000167",
+   "sequence": 167,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:55.038535+00:00",
+   "payload": {
+    "order_id": "C-418",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  },
+  {
+   "event_id": "DR-herob000001#000168",
+   "sequence": 168,
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-herob000001",
+   "at": "2026-09-07T22:45:55.046640+00:00",
+   "payload": {
+    "order_id": "C-419",
+    "order_readiness": "READY",
+    "coverage_delta": 0.0
+   }
+  }
+ ],
+ "last_event_sequence": 168
+}

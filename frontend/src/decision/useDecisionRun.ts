@@ -438,7 +438,13 @@ export function useDecisionRun(initialId?: string) {
   );
 
   const start = useCallback(
-    async (input: { lotId: string; document?: string; contentType?: string }) => {
+    async (input: {
+      lotId: string;
+      document?: string;
+      /** Base64 bytes for a binary source document (the canonical COA PDF). */
+      documentB64?: string;
+      contentType?: string;
+    }) => {
       if (liveRef.current) return;
       liveRef.current = true;
       const recordId = decisionRecordId;
@@ -455,6 +461,7 @@ export function useDecisionRun(initialId?: string) {
           lotId: input.lotId,
           decisionRecordId: recordId,
           document: input.document,
+          documentB64: input.documentB64,
           contentType: input.contentType,
         })) as { ok: boolean; error?: string };
 

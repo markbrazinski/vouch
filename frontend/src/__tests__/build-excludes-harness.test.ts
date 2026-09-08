@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -71,8 +72,20 @@ describe('production build excludes the dev fixture harness', () => {
     //
     // What must never be baked in is the OUTCOME: the governing basis Vouch
     // resolved, the disposition it reached, or the consequence it computed.
-    const heroDoc = bundle.indexOf('Certificate of Analysis');
-    expect(heroDoc).toBeGreaterThan(-1);
+    // The COA is no longer inlined as a JS string: Hero A now submits the
+    // CANONICAL tracked PDF, which Vite emits as a separate fingerprinted
+    // asset. So the input is proven by the asset's bytes (below), not by
+    // finding its text in the bundle — a stronger check, because it pins the
+    // exact qualified document rather than a transcription of it.
+    const pdfs = readdirSync(join(DIST, 'assets')).filter((f) => f.endsWith('.pdf'));
+    expect(pdfs.length, 'the canonical COA must ship as an asset').toBe(1);
+    const shipped = createHash('sha256')
+      .update(readFileSync(join(DIST, 'assets', pdfs[0])))
+      .digest('hex');
+    // Frozen in demo/evidence/MANIFEST.md and re-checked by
+    // tests/v2/test_canonical_pdf_assets.py. If this differs, the UI is
+    // submitting bytes that were never qualified.
+    expect(shipped).toBe('4d36065a15b5a60bfd90d8004784c81de24da0b0a6768fdd2caa296b05ca5ac7');
 
     // The resolved basis (revision C) is the Investigator's finding and must
     // come from the backend, never the bundle.

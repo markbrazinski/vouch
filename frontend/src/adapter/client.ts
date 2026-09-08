@@ -158,6 +158,61 @@ export const getSources = (decisionRecordId: string, artifactId?: string) =>
 
 export const getToday = () => request('/today');
 
+/**
+ * Fetch a signed source document as an object URL the page can render.
+ *
+ * S3 refuses to be framed cross-origin — the browser aborts the load silently
+ * and an <iframe src=presigned> shows a blank white box, which is worse than no
+ * preview at all. Fetching the bytes and wrapping them in a same-origin
+ * `blob:` URL sidesteps that without touching the document.
+ *
+ * The presigned URL is used once, here, and never returned to the caller: it is
+ * a bearer credential, and the blob URL that comes back grants no further S3
+ * access. The caller MUST revoke the blob URL when it is done with it.
+ */
+export const fetchSourceObjectUrl = async (
+  decisionRecordId: string,
+  artifactId: string,
+): Promise<{ url: string; contentType: string } | null> => {
+  const body = (await getSources(decisionRecordId, artifactId)) as {
+    sources?: { artifact_id: string; view_ref?: string; view_url?: string }[];
+    artifacts?: { artifact_id: string; view_ref?: string; view_url?: string }[];
+  };
+  const list = body.sources ?? body.artifacts ?? [];
+  const match = list.find((a) => a.artifact_id === artifactId) ?? list[0];
+  const signed = match?.view_ref ?? match?.view_url;
+  if (!signed) return null;
+
+  const response = await fetch(signed);
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  return { url: URL.createObjectURL(blob), contentType: blob.type };
+};
+
+/**
+ * Read a bundled asset as base64.
+ *
+ * The canonical COA is shipped as a build asset rather than inlined, so getting
+ * its bytes needs a fetch — and every fetch in this app belongs here, in the one
+ * sanctioned transport seam, rather than in a component. Same-origin only: the
+ * URL comes from the bundler, never from a server response.
+ *
+ * Chunked because spreading a 160KB byte array into `String.fromCharCode`
+ * overflows the argument limit.
+ */
+export const fetchAssetAsBase64 = async (url: string): Promise<string> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new TransportError('the source document could not be read', response.status);
+  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+};
+
 /** A decision id the caller owns before any work starts. */
 export const newDecisionRecordId = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(6));

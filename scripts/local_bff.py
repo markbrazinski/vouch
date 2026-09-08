@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -50,6 +51,33 @@ import handler as bff  # noqa: E402  — the REAL handler, not a copy
 
 bff.RUNTIME_ARN = os.environ["VOUCH_RUNTIME_ARN"]
 bff.ALLOWED_ORIGIN = os.environ["VOUCH_ALLOWED_ORIGIN"]
+
+
+def _start_background_locally(payload: dict) -> None:
+    """Run the worker in a thread instead of a second Lambda invocation.
+
+    The deployed BFF starts background work with `InvocationType="Event"`
+    against ITSELF, which needs `AWS_LAMBDA_FUNCTION_NAME` and a deployed
+    function. Neither exists here — `gatehouse-dev` holds no `lambda:*` — so
+    `evaluate_lot` would 502 locally with "the decision service could not be
+    started", and no amount of polling would ever produce a decision.
+
+    This is NOT a second implementation of the worker. It calls the SAME
+    `bff.handler` with the SAME worker-shaped event the Lambda would receive, so
+    the validated payload, the runtime invocation and the failure contract are
+    the ones that ship. Only the transport differs: a thread here, an async
+    Lambda invocation in production.
+
+    Local development only. The deployed handler never imports this file.
+    """
+    threading.Thread(
+        target=bff.handler,
+        args=({bff.WORKER_MARKER: True, "payload": payload},),
+        daemon=True,
+    ).start()
+
+
+bff.start_background = _start_background_locally
 
 
 class Proxy(BaseHTTPRequestHandler):

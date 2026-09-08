@@ -52,6 +52,9 @@ function OutcomeSummary({ vm }: { vm: DecisionWorkspaceVM['outcome'] }) {
     <div
       data-testid="outcome-summary"
       style={{
+        // The reveal of a real outcome. `OutcomeSummary` returns null until the
+        // backend has actually produced one, so mounting IS the trigger.
+        animation: 'vFade .4s ease-out both',
         marginTop: 14,
         background: vm.tone === 'released' ? '#EEF2ED' : vm.tone === 'decision' ? '#EAEBF4' : '#FCF6F0',
         border: `1px solid ${tone.br}`,
@@ -107,6 +110,7 @@ function FailureNotice({ vm }: { vm: NonNullable<DecisionWorkspaceVM['failure']>
       data-testid="failure-notice"
       data-failure-kind={vm.kind}
       style={{
+        animation: 'vFade .4s ease-out both',
         marginTop: 14,
         background: technical ? N.fill : '#F3F4F9',
         border: `1px solid ${technical ? 'rgba(0,0,0,.14)' : 'rgba(69,80,140,.24)'}`,
@@ -263,6 +267,7 @@ export function DecisionWorkspace({ vm }: { vm: DecisionWorkspaceVM }) {
               <CaseContextColumn
                 sources={vm.sources}
                 selectedId={selectedId}
+                decisionRecordId={vm.decisionRecordId}
                 truth={vm.truth}
                 pending={vm.sourcesPending}
                 onSelect={setSelected}

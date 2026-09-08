@@ -16,10 +16,12 @@
  * back to the surface the operator was reading rather than to a default.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { HeroAPage, type HeroAEntry } from './HeroAPage';
 import { INK, MONO, N, SANS, HAIR } from './primitives';
+import { getToday, listDecisions } from '../adapter/client';
 import {
+  prefetchSurfaces,
   IncomingSurface,
   RecordSurface,
   RecordsIndexSurface,
@@ -67,6 +69,22 @@ function BackBar({ label, onBack }: { label: string; onBack: () => void }) {
 }
 
 export function HeroAApp({ entry }: { entry: HeroAEntry }) {
+  /**
+   * Warm Today and the decision list together, once, at startup.
+   *
+   * Each authoritative read costs a measured 3.4-4.5s of fixed runtime
+   * overhead, and surfaces mount on demand — so without this the first visit to
+   * each surface pays that serially. Prefetching in parallel overlaps them, and
+   * `useSurfaceData` retains the real response so a revisit renders at once and
+   * revalidates behind. No fixture is involved at any point.
+   */
+  useEffect(() => {
+    prefetchSurfaces([
+      { key: 'today', load: getToday },
+      { key: 'decisions', load: () => listDecisions(50) },
+    ]);
+  }, []);
+
   const [surface, setSurface] = useState<Surface>('incoming');
   const [openRecordId, setOpenRecordId] = useState<string | null>(null);
   const [title, sub] = TITLES[surface];
@@ -214,17 +232,23 @@ export function HeroAApp({ entry }: { entry: HeroAEntry }) {
 
           {surface === 'incoming' && !openRecordId ? (
             <HeroAPage entry={entry} onOpenRecord={setOpenRecordId} />
+          ) : openRecordId ? (
+            /* A stored decision opens the SAME workspace a live run renders,
+               so it must own its scrolling the way the live one does: the
+               workspace scrolls its main column and its activity rail
+               independently, and wrapping it in an outer scroller would leave
+               the rail unable to reach its own overflow. The BackBar is a
+               fixed-height sibling above it rather than content inside it. */
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <BackBar
+                label={`Back to ${TITLES[surface][0]}`}
+                onBack={() => setOpenRecordId(null)}
+              />
+              <RecordSurface decisionRecordId={openRecordId} />
+            </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              {openRecordId ? (
-                <>
-                  <BackBar
-                    label={`Back to ${TITLES[surface][0]}`}
-                    onBack={() => setOpenRecordId(null)}
-                  />
-                  <RecordSurface decisionRecordId={openRecordId} />
-                </>
-              ) : surface === 'today' ? (
+              {surface === 'today' ? (
                 <TodaySurface onOpenDecision={openOrder} />
               ) : surface === 'incoming' ? (
                 <IncomingSurface onOpen={setOpenRecordId} />

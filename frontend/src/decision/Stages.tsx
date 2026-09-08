@@ -68,6 +68,11 @@ export function StageCard({
         </div>
       )}
       <div
+        // Keyed on the stage so React REMOUNTS when the active stage changes.
+        // That remount is what re-runs `vFade` — the animation therefore fires
+        // on a real projection change and not on the 900ms poll that leaves the
+        // stage where it was.
+        key={stageKey}
         data-testid={`stage-${stageKey}`}
         data-active={active}
         style={{
@@ -76,6 +81,7 @@ export function StageCard({
           background: active ? accentBg ?? N.card : N.recessed,
           overflow: 'hidden',
           boxShadow: active ? '0 1px 6px rgba(33,31,27,.05)' : undefined,
+          animation: active ? 'vFade .34s ease-out both' : undefined,
         }}
       >
         <div
@@ -503,7 +509,7 @@ export function ConsequenceStage({
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        {vm.readinessChanges.map((c) => (
+        {vm.readinessChanges.map((c, i) => (
           <div
             key={c.orderId}
             style={{
@@ -513,6 +519,10 @@ export function ConsequenceStage({
               border: `1px solid ${c.to === 'BLOCKED' ? 'rgba(142,43,36,.28)' : 'rgba(62,107,84,.28)'}`,
               borderRadius: 10,
               padding: '13px 16px',
+              // Authoritative consequence arriving. Staggered so READY→BLOCKED
+              // reads as a consequence of the disposition above it, not as a
+              // panel that was always there.
+              animation: `vFade .34s ease-out ${i * 90}ms both`,
             }}
           >
             <div style={{ font: `600 9.5px ${MONO}`, letterSpacing: '.07em', color: INK.label }}>
@@ -569,11 +579,19 @@ export function ConsequenceStage({
             RECOVERY EVALUATED BEFORE THE PLAN MOVED
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            {vm.candidates.map((c) => (
+            {vm.candidates.map((c, i) => (
               <div
                 key={c.candidateId}
                 data-testid={`recovery-${c.candidateId}`}
                 style={{
+                  // Each candidate appears in the order it was evaluated. The
+                  // REFUSED one additionally gets the approved single-shot
+                  // emphasis: a refusal is the point of the stage, and `vPop`
+                  // runs once rather than looping.
+                  animation:
+                    c.verdict === 'REFUSED'
+                      ? `vFade .34s ease-out ${140 + i * 90}ms both, vPop .5s ease-out ${420 + i * 90}ms both`
+                      : `vFade .34s ease-out ${140 + i * 90}ms both`,
                   background:
                     c.verdict === 'ELIGIBLE'
                       ? '#EEF2ED'
@@ -675,6 +693,10 @@ export function CompletedStageStack({
               borderRadius: 13,
               background: N.recessed,
               overflow: 'hidden',
+              // Fires when a stage first joins the completed stack — a real
+              // lifecycle transition. Existing rows keep their identity through
+              // the stable key, so they do not replay it.
+              animation: 'vFade .3s ease-out both',
             }}
           >
             <button

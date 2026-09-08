@@ -8,6 +8,8 @@
  * `holdTruth` is null for most of a run.
  */
 
+import { useCallback, useEffect, useState } from 'react';
+import * as api from '../adapter/client';
 import { Eyebrow, Field, GhostButton, INK, MONO, N, Panel, Pill, SANS, HAIR } from './primitives';
 import type { EstablishedTruthVM, SourceArtifactVM } from './model';
 
@@ -19,14 +21,113 @@ const TRUST_COPY: Record<SourceArtifactVM['trustClass'], { label: string; color:
 };
 
 /**
- * A miniature of the document, with the bound value called out in rust.
+ * The real first page of the real document.
+ *
+ * `view_ref` is a short-lived presigned URL and a bearer credential, so it is
+ * fetched here the same way the full viewer fetches it — on demand, held in a
+ * ref, never in state, never logged, never persisted — and dropped when the
+ * component unmounts. It is rendered in a sandboxed <iframe> with the PDF
+ * viewer's own chrome suppressed, so what an operator sees is the actual
+ * version-pinned bytes rather than a drawing of them.
+ *
+ * Cross-origin S3 will not always render inline (a Content-Disposition or a
+ * blocked frame ancestor both defeat it), and that failure is silent. So the
+ * frame is given a bounded window to report load; if it does not, the component
+ * falls back to the schematic below rather than showing an empty white box.
+ * `pointer-events: none` keeps the preview a preview — opening the document is
+ * the "Open source" affordance's job, and the credential is not reusable.
+ */
+function RealDocumentPreview({
+  artifactId,
+  decisionRecordId,
+  onReady,
+  onFail,
+}: {
+  artifactId: string;
+  decisionRecordId: string;
+  /** The bytes are in hand and framed; the schematic can stand down. */
+  onReady: () => void;
+  onFail: () => void;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    let created: string | null = null;
+    void (async () => {
+      try {
+        const found = await api.fetchSourceObjectUrl(decisionRecordId, artifactId);
+        if (!live) {
+          if (found) URL.revokeObjectURL(found.url);
+          return;
+        }
+        if (!found) {
+          onFail();
+          return;
+        }
+        created = found.url;
+        setObjectUrl(found.url);
+        onReady();
+      } catch {
+        if (live) onFail();
+      }
+    })();
+    return () => {
+      live = false;
+      // The blob is released with the component. Holding it would keep the
+      // document's bytes alive in the tab for as long as the session lasts.
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [artifactId, decisionRecordId, onReady, onFail]);
+
+  if (!objectUrl) return null;
+
+  return (
+    <div
+      data-testid="source-preview-real"
+      style={{
+        marginTop: 10,
+        height: 132,
+        background: '#fff',
+        border: '1px solid rgba(0,0,0,.14)',
+        borderRadius: 4,
+        boxShadow: '0 1px 4px rgba(0,0,0,.08)',
+        overflow: 'hidden',
+        position: 'relative',
+        animation: 'vFade .3s ease-out both',
+      }}
+    >
+      <iframe
+        src={`${objectUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
+        title="Source document preview"
+        tabIndex={-1}
+        onError={onFail}
+        style={{
+          // 161% wide, scaled to 62%: the first page fills the panel's width
+          // instead of rendering as unreadable body text in a narrow column.
+          width: '161%',
+          height: 420,
+          border: 'none',
+          transform: 'scale(.62)',
+          transformOrigin: 'top left',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The fallback miniature, used ONLY when no real source can be previewed.
  *
  * Not decorative: it is the cue that a specific number in a specific document
  * is what the decision turned on. The highlighted bar sits where that value is.
+ * Whenever the actual bytes can be shown, they are shown instead.
  */
 function DocumentThumbnail({ fact }: { fact: string | null }) {
   return (
     <div
+      data-testid="source-preview-schematic"
       style={{
         marginTop: 10,
         background: '#fff',
@@ -65,11 +166,14 @@ export function CaseContextColumn({
   selectedId,
   truth,
   pending = false,
+  decisionRecordId,
   onSelect,
   onOpenSource,
 }: {
   sources: SourceArtifactVM[];
   selectedId: string | null;
+  /** Needed to sign a short-lived `view_ref` for the real preview. */
+  decisionRecordId?: string;
   truth: EstablishedTruthVM;
   /**
    * An artifact is known to exist but has not arrived yet. Distinguishes
@@ -97,6 +201,33 @@ export function CaseContextColumn({
     selected?.claims.find((c) => c.value)?.value ??
     (selected?.securityState === 'quarantined' ? '⊘ hold' : null);
 
+  /**
+   * Whether the real bytes can be shown for the CURRENT artifact.
+   *
+   * Keyed by artifact id so switching sources re-attempts the real preview
+   * rather than inheriting a previous artifact's failure.
+   */
+  const [previewFailed, setPreviewFailed] = useState<string | null>(null);
+  const [readyFor, setReadyFor] = useState<string | null>(null);
+  const onPreviewFail = useCallback(
+    () => setPreviewFailed(selected?.artifactId ?? null),
+    [selected?.artifactId],
+  );
+  const onPreviewReady = useCallback(
+    () => setReadyFor(selected?.artifactId ?? null),
+    [selected?.artifactId],
+  );
+  const previewReady = !!selected && readyFor === selected.artifactId;
+  // A quarantined artifact is deliberately never previewed: its bytes were
+  // excluded from the decision, and rendering them beside the case would
+  // present withheld material as though it had been read.
+  const canPreviewReal =
+    !!selected &&
+    selected.openable &&
+    selected.securityState !== 'quarantined' &&
+    previewFailed !== selected.artifactId &&
+    !!decisionRecordId;
+
   return (
     <div style={{ position: 'sticky', top: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Panel>
@@ -104,7 +235,21 @@ export function CaseContextColumn({
 
         {selected ? (
           <>
-            <DocumentThumbnail fact={keyFact} />
+            {/* The real bytes when they can be shown, the schematic when they
+                cannot. The schematic also holds the space WHILE the real
+                preview loads, so the panel is never empty and never a blank
+                white rectangle — which is what an unframeable cross-origin PDF
+                produces, and which reads as a broken document rather than as a
+                document that could not be previewed. */}
+            {canPreviewReal && (
+              <RealDocumentPreview
+                artifactId={selected.artifactId}
+                decisionRecordId={decisionRecordId!}
+                onReady={onPreviewReady}
+                onFail={onPreviewFail}
+              />
+            )}
+            {!previewReady && <DocumentThumbnail fact={keyFact} />}
             <div style={{ font: `600 12.5px ${SANS}`, color: INK.primary, marginTop: 11 }}>
               {selected.displayName}
             </div>

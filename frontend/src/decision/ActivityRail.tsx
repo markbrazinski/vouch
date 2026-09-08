@@ -8,7 +8,7 @@
  * all, because the backend rejects payload keys that would carry them.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ACTOR_COLOR, INK, MONO, N, SANS } from './primitives';
 import type { ActivityEventVM } from './model';
 
@@ -19,7 +19,20 @@ const RESULT_COLOR: Record<NonNullable<ActivityEventVM['resultStatus']>, string>
   bad: '#8E2B24',
 };
 
-function EventRow({ event, newest }: { event: ActivityEventVM; newest: boolean }) {
+function EventRow({
+  event,
+  newest,
+  entering,
+}: {
+  event: ActivityEventVM;
+  newest: boolean;
+  /**
+   * True only for a row that arrived on THIS projection change. The rail
+   * re-renders on every 900ms poll, so animating on presence would replay the
+   * entrance for every row, forever. See `seenRef` in ActivityRail.
+   */
+  entering: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const color = ACTOR_COLOR[event.actorType] ?? INK.muted;
 
@@ -34,6 +47,9 @@ function EventRow({ event, newest }: { event: ActivityEventVM; newest: boolean }
         padding: '8px',
         borderRadius: 8,
         background: newest ? N.newest : 'transparent',
+        // The approved entrance for a real lifecycle event. Bound to arrival,
+        // never to a timer: the backend event IS the trigger.
+        animation: entering ? 'vSlide .32s cubic-bezier(.2,.7,.2,1) both' : undefined,
       }}
     >
       <div style={{ flex: 'none', width: 3, borderRadius: 3, background: color }} />
@@ -111,6 +127,22 @@ export function ActivityRail({
   events: ActivityEventVM[];
   live: boolean;
 }) {
+  /**
+   * Every event id that has already been rendered once.
+   *
+   * The rail re-renders on every 900ms poll tick. Without this, `vSlide` would
+   * be re-applied to every row on every tick and the whole rail would slide in
+   * repeatedly for the length of the run. Recording ids in an effect (after
+   * paint) means a row's FIRST render sees itself as new and animates, and its
+   * every later render does not.
+   *
+   * A ref, not state: writing it must not itself schedule a render.
+   */
+  const seenRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const e of events) seenRef.current.add(e.eventId);
+  }, [events]);
+
   return (
     <div
       style={{
@@ -135,12 +167,16 @@ export function ActivityRail({
         }}
       >
         <span
+          data-testid="rail-live-dot"
           style={{
             width: 6,
             height: 6,
             borderRadius: '50%',
             background: live ? '#3E6B54' : '#B7B0A2',
             flex: 'none',
+            // The one place a pulse is approved: it means "a real evaluation is
+            // running right now", and it stops when the backend stops.
+            animation: live ? 'vp 1.6s ease-in-out infinite' : undefined,
           }}
         />
         <div style={{ font: `800 12px ${SANS}`, color: INK.primary }}>Activity</div>
@@ -158,7 +194,12 @@ export function ActivityRail({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {events.map((e, i) => (
-              <EventRow key={e.eventId} event={e} newest={i === 0} />
+              <EventRow
+                key={e.eventId}
+                event={e}
+                newest={i === 0}
+                entering={!seenRef.current.has(e.eventId)}
+              />
             ))}
           </div>
         )}

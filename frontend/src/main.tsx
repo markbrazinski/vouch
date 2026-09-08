@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import './app/global.css';
 import { HeroAApp } from './decision/HeroAApp';
 import type { HeroAEntry } from './decision/HeroAPage';
+// Vite emits this as a fingerprinted asset URL. The file is a symlink to the
+// canonical tracked evidence, so the build cannot ship different bytes.
+import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -14,24 +17,32 @@ const root = createRoot(document.getElementById('root')!);
  * the disposition, the governing basis and every consequence come from the
  * backend as the decision runs.
  *
- * The document is the supplier's COA verbatim. It declares CONFORMS and cites
- * revision B; whether that revision still governs is exactly the question the
- * Investigator and Verifier answer, and neither this file nor any other part
- * of the frontend presumes the answer.
+ * The document is the CANONICAL tracked asset, not a transcription of it.
+ * `demo/evidence/eastern-metals-coa-lot-1002.pdf` is the exact PDF qualified by
+ * the canonical PDF gate (SHA-256 4d36065a15b5…, frozen in
+ * `demo/evidence/MANIFEST.md` and re-checked by
+ * `tests/v2/test_canonical_pdf_assets.py`). `src/evidence/` symlinks it rather
+ * than copying it, so the bytes the UI submits cannot drift from the bytes that
+ * were qualified.
+ *
+ * It is imported as a Vite URL asset: the bundler fingerprints and emits it, so
+ * there is no developer absolute path and the production build carries the file
+ * it references. The bytes are fetched and base64-encoded at click time and
+ * handed to the SAME `evaluate_lot` ingestion path a text document uses — the
+ * backend already accepts `document_b64` + `content_type`, so this adds no
+ * PDF-specific decision path.
+ *
+ * The certificate declares CONFORMS and cites revision B; whether that revision
+ * still governs is exactly the question the Investigator and Verifier answer,
+ * and neither this file nor any other part of the frontend presumes the answer.
  */
 const HERO_A: HeroAEntry = {
   lotId: 'LOT-1002',
   material: 'MAT-ALLOY-7',
   receiptMeta: 'SUP-EAST · site SITE-E1 · 400 kg',
-  contentType: 'text/plain',
-  document: [
-    'Certificate of Analysis - Lot LOT-1002',
-    'Specification SPEC-A7 Revision B',
-    'tensile_strength: 462 MPa (ASTM-E8, room_temp)',
-    'hardness: 30 HRC (HRC, as_received)',
-    'Result: CONFORMS to the referenced specification.',
-    '',
-  ].join('\n'),
+  contentType: 'application/pdf',
+  documentUrl: HERO_A_COA,
+  documentName: 'eastern-metals-coa-lot-1002.pdf',
 };
 
 // The dev fixture harness is referenced only inside this `import.meta.env.DEV`

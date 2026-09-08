@@ -29,6 +29,45 @@ export interface SurfaceData<T> {
 /** Distinguishes one hook instance's request from another's. */
 let instances = 0;
 
+/**
+ * The last authoritative response for a read model, kept for the session.
+ *
+ * Measured: each authoritative read costs 3.4-4.5s with NO warm-up decay, so it
+ * is fixed runtime overhead rather than a cold start. Surfaces mount on demand,
+ * so navigating Today -> Incoming -> Today paid that cost again every time and
+ * left the product looking empty for seconds.
+ *
+ * This retains the last response and serves it immediately on a revisit, then
+ * revalidates in the background and swaps in the newer answer. It is a cache of
+ * REAL authoritative responses only — a fixture is never stored here and never
+ * served. An entry exists only because the backend actually returned it.
+ */
+const lastGood = new Map<string, VouchEnvelope>();
+
+/**
+ * Warm the read models the opening frame needs, in PARALLEL.
+ *
+ * Called once at startup. Today and Incoming are the two surfaces an operator
+ * reaches first, and fetching them concurrently turns two serial 4s waits into
+ * one. Failures are ignored on purpose: this is an optimisation, and every
+ * surface still performs its own authoritative read and renders its own
+ * loading, blocked and failure states.
+ */
+export function prefetchSurfaces(
+  loaders: { key: string; load: () => Promise<VouchEnvelope> }[],
+): void {
+  for (const { key, load } of loaders) {
+    if (lastGood.has(key)) continue;
+    void load()
+      .then((envelope) => {
+        if (envelope.ok !== false) lastGood.set(key, envelope);
+      })
+      .catch(() => {
+        /* An unavailable prefetch is not a surface state. The surface will ask. */
+      });
+  }
+}
+
 /** Read failures that mean "this deployment cannot answer", not "it broke". */
 const CAPABILITY_GAPS = new Set(['PERSISTENCE_FAILURE']);
 
@@ -49,6 +88,12 @@ export function useSurfaceData<T>(
   load: () => Promise<VouchEnvelope>,
   project: (envelope: VouchEnvelope) => T,
   deps: unknown[] = [],
+  /**
+   * Opt in to retain-and-revalidate for this read model. Only stable, shared
+   * read models pass one; a per-decision read does not, because there is
+   * nothing to revisit.
+   */
+  cacheKey?: string,
 ): SurfaceData<T> {
   /**
    * `load` and `project` are fresh closures on every render, and `deps` is a
@@ -71,11 +116,22 @@ export function useSurfaceData<T>(
    */
   const instance = useRef(`${++instances}`);
   const key = `${instance.current}:${JSON.stringify(deps)}`;
-  const [state, setState] = useState<{ status: SurfaceStatus; data: T | null; detail: string }>({
-    status: 'loading',
-    data: null,
-    detail: '',
-  });
+  const [state, setState] = useState<{ status: SurfaceStatus; data: T | null; detail: string }>(
+    () => {
+      // A retained authoritative response renders immediately, so a revisit is
+      // not a blank panel for four seconds. The effect below still re-reads and
+      // replaces it, so what is shown converges on current truth.
+      const cached = cacheKey ? lastGood.get(cacheKey) : undefined;
+      if (cached) {
+        try {
+          return { status: 'ready' as SurfaceStatus, data: project(cached), detail: '' };
+        } catch {
+          /* A retained response that no longer projects is simply not used. */
+        }
+      }
+      return { status: 'loading' as SurfaceStatus, data: null, detail: '' };
+    },
+  );
   const [nonce, setNonce] = useState(0);
 
   /**
@@ -96,14 +152,47 @@ export function useSurfaceData<T>(
    * writes the result. A different key starts a genuinely new request, and a
    * response whose key is no longer current is still discarded.
    */
-  const inflight = useRef<{ key: string; promise: Promise<VouchEnvelope> } | null>(null);
+  const inflight = useRef<{
+    key: string;
+    promise: Promise<VouchEnvelope>;
+    settled: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading', data: null, detail: '' });
+    // Revalidating behind a retained answer must not blank the surface; only a
+    // surface with nothing to show goes to `loading`.
+    setState((prev) =>
+      prev.status === 'ready' && prev.data !== null
+        ? prev
+        : { status: 'loading', data: null, detail: '' },
+    );
 
-    if (!inflight.current || inflight.current.key !== key) {
-      inflight.current = { key, promise: fns.current.load() };
+    // A settled request is NOT reusable.
+    //
+    // The in-flight promise exists to collapse StrictMode's mount/cleanup/
+    // remount into one fetch. But it is a ref, so it also survives a real
+    // unmount — and reusing an ALREADY-SETTLED promise means a surface revisited
+    // later re-displays the response from the first visit and never asks again.
+    // With retain-and-revalidate on top, that showed a stale decision list
+    // indefinitely: new runs were missing from Records.
+    //
+    // So sharing is limited to a request that has not settled yet. Once it has,
+    // the next mount starts a genuine new read, which is what "revalidate"
+    // means.
+    if (!inflight.current || inflight.current.key !== key || inflight.current.settled) {
+      const entry: { key: string; promise: Promise<VouchEnvelope>; settled: boolean } = {
+        key,
+        promise: fns.current.load(),
+        settled: false,
+      };
+      // `.then(on, on)` rather than `.finally`: finally re-throws, which would
+      // surface a handled load failure as an unhandled rejection.
+      const markSettled = () => {
+        entry.settled = true;
+      };
+      void entry.promise.then(markSettled, markSettled);
+      inflight.current = entry;
     }
     const mine = inflight.current;
 
@@ -111,6 +200,7 @@ export function useSurfaceData<T>(
       .then((envelope) => {
         if (cancelled || inflight.current !== mine) return;
         const { status, detail } = classifyRead(envelope);
+        if (cacheKey && status === 'ready') lastGood.set(cacheKey, envelope);
         setState({
           status,
           // A non-ok envelope yields no data. `toIncoming` on a failure would
@@ -125,8 +215,12 @@ export function useSurfaceData<T>(
         setState({
           status: 'failed',
           data: null,
+          // A projection that refuses to build (an incomplete chronology, say)
+          // carries its own reason, and it is not "unreachable" — the request
+          // succeeded and the answer was unusable. Saying the wrong one sends
+          // an operator to look at the network.
           detail:
-            error instanceof TransportError
+            error instanceof TransportError || error instanceof Error
               ? error.message
               : 'the decision service could not be reached',
         });

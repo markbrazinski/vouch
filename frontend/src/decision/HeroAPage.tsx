@@ -20,6 +20,7 @@
 import { useMemo, useState } from 'react';
 import { DecisionWorkspace } from './DecisionWorkspace';
 import { project } from './adapter';
+import { fetchAssetAsBase64 } from '../adapter/client';
 import { useDecisionRun } from './useDecisionRun';
 import { INK, MONO, N, Pill, HAIR } from './primitives';
 import { IncomingSurface } from '../features/Surfaces';
@@ -28,7 +29,15 @@ export interface HeroAEntry {
   lotId: string;
   material?: string;
   receiptMeta?: string;
+  /** Inline text evidence. Mutually exclusive with `documentUrl`. */
   document?: string;
+  /**
+   * A bundled binary source document (the canonical COA PDF). Fetched and
+   * base64-encoded at click time and submitted through the same `evaluate_lot`
+   * ingestion path text evidence uses.
+   */
+  documentUrl?: string;
+  documentName?: string;
   contentType?: string;
 }
 
@@ -96,11 +105,20 @@ export function HeroAPage({
             data-testid="incoming-row"
             onClick={() => {
               setStarted(true);
-              void run.start({
-                lotId: entry.lotId,
-                document: entry.document,
-                contentType: entry.contentType,
-              });
+              void (async () => {
+                // The bundled PDF is read here, at the moment the operator opens
+                // the arrival — not at module load, so a document that cannot be
+                // read fails the run that needed it rather than the whole app.
+                const documentB64 = entry.documentUrl
+                  ? await fetchAssetAsBase64(entry.documentUrl)
+                  : undefined;
+                await run.start({
+                  lotId: entry.lotId,
+                  document: entry.document,
+                  documentB64,
+                  contentType: entry.contentType,
+                });
+              })();
             }}
             style={{
               display: 'flex',

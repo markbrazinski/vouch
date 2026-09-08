@@ -256,12 +256,19 @@ describe('the product surface carries no demo apparatus', () => {
     }
   });
 
-  it('no generated PDF fixture ships yet', () => {
-    // The synthetic supplier PDFs belong to the next gate. Nothing in the
-    // product may reference one before they exist and are qualified.
+  it('references only the CANONICAL qualified supplier PDF', () => {
+    // This guard originally banned every PDF reference, because the synthetic
+    // supplier documents did not exist yet. They exist now, are hash-frozen in
+    // demo/evidence/MANIFEST.md and are qualified by
+    // tests/v2/test_canonical_pdf_assets.py, so the rule becomes the stricter
+    // one it was always standing in for: the product may reference the
+    // canonical assets and nothing else. An ad-hoc or generated PDF still fails.
+    const CANONICAL = /eastern-metals-coa-lot-1002\.pdf/;
     for (const f of productFiles) {
       const src = readFileSync(f, 'utf8');
-      expect(src, f).not.toMatch(/\.pdf['"\)]/);
+      for (const match of src.match(/[\w./-]+\.pdf/g) ?? []) {
+        expect(match, `${f} references a non-canonical PDF`).toMatch(CANONICAL);
+      }
     }
   });
 

@@ -6,7 +6,8 @@
  * substitutes fixture content for an answer it did not get.
  */
 
-import { getToday, listDecisions, getDecision } from '../adapter/client';
+import { getToday, listDecisions, getDecision, getEvents } from '../adapter/client';
+export { prefetchSurfaces } from './useSurfaceData';
 import { SurfaceState, TechnicalFailure } from '../components/SurfaceState';
 import { useSurfaceData } from './useSurfaceData';
 import { toToday } from './today/model';
@@ -15,8 +16,9 @@ import { toIncoming } from './incoming/model';
 import { IncomingUnavailable, LiveIncomingPage } from './incoming/LiveIncomingPage';
 import { toSuppliers } from './suppliers/model';
 import { LiveSuppliersPage } from './suppliers/LiveSuppliersPage';
-import { toDecisionRecord } from './records/model';
-import { LiveRecordsPage } from './records/LiveRecordsPage';
+import { DecisionWorkspace } from '../decision/DecisionWorkspace';
+import { projectStoredDecision } from '../decision/fromRecord';
+import type { LifecycleEventDTO, SourceArtifactDTO } from '../decision/dto';
 import type { TodayDTO } from '../decision/dto';
 import type { ListDecisionsDTO } from './incoming/model';
 
@@ -25,7 +27,12 @@ const Loading = ({ what }: { what: string }) => (
 );
 
 export function TodaySurface({ onOpenDecision }: { onOpenDecision?: (orderId: string) => void }) {
-  const { status, data, detail } = useSurfaceData(getToday, (e) => toToday(e as TodayDTO));
+  const { status, data, detail } = useSurfaceData(
+    getToday,
+    (e) => toToday(e as TodayDTO),
+    [],
+    'today',
+  );
 
   if (status === 'loading') return <Loading what="the production plan" />;
   if (status === 'blocked')
@@ -52,6 +59,8 @@ export function IncomingSurface({ onOpen }: { onOpen?: (decisionRecordId: string
   const { status, data, detail } = useSurfaceData(
     () => listDecisions(50),
     (e) => toIncoming(e as ListDecisionsDTO),
+    [],
+    'decisions',
   );
 
   if (status === 'loading') return <Loading what="today’s arrivals" />;
@@ -65,6 +74,8 @@ export function SuppliersSurface({ onOpen }: { onOpen?: (decisionRecordId: strin
   const { status, data, detail } = useSurfaceData(
     () => listDecisions(50),
     (e) => toSuppliers(toIncoming(e as ListDecisionsDTO).rows),
+    [],
+    'decisions',
   );
 
   if (status === 'loading') return <Loading what="supplier context" />;
@@ -83,20 +94,45 @@ export function SuppliersSurface({ onOpen }: { onOpen?: (decisionRecordId: strin
   return <LiveSuppliersPage vm={data} onOpen={onOpen} />;
 }
 
-export function RecordSurface({
-  decisionRecordId,
-  onOpenSource,
-}: {
-  decisionRecordId: string;
-  onOpenSource?: (artifactId: string) => void;
-}) {
+/**
+ * One settled decision, in the SAME workspace a live run renders.
+ *
+ * Two reads, because they carry different things and only one of them is
+ * authoritative for the chronology:
+ *
+ *   get_decision -> the settled record, its sources, archived run summaries
+ *   get_events   -> the complete lifecycle history
+ *
+ * `record.events` is deliberately NOT used. It is a last-run-only summary that
+ * drops the events `project()` needs to see an unsettled outcome, and on a
+ * multi-run decision it projects "Released into usable inventory" over a
+ * decision that is actually awaiting a quality decision. `fromRecord` strips it
+ * structurally; see `stored-decision.test.ts`.
+ *
+ * When the chronology cannot be read this renders an unavailable state. It
+ * never infers a history from the record — a workspace drawn on a partial
+ * history would state an outcome no complete evidence supports.
+ */
+export function RecordSurface({ decisionRecordId }: { decisionRecordId: string }) {
   const { status, data, detail } = useSurfaceData(
-    () => getDecision(decisionRecordId),
-    (e) => {
-      const record = (e.record ?? e.decision_record ?? {}) as Record<string, unknown>;
-      const sources = Array.isArray(e.sources) ? (e.sources as unknown[]) : [];
-      return toDecisionRecord(record, sources);
+    async () => {
+      const [record, events] = await Promise.all([
+        getDecision(decisionRecordId),
+        getEvents(decisionRecordId, 0, 1000),
+      ]);
+      // Either read failing means the decision cannot be shown truthfully, so
+      // the non-ok envelope is surfaced rather than half a workspace.
+      if (record.ok === false) return record;
+      if (events.ok === false) return events;
+      return { ...record, events: events.events };
     },
+    (e) =>
+      projectStoredDecision({
+        decisionRecordId,
+        record: (e.record ?? e.decision_record ?? {}) as Record<string, unknown>,
+        sources: (Array.isArray(e.sources) ? e.sources : []) as SourceArtifactDTO[],
+        events: (Array.isArray(e.events) ? e.events : []) as LifecycleEventDTO[],
+      }),
     [decisionRecordId],
   );
 
@@ -111,7 +147,7 @@ export function RecordSurface({
     );
   if (status === 'failed' || !data)
     return <TechnicalFailure what="The decision record" detail={detail} />;
-  return <LiveRecordsPage vm={data} onOpenSource={onOpenSource} />;
+  return <DecisionWorkspace vm={data} />;
 }
 
 /**
@@ -125,6 +161,8 @@ export function RecordsIndexSurface({ onOpen }: { onOpen?: (id: string) => void 
   const { status, data, detail } = useSurfaceData(
     () => listDecisions(50),
     (e) => toIncoming(e as ListDecisionsDTO),
+    [],
+    'decisions',
   );
 
   if (status === 'loading') return <Loading what="the decision ledger" />;
