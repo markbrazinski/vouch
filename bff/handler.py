@@ -290,6 +290,27 @@ def _failure(status: int, reason: str, failure_class: str) -> dict:
     return _respond(status, {"ok": False, "error": reason, "failure_class": failure_class})
 
 
+#: One session id reused by every READ.
+#:
+#: AgentCore gives each `runtimeSessionId` its own execution environment and
+#: cold-starts it on first use. Measured against the deployed runtime: a fresh
+#: session costs ~3.3s, a reused one ~0.2s — the same work, 20x apart. Minting a
+#: new id per request, as this did, meant every read paid a cold start and the
+#: product looked empty for four seconds on every navigation.
+#:
+#: Reads are safe to share: `list_decisions`, `get_decision`, `get_events`,
+#: `get_source` and `get_today` are pure queries against DynamoDB and S3, they
+#: hold no per-caller state, and the runtime keeps no cross-invocation memory
+#: (AGENTS.md §3: authoritative truth lives in application state, never in agent
+#: memory). WRITES deliberately keep a fresh session each — an evaluation is a
+#: long-running unit of work, and isolating it keeps one decision's execution
+#: from sharing an environment with another's.
+#:
+#: Process-lifetime, not persisted. A new Lambda instance or a restarted local
+#: BFF simply pays one cold start and is warm thereafter.
+READ_SESSION = uuid.uuid4().hex + uuid.uuid4().hex
+
+
 def invoke_runtime(payload: dict, session_id: str | None = None) -> dict:
     """Sign and forward. The only place AWS is touched."""
     if not RUNTIME_ARN:
@@ -401,7 +422,8 @@ def handler(event, context=None):  # noqa: ARG001
         return _respond(202, {"ok": True, "action": action, "decision_record_id": record_id, "status": "STARTED"})
 
     try:
-        result = invoke_runtime(payload)
+        # Reads share one warm session; see READ_SESSION.
+        result = invoke_runtime(payload, session_id=READ_SESSION)
     except Exception as exc:  # noqa: BLE001
         # A transport failure is NOT a business outcome. It carries no
         # disposition, and the type name is logged rather than the message,

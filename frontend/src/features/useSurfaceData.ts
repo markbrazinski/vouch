@@ -44,30 +44,6 @@ let instances = 0;
  */
 const lastGood = new Map<string, VouchEnvelope>();
 
-/**
- * Warm the read models the opening frame needs, in PARALLEL.
- *
- * Called once at startup. Today and Incoming are the two surfaces an operator
- * reaches first, and fetching them concurrently turns two serial 4s waits into
- * one. Failures are ignored on purpose: this is an optimisation, and every
- * surface still performs its own authoritative read and renders its own
- * loading, blocked and failure states.
- */
-export function prefetchSurfaces(
-  loaders: { key: string; load: () => Promise<VouchEnvelope> }[],
-): void {
-  for (const { key, load } of loaders) {
-    if (lastGood.has(key)) continue;
-    void load()
-      .then((envelope) => {
-        if (envelope.ok !== false) lastGood.set(key, envelope);
-      })
-      .catch(() => {
-        /* An unavailable prefetch is not a surface state. The surface will ask. */
-      });
-  }
-}
-
 /** Read failures that mean "this deployment cannot answer", not "it broke". */
 const CAPABILITY_GAPS = new Set(['PERSISTENCE_FAILURE']);
 
@@ -83,6 +59,50 @@ export function classifyRead(envelope: VouchEnvelope): {
     detail,
   };
 }
+
+/**
+ * Warm the read models the opening frame needs.
+ *
+ * This exists to overlap the FIRST read's cost, not to duplicate work. Each
+ * loader is registered as the in-flight request for its cache key, so a surface
+ * mounting a moment later ATTACHES to the prefetch instead of issuing a second
+ * identical read.
+ *
+ * That attachment is the whole point. Firing prefetches alongside each
+ * surface's own read sent five concurrent requests on first paint; they queued
+ * behind one another server-side and the last one settled at ~14s — slower than
+ * doing nothing. One request per read model, shared.
+ *
+ * Failures are ignored: this is an optimisation, and every surface still
+ * classifies and renders its own loading, blocked and failure states.
+ */
+export function prefetchSurfaces(
+  loaders: { key: string; load: () => Promise<VouchEnvelope> }[],
+): void {
+  for (const { key, load } of loaders) {
+    if (lastGood.has(key) || shared.has(key)) continue;
+    const promise = load();
+    shared.set(key, promise);
+    void promise.then(
+      (envelope) => {
+        if (envelope.ok !== false) lastGood.set(key, envelope);
+      },
+      () => {
+        /* An unavailable prefetch is not a surface state. The surface asks. */
+      },
+    );
+  }
+}
+
+/**
+ * In-flight reads by cache key, shared across components.
+ *
+ * A surface that mounts while a read for its key is already running joins it
+ * rather than starting a second. Entries are removed once settled, so the next
+ * mount performs a genuine new read — this collapses concurrent duplicates, it
+ * does not cache.
+ */
+const shared = new Map<string, Promise<VouchEnvelope>>();
 
 export function useSurfaceData<T>(
   load: () => Promise<VouchEnvelope>,
@@ -181,15 +201,22 @@ export function useSurfaceData<T>(
     // the next mount starts a genuine new read, which is what "revalidate"
     // means.
     if (!inflight.current || inflight.current.key !== key || inflight.current.settled) {
+      // Join a read already running for this model (a startup prefetch, or
+      // another surface reading the same list) rather than issuing a duplicate.
+      const joined = cacheKey ? shared.get(cacheKey) : undefined;
+      const promise = joined ?? fns.current.load();
+      if (cacheKey && !joined) shared.set(cacheKey, promise);
       const entry: { key: string; promise: Promise<VouchEnvelope>; settled: boolean } = {
         key,
-        promise: fns.current.load(),
+        promise,
         settled: false,
       };
       // `.then(on, on)` rather than `.finally`: finally re-throws, which would
       // surface a handled load failure as an unhandled rejection.
       const markSettled = () => {
         entry.settled = true;
+        // Stop sharing once settled: the next mount must perform a real read.
+        if (cacheKey && shared.get(cacheKey) === promise) shared.delete(cacheKey);
       };
       void entry.promise.then(markSettled, markSettled);
       inflight.current = entry;
