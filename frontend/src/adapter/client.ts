@@ -175,8 +175,18 @@ export const fetchSourceObjectUrl = async (
   artifactId: string,
 ): Promise<{ url: string; contentType: string } | null> => {
   const body = (await getSources(decisionRecordId, artifactId)) as {
-    sources?: { artifact_id: string; view_ref?: string; view_url?: string }[];
-    artifacts?: { artifact_id: string; view_ref?: string; view_url?: string }[];
+    sources?: {
+      artifact_id: string;
+      view_ref?: string;
+      view_url?: string;
+      content_type?: string;
+    }[];
+    artifacts?: {
+      artifact_id: string;
+      view_ref?: string;
+      view_url?: string;
+      content_type?: string;
+    }[];
   };
   const list = body.sources ?? body.artifacts ?? [];
   const match = list.find((a) => a.artifact_id === artifactId) ?? list[0];
@@ -185,7 +195,22 @@ export const fetchSourceObjectUrl = async (
 
   const response = await fetch(signed);
   if (!response.ok) return null;
-  const blob = await response.blob();
+  const bytes = await response.blob();
+
+  /**
+   * Re-type the blob from the RECORD, not from the transfer.
+   *
+   * S3 stores these objects as `binary/octet-stream`, so the fetched blob
+   * inherits that type and a frame pointed at it downloads instead of
+   * rendering — a blank white panel where the document should be. The decision
+   * record knows what the artifact actually is (`content_type` on the source),
+   * and that is the authoritative answer, so the blob is rebuilt with it.
+   *
+   * This relabels the container only. The bytes are untouched, and their hash
+   * still matches the one the record froze.
+   */
+  const declared = match?.content_type;
+  const blob = declared && declared !== bytes.type ? new Blob([bytes], { type: declared }) : bytes;
   return { url: URL.createObjectURL(blob), contentType: blob.type };
 };
 

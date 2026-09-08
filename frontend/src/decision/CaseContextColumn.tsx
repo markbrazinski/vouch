@@ -8,7 +8,7 @@
  * `holdTruth` is null for most of a run.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../adapter/client';
 import { Eyebrow, Field, GhostButton, INK, MONO, N, Panel, Pill, SANS, HAIR } from './primitives';
 import type { EstablishedTruthVM, SourceArtifactVM } from './model';
@@ -51,6 +51,18 @@ function RealDocumentPreview({
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
+  /**
+   * The callbacks, held so they cannot re-key the effect.
+   *
+   * `onReady` sets parent state, which gives both callbacks new identities on
+   * the next render. With them in the dependency array the effect re-ran,
+   * its cleanup revoked the object URL that had just been handed to the frame,
+   * and the frame's src died mid-load — `onError` then fired and the panel fell
+   * back to the schematic. The effect must depend on the ARTIFACT only.
+   */
+  const cbs = useRef({ onReady, onFail });
+  cbs.current = { onReady, onFail };
+
   useEffect(() => {
     let live = true;
     let created: string | null = null;
@@ -62,14 +74,14 @@ function RealDocumentPreview({
           return;
         }
         if (!found) {
-          onFail();
+          cbs.current.onFail();
           return;
         }
         created = found.url;
         setObjectUrl(found.url);
-        onReady();
+        cbs.current.onReady();
       } catch {
-        if (live) onFail();
+        if (live) cbs.current.onFail();
       }
     })();
     return () => {
@@ -78,7 +90,7 @@ function RealDocumentPreview({
       // document's bytes alive in the tab for as long as the session lasts.
       if (created) URL.revokeObjectURL(created);
     };
-  }, [artifactId, decisionRecordId, onReady, onFail]);
+  }, [artifactId, decisionRecordId]);
 
   if (!objectUrl) return null;
 
@@ -101,7 +113,7 @@ function RealDocumentPreview({
         src={`${objectUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
         title="Source document preview"
         tabIndex={-1}
-        onError={onFail}
+        onError={() => cbs.current.onFail()}
         style={{
           // 161% wide, scaled to 62%: the first page fills the panel's width
           // instead of rendering as unreadable body text in a narrow column.
