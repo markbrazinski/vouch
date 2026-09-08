@@ -22,7 +22,6 @@ import { INK, MONO, N, SANS, HAIR } from './primitives';
 import { getToday, listDecisions } from '../adapter/client';
 import {
   prefetchSurfaces,
-  IncomingSurface,
   RecordSurface,
   RecordsIndexSurface,
   SuppliersSurface,
@@ -248,10 +247,11 @@ export function HeroAApp({ entry }: { entry: HeroAEntry }) {
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+              {/* `incoming` never reaches here — the branch above owns it,
+                  because Incoming's rows start a live run rather than opening a
+                  record and so need the workspace `HeroAPage` holds. */}
               {surface === 'today' ? (
                 <TodaySurface onOpenDecision={openOrder} />
-              ) : surface === 'incoming' ? (
-                <IncomingSurface onOpen={setOpenRecordId} />
               ) : surface === 'suppliers' ? (
                 <SuppliersSurface onOpen={openRecord} />
               ) : (

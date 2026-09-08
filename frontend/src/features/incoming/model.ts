@@ -138,3 +138,40 @@ export function toIncoming(dto: ListDecisionsDTO): IncomingVM {
     hasMore: dto.cursor != null,
   };
 }
+
+/**
+ * Incoming's authoritative set: one row per CURRENT lot.
+ *
+ * `list_decisions` is a ledger — its unit is the decision, so a lot evaluated
+ * thirty times during qualification returns thirty rows. Rendering those as
+ * sibling arrivals told an operator there were thirty arrivals when there were
+ * four, and made "open LOT-1002" ambiguous between a current lot and whichever
+ * historical execution happened to be that row.
+ *
+ * Collapsing by `lot_id` and keeping the newest `decided_at` is a projection
+ * over data the backend already returned. It invents nothing: the surviving row
+ * is a real record, and every field on it is still the server's. Records keeps
+ * the ungrouped ledger, which is where repeated lot ids are meaningful because
+ * each row is explicitly a different DecisionRecord.
+ */
+export function toCurrentArrivals(dto: ListDecisionsDTO): IncomingVM {
+  const newestByLot = new Map<string, IncomingRowVM>();
+  for (const row of (dto.rows ?? []).map(toIncomingRow)) {
+    const held = newestByLot.get(row.lotId);
+    // String compare is safe and total here: `decided_at` is ISO-8601 UTC from
+    // the server. A row with no timestamp never displaces one that has a real
+    // one, so a malformed record cannot hide the current state of a lot.
+    if (!held || row.decidedAt > held.decidedAt) newestByLot.set(row.lotId, row);
+  }
+  const rows = [...newestByLot.values()].sort((a, b) => a.lotId.localeCompare(b.lotId));
+  return {
+    rows,
+    needsAttention: rows.filter((r) => r.attentionRequired),
+    settled: rows.filter((r) => !r.attentionRequired),
+    // The count an operator can act on is the number of LOTS, not the number of
+    // ledger entries that happen to be behind them.
+    returned: rows.length,
+    durable: dto.backend?.durable === true,
+    hasMore: false,
+  };
+}

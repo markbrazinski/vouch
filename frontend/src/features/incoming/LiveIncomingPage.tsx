@@ -45,10 +45,18 @@ function HeaderRow() {
 function Row({
   row,
   onOpen,
+  onEvaluate,
 }: {
   row: IncomingRowVM;
   onOpen?: (decisionRecordId: string) => void;
+  /**
+   * Start a FRESH decision for this lot. Present only on Incoming, where a row
+   * is a current arrival; Records passes no handler, so its rows keep opening
+   * the historical DecisionRecord they actually are.
+   */
+  onEvaluate?: (lotId: string) => void;
 }) {
+  const evaluates = !!onEvaluate;
   return (
     <div
       data-lot={row.lotId}
@@ -83,6 +91,139 @@ function Row({
         <StatusPill tone={row.tone} label={row.stateLabel} size="sm" />
       </div>
       <div style={{ textAlign: 'right' }}>
+        {/* On Incoming this starts a decision, because the row is a lot that
+            has arrived. On Records it opens the record, because the row IS a
+            record. One row component, two surfaces, no third meaning. */}
+        {evaluates ? (
+          <button
+            data-testid="incoming-row"
+            data-evaluate-lot={row.lotId}
+            onClick={() => onEvaluate!(row.lotId)}
+            style={{
+              padding: '5px 10px',
+              background: 'transparent',
+              border: '1px solid rgba(0,0,0,.18)',
+              borderRadius: 7,
+              font: "600 11px 'Public Sans'",
+              color: T.ink70,
+              cursor: 'pointer',
+            }}
+          >
+            Open →
+          </button>
+        ) : (
+          onOpen && (
+            <button
+              onClick={() => onOpen(row.decisionRecordId)}
+              style={{
+                padding: '5px 10px',
+                background: 'transparent',
+                border: '1px solid rgba(0,0,0,.18)',
+                borderRadius: 7,
+                font: "600 11px 'Public Sans'",
+                color: T.ink70,
+                cursor: 'pointer',
+              }}
+            >
+              Open →
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Records — a row whose identity is the DECISION, not the lot.
+ *
+ * Incoming's row leads with the lot because the operator is asking "what
+ * arrived". Records is an audit trail, so it leads with what makes a row unique
+ * in that trail: the DecisionRecord id, when it was decided, and what it
+ * concluded. Repeated lot ids are then legible rather than confusing — the same
+ * lot evaluated three times is three records, and the id and timestamp say so.
+ *
+ * `failure_category` is shown because it is the most informative field the
+ * ledger already carries and the table never surfaced: POLICY_REFUSAL,
+ * MATERIAL_DISAGREEMENT and SECURITY_QUARANTINE are different kinds of "no".
+ */
+const LEDGER_GRID = '150px 132px 1.1fr 1.25fr 150px 96px';
+
+function LedgerHeaderRow() {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: LEDGER_GRID,
+        gap: 14,
+        padding: '11px 18px',
+        borderBottom: `1px solid ${T.hairline}`,
+        font: "600 9.5px 'IBM Plex Mono'",
+        letterSpacing: '.09em',
+        color: T.faint,
+      }}
+    >
+      <div>DECISION</div>
+      <div>DECIDED</div>
+      <div>OUTCOME</div>
+      <div>LOT · SUPPLIER</div>
+      <div>STATE</div>
+      <div />
+    </div>
+  );
+}
+
+/** ISO-8601 from the server, rendered without inventing a timezone claim. */
+function decidedAtLabel(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso || '—';
+  return at.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+}
+
+function LedgerRow({
+  row,
+  onOpen,
+}: {
+  row: IncomingRowVM;
+  onOpen?: (decisionRecordId: string) => void;
+}) {
+  return (
+    <div
+      data-lot={row.lotId}
+      data-decision-record={row.decisionRecordId}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: LEDGER_GRID,
+        gap: 14,
+        padding: '13px 18px',
+        borderBottom: `1px solid rgba(0,0,0,.06)`,
+        alignItems: 'center',
+      }}
+    >
+      <div style={{ font: "700 12px 'IBM Plex Mono'", color: T.ink }}>{row.decisionRecordId}</div>
+      <div style={{ font: "400 10.5px 'IBM Plex Mono'", color: T.muted }}>
+        {decidedAtLabel(row.decidedAt)}
+      </div>
+      <div>
+        <div style={{ font: "600 12px 'Public Sans'", color: T.ink70 }}>
+          {row.disposition || '—'}
+        </div>
+        {row.failureCategory && (
+          <div style={{ font: "400 9.5px 'IBM Plex Mono'", color: '#9A5A2A' }}>
+            {row.failureCategory}
+          </div>
+        )}
+      </div>
+      <div>
+        <div style={{ font: "500 12px 'IBM Plex Mono'", color: T.ink70 }}>{row.lotId}</div>
+        <div style={{ font: "400 10px 'Public Sans'", color: T.faint }}>
+          {row.supplierName} · {row.materialId}
+        </div>
+      </div>
+      <div>
+        <StatusPill tone={row.tone} label={row.stateLabel} size="sm" />
+      </div>
+      <div style={{ textAlign: 'right' }}>
         {onOpen && (
           <button
             onClick={() => onOpen(row.decisionRecordId)}
@@ -104,18 +245,19 @@ function Row({
   );
 }
 
-export function LiveIncomingPage({
+/** Records: the durable ledger, newest first, one row per DecisionRecord. */
+export function LedgerPage({
   vm,
   onOpen,
 }: {
   vm: IncomingVM;
   onOpen?: (decisionRecordId: string) => void;
 }) {
-  const attention = vm.needsAttention.length;
+  const rows = [...vm.rows].sort((a, b) => b.decidedAt.localeCompare(a.decidedAt));
   return (
-    <div data-testid="incoming-page" style={{ padding: '20px 30px 60px', maxWidth: 1220, margin: '0 auto' }}>
+    <div data-testid="records-page" style={{ padding: '20px 30px 60px', maxWidth: 1220, margin: '0 auto' }}>
       <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
-        INCOMING
+        RECORDS
       </div>
       <h2
         style={{
@@ -125,13 +267,68 @@ export function LiveIncomingPage({
           color: T.ink,
         }}
       >
-        Arrivals and their dispositions
+        Decision audit trail
+      </h2>
+      <div style={{ font: "400 12px 'Public Sans'", color: T.muted, marginTop: 6 }}>
+        {rows.length} {rows.length === 1 ? 'decision record' : 'decision records'} · newest first
+      </div>
+
+      <div
+        style={{
+          marginTop: 18,
+          background: T.panel,
+          border: `1px solid ${T.hairline}`,
+          borderRadius: 13,
+          overflow: 'hidden',
+        }}
+      >
+        <LedgerHeaderRow />
+        {rows.map((row) => (
+          <LedgerRow key={row.decisionRecordId} row={row} onOpen={onOpen} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function LiveIncomingPage({
+  vm,
+  onOpen,
+  onEvaluate,
+  heading = 'Arrivals and their dispositions',
+  eyebrow = 'INCOMING',
+  unit = 'decision',
+}: {
+  vm: IncomingVM;
+  onOpen?: (decisionRecordId: string) => void;
+  /** Incoming only. Its presence is what makes a row an arrival. */
+  onEvaluate?: (lotId: string) => void;
+  heading?: string;
+  eyebrow?: string;
+  /** "lot" on Incoming, "decision" on Records — the row means a different thing. */
+  unit?: string;
+}) {
+  const attention = vm.needsAttention.length;
+  return (
+    <div data-testid="incoming-page" style={{ padding: '20px 30px 60px', maxWidth: 1220, margin: '0 auto' }}>
+      <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
+        {eyebrow}
+      </div>
+      <h2
+        style={{
+          margin: '5px 0 0',
+          font: "800 24px 'Public Sans'",
+          letterSpacing: '-.02em',
+          color: T.ink,
+        }}
+      >
+        {heading}
       </h2>
       <div style={{ font: "400 12px 'Public Sans'", color: T.muted, marginTop: 6 }}>
         {/* Counters with authoritative meaning only: what was returned, and how
             many the SERVER flagged for a person. No "in progress" — invocation
             is synchronous, so nothing is ever persisted mid-flight. */}
-        {vm.returned} {vm.returned === 1 ? 'decision' : 'decisions'}
+        {vm.returned} {vm.returned === 1 ? unit : `${unit}s`}
         {attention > 0 && (
           <>
             {' · '}
@@ -161,7 +358,12 @@ export function LiveIncomingPage({
           <HeaderRow />
           {/* Rows needing a person come first — the server decided which. */}
           {[...vm.needsAttention, ...vm.settled].map((row) => (
-            <Row key={row.decisionRecordId} row={row} onOpen={onOpen} />
+            <Row
+              key={row.decisionRecordId}
+              row={row}
+              onOpen={onOpen}
+              onEvaluate={onEvaluate}
+            />
           ))}
         </div>
       )}

@@ -16,7 +16,13 @@
 
 import { describe, expect, it } from 'vitest';
 import blocked from '../../decision/__tests__/list-decisions-blocked-capture.json';
-import { toIncoming, toIncomingRow, type IncomingRowDTO, type ListDecisionsDTO } from '../incoming/model';
+import {
+  toCurrentArrivals,
+  toIncoming,
+  toIncomingRow,
+  type IncomingRowDTO,
+  type ListDecisionsDTO,
+} from '../incoming/model';
 import { toSuppliers } from '../suppliers/model';
 
 /**
@@ -174,5 +180,65 @@ describe('Suppliers stays inside what the backend owns', () => {
     for (const absent of ['qualification', 'score', 'risk', 'WATCH', 'REQUAL']) {
       expect(json).not.toContain(absent);
     }
+  });
+});
+
+/**
+ * Incoming's unit is the LOT; Records' unit is the DECISION.
+ *
+ * The qualification corpus holds ~30 LOT-1002 records, so rendering the ledger
+ * as arrivals showed thirty arrivals where four exist and made "open LOT-1002"
+ * ambiguous. Grouping is a projection over rows the server already returned —
+ * it must collapse duplicates without inventing or losing a lot.
+ */
+describe('CONTRACT_VERIFIED — current arrivals collapse to one row per lot', () => {
+  const at = (lot: string, id: string, decided: string, over: Partial<IncomingRowDTO> = {}) =>
+    row({ lot_id: lot, decision_record_id: id, decided_at: decided, ...over });
+
+  it('keeps exactly one row per lot, and it is the newest', () => {
+    const vm = toCurrentArrivals({
+      ok: true,
+      rows: [
+        at('LOT-1002', 'DR-old', '2026-09-01T00:00:00Z'),
+        at('LOT-1002', 'DR-new', '2026-09-08T00:00:00Z', { row_state: 'QUARANTINED' }),
+        at('LOT-1002', 'DR-mid', '2026-09-04T00:00:00Z'),
+        at('LOT-1001', 'DR-a', '2026-09-02T00:00:00Z'),
+      ],
+    } as ListDecisionsDTO);
+
+    expect(vm.rows.map((r) => r.lotId)).toEqual(['LOT-1001', 'LOT-1002']);
+    expect(vm.rows.find((r) => r.lotId === 'LOT-1002')!.decisionRecordId).toBe('DR-new');
+    // The count an operator acts on is lots, not ledger entries behind them.
+    expect(vm.returned).toBe(2);
+  });
+
+  it('never drops a lot, however many records it has', () => {
+    const rows = ['LOT-1001', 'LOT-1002', 'LOT-1003', 'LOT-1004'].flatMap((lot, i) =>
+      Array.from({ length: i + 1 }, (_, n) =>
+        at(lot, `DR-${lot}-${n}`, `2026-09-0${n + 1}T00:00:00Z`),
+      ),
+    );
+    const vm = toCurrentArrivals({ ok: true, rows } as ListDecisionsDTO);
+    expect(vm.rows.map((r) => r.lotId)).toEqual(['LOT-1001', 'LOT-1002', 'LOT-1003', 'LOT-1004']);
+  });
+
+  it('a row with no timestamp never displaces one that has a real one', () => {
+    const vm = toCurrentArrivals({
+      ok: true,
+      rows: [
+        at('LOT-1002', 'DR-real', '2026-09-08T00:00:00Z'),
+        at('LOT-1002', 'DR-blank', ''),
+      ],
+    } as ListDecisionsDTO);
+    expect(vm.rows[0].decisionRecordId).toBe('DR-real');
+  });
+
+  it('leaves the ungrouped ledger alone — Records still sees every record', () => {
+    const rows = [
+      at('LOT-1002', 'DR-1', '2026-09-01T00:00:00Z'),
+      at('LOT-1002', 'DR-2', '2026-09-02T00:00:00Z'),
+    ];
+    expect(toIncoming({ ok: true, rows } as ListDecisionsDTO).rows).toHaveLength(2);
+    expect(toCurrentArrivals({ ok: true, rows } as ListDecisionsDTO).rows).toHaveLength(1);
   });
 });

@@ -1,20 +1,20 @@
 /**
- * The Hero A entry surface.
+ * The decision entry point.
  *
- * The arrival that has not been decided yet, above the decisions that have.
+ * Incoming lists the lots that currently require disposition. Opening one runs
+ * a FRESH evaluation of that lot and hands the workspace the live run.
  *
- * `list_decisions` was blocked when this surface was first built, so it carried
- * a notice saying enumeration was unprovisioned. That notice outlived the
- * blocker: the `decisions-by-recency` GSI is ACTIVE and the endpoint returns
- * real rows, so the text had become a false statement about the product on the
- * first screen a reader sees. It is gone, and the live list renders beneath the
- * arrival — every row served by the backend, none fabricated here.
+ * There was previously a second, privileged way in: a special LOT-1002 arrival
+ * card pinned above the list, which owned the canonical PDF submission while
+ * the rows beneath it opened historical DecisionRecords. That gave "click
+ * LOT-1002" two different meanings depending on which element you hit — one a
+ * live canonical run, the other whichever past execution that row represented,
+ * including pre-fix ones. The card is gone and its exact behaviour moved into
+ * the ordinary row action, so there is one interaction model and one meaning.
  *
- * There is deliberately no "Start Vouch" button in the production frame. A
- * decision begins because material arrived, not because someone pressed a
- * button, and a control implying otherwise would misrepresent the product. The
- * dev harness (DEV-only, excluded from the production bundle) is where a lot id
- * can be injected during development.
+ * There is deliberately still no "Start Vouch" button. A decision begins
+ * because material arrived; opening the arrival is what causes Vouch to
+ * evaluate it.
  */
 
 import { useMemo, useState } from 'react';
@@ -22,7 +22,6 @@ import { DecisionWorkspace } from './DecisionWorkspace';
 import { project } from './adapter';
 import { fetchAssetAsBase64 } from '../adapter/client';
 import { useDecisionRun } from './useDecisionRun';
-import { INK, MONO, N, Pill, HAIR } from './primitives';
 import { IncomingSurface } from '../features/Surfaces';
 
 export interface HeroAEntry {
@@ -43,21 +42,21 @@ export interface HeroAEntry {
 
 export function HeroAPage({
   entry,
-  onOpenRecord,
+  onOpenRecord: _onOpenRecord,
 }: {
   entry: HeroAEntry;
   onOpenRecord?: (decisionRecordId: string) => void;
 }) {
   const run = useDecisionRun();
-  const [started, setStarted] = useState(false);
+  const [openLot, setOpenLot] = useState<string | null>(null);
 
   const vm = useMemo(
     () =>
       project({
         decisionRecordId: run.decisionRecordId,
-        lotId: entry.lotId,
-        material: entry.material,
-        receiptMeta: entry.receiptMeta,
+        lotId: openLot ?? entry.lotId,
+        material: openLot === entry.lotId ? entry.material : undefined,
+        receiptMeta: openLot === entry.lotId ? entry.receiptMeta : undefined,
         events: run.events,
         result: run.result,
         sources: run.sources,
@@ -76,78 +75,45 @@ export function HeroAPage({
       run.failure,
       run.durable,
       entry,
+      openLot,
     ],
   );
 
-  if (!started) {
-    // The entry point is an INCOMING ROW, not a start button.
-    //
-    // §9 forbids a fake production "Start Vouch" control, and the distinction
-    // is a product one rather than a cosmetic one: a decision exists because
-    // material arrived, so the honest affordance is "open the arrival that is
-    // already waiting". Opening it is what causes Vouch to evaluate — the same
-    // causality the real Incoming list will have once its endpoint qualifies.
+  if (!openLot) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto' }}>
-        <div style={{ margin: '18px 26px 0', maxWidth: 720 }}>
-          <div
-            style={{
-              font: `600 9px ${MONO}`,
-              letterSpacing: '.1em',
-              color: INK.label,
-              marginBottom: 8,
-            }}
-          >
-            AWAITING A QUALITY DECISION
-          </div>
-          <button
-            type="button"
-            data-testid="incoming-row"
-            onClick={() => {
-              setStarted(true);
-              void (async () => {
-                // The bundled PDF is read here, at the moment the operator opens
-                // the arrival — not at module load, so a document that cannot be
-                // read fails the run that needed it rather than the whole app.
-                const documentB64 = entry.documentUrl
+        <IncomingSurface
+          onEvaluate={(lotId) => {
+            setOpenLot(lotId);
+            void (async () => {
+              /**
+               * The canonical evidence, submitted the way the removed hero card
+               * submitted it.
+               *
+               * The bundled PDF belongs to the entry lot, so it is attached only
+               * to that lot's run. Sending it with a different lot would be
+               * asserting that Eastern Metals certified material it did not.
+               * Every other lot starts from the evidence already on its record,
+               * which is what the backend does when no document is supplied.
+               *
+               * Read here, at the moment the operator opens the arrival, so a
+               * document that cannot be read fails the run that needed it rather
+               * than the whole app.
+               */
+              const canonical = lotId === entry.lotId;
+              const documentB64 =
+                canonical && entry.documentUrl
                   ? await fetchAssetAsBase64(entry.documentUrl)
                   : undefined;
-                await run.start({
-                  lotId: entry.lotId,
-                  document: entry.document,
-                  documentB64,
-                  contentType: entry.contentType,
-                });
-              })();
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 14,
-              width: '100%',
-              textAlign: 'left',
-              background: N.card,
-              border: `1px solid ${HAIR}`,
-              borderRadius: 10,
-              padding: '14px 18px',
-              cursor: 'pointer',
-            }}
-          >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: `700 15px ${MONO}`, color: INK.primary }}>{entry.lotId}</div>
-              <div style={{ font: `400 11.5px ${MONO}`, color: INK.label, marginTop: 3 }}>
-                {entry.material} · {entry.receiptMeta}
-              </div>
-            </div>
-            <Pill tone="progress">EVIDENCE RECEIVED</Pill>
-            <span style={{ font: `400 14px ${MONO}`, color: INK.chevron }}>›</span>
-          </button>
-        </div>
-
-        {/* The decisions already on record. Real rows from `list_decisions`,
-            with their own loading, empty, blocked and failure states driven by
-            the backend envelope rather than by anything asserted here. */}
-        <IncomingSurface onOpen={onOpenRecord} />
+              await run.start({
+                lotId,
+                document: canonical ? entry.document : undefined,
+                documentB64,
+                contentType: canonical ? entry.contentType : undefined,
+              });
+            })();
+          }}
+        />
       </div>
     );
   }

@@ -55,9 +55,15 @@ describe('production build excludes the dev fixture harness', () => {
 
   it('ships the product surface', () => {
     expect(bundle).toMatch(/ÅBY/);
-    // The Hero A entry: an arrival awaiting a decision, and the decision
-    // spine's independence label. Both are product copy, not fixture data.
-    expect(bundle).toMatch(/AWAITING A QUALITY DECISION/);
+    // The Incoming entry point, and the decision spine's independence label.
+    // Both are product copy, not fixture data.
+    //
+    // This was "AWAITING A QUALITY DECISION", the heading of a special LOT-1002
+    // arrival card pinned above the list. That card was the only way to launch
+    // a canonical run while the rows beneath it opened historical records, so
+    // "open LOT-1002" meant two different things. It is gone; the ordinary
+    // Incoming row now owns that behaviour, and this is its heading.
+    expect(bundle).toMatch(/Material awaiting disposition/);
     expect(bundle).toMatch(/INVESTIGATION/);
   });
 

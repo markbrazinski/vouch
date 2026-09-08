@@ -130,6 +130,38 @@ function RealDocumentPreview({
 }
 
 /**
+ * The neutral placeholder shown WHILE a real PDF is being fetched.
+ *
+ * The schematic below is a drawing of a document — fine as a stand-in when no
+ * bytes exist, misleading while the actual bytes are on their way, because it
+ * shows invented geometry where the real certificate is about to appear. This
+ * says only "a document is loading" and asserts nothing about its contents.
+ */
+function DocumentLoading() {
+  return (
+    <div
+      data-testid="source-preview-loading"
+      style={{
+        marginTop: 10,
+        height: 132,
+        background: '#fff',
+        border: '1px solid rgba(0,0,0,.14)',
+        borderRadius: 4,
+        boxShadow: '0 1px 4px rgba(0,0,0,.08)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+      aria-hidden
+    >
+      <div style={{ font: `400 9.5px ${MONO}`, color: INK.placeholder, animation: 'vp 1.4s ease-in-out infinite' }}>
+        loading source document…
+      </div>
+    </div>
+  );
+}
+
+/**
  * The fallback miniature, used ONLY when no real source can be previewed.
  *
  * Not decorative: it is the cue that a specific number in a specific document
@@ -261,7 +293,14 @@ export function CaseContextColumn({
                 onFail={onPreviewFail}
               />
             )}
-            {!previewReady && <DocumentThumbnail fact={keyFact} />}
+            {/* Three distinct states, because they mean different things:
+                the real page once it paints; a neutral "loading" card while the
+                real bytes are in flight; and the schematic only when there are
+                no bytes to show at all. Drawing the schematic under a document
+                that is about to render put invented geometry where the real
+                certificate belongs. */}
+            {!previewReady &&
+              (canPreviewReal ? <DocumentLoading /> : <DocumentThumbnail fact={keyFact} />)}
             <div style={{ font: `600 12.5px ${SANS}`, color: INK.primary, marginTop: 11 }}>
               {selected.displayName}
             </div>

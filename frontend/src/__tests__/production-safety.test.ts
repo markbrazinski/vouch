@@ -139,7 +139,11 @@ describe('the product surface carries no demo apparatus', () => {
     const viewer = readFileSync(join(SRC, 'decision', 'SourceDocumentViewer.tsx'), 'utf8');
     // Held in a ref, never in state that a render tree would retain.
     expect(viewer).toMatch(/viewRef = useRef<string \| null>\(null\)/);
-    expect(viewer).toMatch(/noopener,noreferrer/);
+    // The presigned URL is never handed to a new tab or to the address bar.
+    // The bytes are fetched and framed as a same-origin blob instead, so the
+    // credential stays inside this document and out of browser history.
+    expect(viewer).not.toMatch(/window\.open/);
+    expect(viewer).toMatch(/fetchSourceObjectUrl/);
   });
 
   it('no design HTML or reference markup ships', () => {

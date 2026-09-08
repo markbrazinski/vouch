@@ -253,25 +253,46 @@ describe('source viewer', () => {
     expect(screen.getByText('462 MPa')).toBeTruthy();
   });
 
-  it('never persists a view ref', async () => {
+  it('never persists a view ref, and never hands it to a new tab', async () => {
     const signed = 'https://bucket.s3.amazonaws.com/x?X-Amz-Signature=deadbeef';
+    // The viewer signs, then FETCHES the bytes and frames them same-origin.
+    // Both calls are served here: the metadata read and the byte read.
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ ok: true, artifacts: [{ artifact_id: 'ART-1', view_ref: signed }] }),
-      }),
+      vi.fn().mockImplementation(async (input: unknown) =>
+        String(input).includes('X-Amz-Signature')
+          ? { ok: true, blob: async () => new Blob([new Uint8Array([1, 2, 3])], { type: 'application/pdf' }) }
+          : {
+              ok: true,
+              json: async () => ({
+                ok: true,
+                artifacts: [
+                  { artifact_id: 'ART-1', view_ref: signed, content_type: 'application/pdf' },
+                ],
+              }),
+            },
+      ),
     );
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:vouch/doc'),
+      revokeObjectURL: vi.fn(),
+    });
     const open = vi.fn();
     vi.stubGlobal('open', open);
 
     render(
       <SourceDocumentViewer artifact={artifact} decisionRecordId="DR-1" onClose={() => {}} />,
     );
-    fireEvent.click(screen.getByText('Open original'));
+    // Opening the viewer IS the request to see the document; there is no second
+    // button, and no tab is ever opened with the credential in its URL.
     await new Promise((r) => setTimeout(r, 10));
+    expect(open).not.toHaveBeenCalled();
 
-    expect(open).toHaveBeenCalledWith(signed, '_blank', 'noopener,noreferrer');
+    // What is framed is the same-origin blob, never the presigned URL.
+    const frame = screen.getByTestId('source-document-frame').querySelector('iframe');
+    expect(frame?.getAttribute('src')).toContain('blob:');
+    expect(frame?.getAttribute('src')).not.toContain('X-Amz-Signature');
 
     // The credential must exist nowhere durable and nowhere inspectable.
     // Storage is read through the raw prototypes so a stubbed global cannot

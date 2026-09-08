@@ -10,9 +10,16 @@
  *   - never put in localStorage, sessionStorage, or a URL;
  *   - never logged.
  *
- * It is used once, to open the document, and then dropped. `useRef` rather than
+ * It is used once, to fetch the bytes, and then dropped. `useRef` rather than
  * `useState` is deliberate — the URL must not become part of a render tree that
  * React could retain or a devtools session could inspect after the fact.
+ *
+ * The document is rendered IN PLACE rather than handed to a new tab. Navigating
+ * away from the workspace to read the evidence loses the decision the evidence
+ * belongs to, and handing a presigned S3 URL to a new tab also puts a live
+ * bearer credential in the address bar and browser history. Fetching the bytes
+ * into a same-origin `blob:` and framing that keeps the credential in this
+ * document and out of everything that outlives it.
  *
  * When no reference can be signed, the metadata is still shown. "We cannot show
  * you the bytes" and "we know nothing about this document" are different states.
@@ -67,6 +74,8 @@ export function SourceDocumentViewer({
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>(
     artifact.openable ? 'idle' : 'unavailable',
   );
+  /** The same-origin blob the frame renders. Not the presigned URL. */
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -75,38 +84,52 @@ export function SourceDocumentViewer({
     };
   }, []);
 
+  // The blob is released with the viewer; holding it would keep the document's
+  // bytes alive in the tab for the rest of the session.
+  useEffect(() => {
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [objectUrl]);
+
+  /**
+   * Fetch the bytes as soon as the viewer opens.
+   *
+   * The operator asked to see the document by opening this; making them press a
+   * second button to actually reveal it is a step with no meaning.
+   */
+  useEffect(() => {
+    if (!artifact.openable) return;
+    let live = true;
+    setStatus('loading');
+    void (async () => {
+      try {
+        const found = await api.fetchSourceObjectUrl(decisionRecordId, artifact.artifactId);
+        if (!live) {
+          if (found) URL.revokeObjectURL(found.url);
+          return;
+        }
+        if (!found) {
+          setStatus('unavailable');
+          return;
+        }
+        setObjectUrl(found.url);
+        setStatus('ready');
+      } catch {
+        // A failed signing or fetch is not a statement about the document.
+        if (live) setStatus('unavailable');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [artifact.openable, artifact.artifactId, decisionRecordId]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-
-  const open = async () => {
-    setStatus('loading');
-    try {
-      const body = (await api.getSources(decisionRecordId, artifact.artifactId)) as {
-        ok: boolean;
-        sources?: { artifact_id: string; view_ref?: string; view_url?: string }[];
-        artifacts?: { artifact_id: string; view_ref?: string; view_url?: string }[];
-      };
-      const list = body.sources ?? body.artifacts ?? [];
-      const match = list.find((a) => a.artifact_id === artifact.artifactId) ?? list[0];
-      const url = match?.view_ref ?? match?.view_url ?? null;
-      if (!url) {
-        setStatus('unavailable');
-        return;
-      }
-      viewRef.current = url;
-      // Opened, then immediately forgotten. `noopener` so the opened tab cannot
-      // reach back into this one.
-      window.open(url, '_blank', 'noopener,noreferrer');
-      viewRef.current = null;
-      setStatus('ready');
-    } catch {
-      // A failed signing attempt is not a statement about the document.
-      setStatus('unavailable');
-    }
-  };
 
   const chip = TRUST_CHIP[artifact.trustClass];
   const locators = artifact.locators;
@@ -189,6 +212,47 @@ export function SourceDocumentViewer({
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px', background: '#CFC9BD' }}>
+          {/* The actual version-pinned bytes, framed same-origin. Never a
+              reconstruction: if these cannot be fetched the panel below says
+              so rather than drawing a substitute document. */}
+          {artifact.openable && (
+            <div
+              data-testid="source-document-frame"
+              style={{
+                marginBottom: 16,
+                height: 460,
+                background: '#fff',
+                border: '1px solid rgba(0,0,0,.14)',
+                borderRadius: 4,
+                boxShadow: '0 2px 12px rgba(0,0,0,.14)',
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {objectUrl ? (
+                <iframe
+                  src={`${objectUrl}#view=FitH`}
+                  title={`Source document ${artifact.displayName}`}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                />
+              ) : (
+                <div
+                  style={{
+                    font: `400 11px ${MONO}`,
+                    color: INK.placeholder,
+                    animation: status === 'loading' ? 'vp 1.4s ease-in-out infinite' : undefined,
+                  }}
+                >
+                  {status === 'unavailable'
+                    ? 'the original bytes could not be retrieved'
+                    : 'loading source document…'}
+                </div>
+              )}
+            </div>
+          )}
+
           <div
             style={{
               background: '#fff',
@@ -340,13 +404,8 @@ export function SourceDocumentViewer({
                 ? 'Preserved for the record · not used in decision'
                 : 'Read-only source'}
             </span>
-            <GhostButton
-              small
-              onClick={open}
-              disabled={!artifact.openable || status === 'loading'}
-              title={artifact.openable ? undefined : 'No signed reference available'}
-            >
-              {status === 'loading' ? 'Opening…' : 'Open original'}
+            <GhostButton small onClick={onClose}>
+              Close
             </GhostButton>
           </div>
         </div>

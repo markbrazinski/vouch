@@ -12,8 +12,8 @@ import { SurfaceState, TechnicalFailure } from '../components/SurfaceState';
 import { useSurfaceData } from './useSurfaceData';
 import { toToday } from './today/model';
 import { LiveTodayPage } from './today/LiveTodayPage';
-import { toIncoming } from './incoming/model';
-import { IncomingUnavailable, LiveIncomingPage } from './incoming/LiveIncomingPage';
+import { toCurrentArrivals, toIncoming } from './incoming/model';
+import { IncomingUnavailable, LedgerPage, LiveIncomingPage } from './incoming/LiveIncomingPage';
 import { toSuppliers } from './suppliers/model';
 import { LiveSuppliersPage } from './suppliers/LiveSuppliersPage';
 import { DecisionWorkspace } from '../decision/DecisionWorkspace';
@@ -21,6 +21,9 @@ import { projectStoredDecision } from '../decision/fromRecord';
 import type { LifecycleEventDTO, SourceArtifactDTO } from '../decision/dto';
 import type { TodayDTO } from '../decision/dto';
 import type { ListDecisionsDTO } from './incoming/model';
+
+/** How much recent history Records shows. Audit density, not a full scroll. */
+const RECENT_RECORDS = 20;
 
 const Loading = ({ what }: { what: string }) => (
   <SurfaceState kind="loading" headline={`Reading ${what}…`} />
@@ -55,10 +58,20 @@ export function TodaySurface({ onOpenDecision }: { onOpenDecision?: (orderId: st
   return <LiveTodayPage vm={data} onOpenDecision={onOpenDecision} />;
 }
 
-export function IncomingSurface({ onOpen }: { onOpen?: (decisionRecordId: string) => void }) {
+/**
+ * Incoming — what currently requires disposition.
+ *
+ * One row per LOT, not per decision record. The rows come from the same
+ * `list_decisions` read the ledger uses, collapsed to the newest record per
+ * `lot_id`; see `toCurrentArrivals`. Opening a row starts a FRESH evaluation of
+ * that lot rather than reopening whichever historical execution the surviving
+ * record happened to be — which is the single interaction model this surface
+ * now has.
+ */
+export function IncomingSurface({ onEvaluate }: { onEvaluate: (lotId: string) => void }) {
   const { status, data, detail } = useSurfaceData(
     () => listDecisions(50),
-    (e) => toIncoming(e as ListDecisionsDTO),
+    (e) => toCurrentArrivals(e as ListDecisionsDTO),
     [],
     'decisions',
   );
@@ -67,13 +80,24 @@ export function IncomingSurface({ onOpen }: { onOpen?: (decisionRecordId: string
   // The known standing blocker: the recency index and its query grant.
   if (status === 'blocked') return <IncomingUnavailable detail={detail} />;
   if (status === 'failed' || !data) return <TechnicalFailure what="Arrivals" detail={detail} />;
-  return <LiveIncomingPage vm={data} onOpen={onOpen} />;
+  return (
+    <LiveIncomingPage
+      vm={data}
+      onEvaluate={onEvaluate}
+      heading="Material awaiting disposition"
+      unit="lot"
+    />
+  );
 }
 
 export function SuppliersSurface({ onOpen }: { onOpen?: (decisionRecordId: string) => void }) {
   const { status, data, detail } = useSurfaceData(
     () => listDecisions(50),
-    (e) => toSuppliers(toIncoming(e as ListDecisionsDTO).rows),
+    // Grouped by LOT, not by decision record. Grouping the raw ledger counted
+    // qualification RUNS as arrivals, so one lot evaluated thirty times listed
+    // its supplier thirty times — a count of our debugging, not of the
+    // supplier's material.
+    (e) => toSuppliers(toCurrentArrivals(e as ListDecisionsDTO).rows),
     [],
     'decisions',
   );
@@ -187,5 +211,7 @@ export function RecordsIndexSurface({ onOpen }: { onOpen?: (id: string) => void 
         detail="Every disposition Vouch reaches is kept here permanently."
       />
     );
-  return <LiveIncomingPage vm={data} onOpen={onOpen} />;
+  // Enough recent history to read as an audit trail without becoming a scroll.
+  // The read already returns them newest-first; `LedgerPage` sorts regardless.
+  return <LedgerPage vm={{ ...data, rows: data.rows.slice(0, RECENT_RECORDS) }} onOpen={onOpen} />;
 }
