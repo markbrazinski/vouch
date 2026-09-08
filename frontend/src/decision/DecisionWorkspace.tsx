@@ -149,6 +149,19 @@ export function DecisionWorkspace({ vm }: { vm: DecisionWorkspaceVM }) {
   // The reported count, not the itemized length — see SourceArtifactVM.claimCount.
   const claimCount = vm.sources.reduce((n, s) => n + s.claimCount, 0);
 
+  /**
+   * The document the header offers while the frame is full-bleed.
+   *
+   * The same artifact the column would have shown, and only when it can
+   * actually be opened — an affordance that leads to "source unavailable" is
+   * worse than none. A quarantined artifact is excluded for the same reason the
+   * column never previews one: its bytes were excluded from the decision.
+   */
+  const headerSource =
+    vm.sources.find((s) => s.artifactId === selectedId && s.openable) ??
+    vm.sources.find((s) => s.openable && s.securityState !== 'quarantined') ??
+    null;
+
   const renderStage = (key: StageKey) => {
     switch (key) {
       case 'evidence':
@@ -218,6 +231,38 @@ export function DecisionWorkspace({ vm }: { vm: DecisionWorkspaceVM }) {
               </Pill>
             ) : null}
             <div style={{ flex: 1 }} />
+            {/* The way back to the evidence when the frame belongs to the
+                consequence.
+                
+                The source column is deliberately absent on the full-bleed
+                consequence — what changed for the factory owns that frame — but
+                a settled decision must still let an auditor reach the document
+                it was decided from. This is that route, and it opens the SAME
+                viewer the column's "Open source" opens. It appears only when
+                the column is not already offering one, so there are never two
+                controls for one job. */}
+            {vm.fullBleed && headerSource && (
+              <button
+                type="button"
+                data-testid="header-open-source"
+                onClick={() => setViewing(headerSource.artifactId)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: N.card,
+                  border: `1px solid ${HAIR}`,
+                  borderRadius: 7,
+                  padding: '5px 10px',
+                  cursor: 'pointer',
+                  font: `600 10.5px ${MONO}`,
+                  color: INK.button,
+                }}
+              >
+                <span aria-hidden>▤</span>
+                View {headerSource.documentType?.toUpperCase() || 'source'}
+              </button>
+            )}
             {!vm.durable && (
               <Pill tone="atrisk">NON-DURABLE BACKEND</Pill>
             )}

@@ -14,7 +14,8 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { renderHook } from '@testing-library/react';
 import { useDecisionRun } from '../useDecisionRun';
-import { HeroAPage } from '../HeroAPage';
+import { MemoryRouter } from 'react-router-dom';
+import { IncomingRoute } from '../IncomingRoute';
 
 const ENTRY = {
   lotId: 'LOT-1002',
@@ -213,7 +214,11 @@ describe('B2 — Incoming reads the real decision list', () => {
     const { fetchMock, calls } = backend();
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<HeroAPage entry={ENTRY} />);
+    render(
+      <MemoryRouter initialEntries={['/incoming']}>
+        <IncomingRoute entry={ENTRY} />
+      </MemoryRouter>,
+    );
 
     await waitFor(() =>
       expect(calls().some((u) => u.includes('/api/decisions'))).toBe(true),
@@ -251,7 +256,11 @@ describe('B2 — Incoming reads the real decision list', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<HeroAPage entry={ENTRY} />);
+    render(
+      <MemoryRouter initialEntries={['/incoming']}>
+        <IncomingRoute entry={ENTRY} />
+      </MemoryRouter>,
+    );
 
     // The row the backend served must render...
     await waitFor(() => expect(screen.getAllByText('Central Forgeworks').length).toBeGreaterThan(0));
@@ -264,7 +273,11 @@ describe('B2 — Incoming reads the real decision list', () => {
     const { fetchMock } = backend();
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<HeroAPage entry={ENTRY} />);
+    render(
+      <MemoryRouter initialEntries={['/incoming']}>
+        <IncomingRoute entry={ENTRY} />
+      </MemoryRouter>,
+    );
     expect(screen.getByTestId('incoming-row')).toBeTruthy();
   });
 });

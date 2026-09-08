@@ -56,8 +56,29 @@ const STAGE_OWNER: Record<string, StageKey> = {
   CONSEQUENCE_RECALCULATED: 'consequence',
 };
 
-/** D8: these two drop the left column and take the full inner width. */
-const FULL_BLEED: StageKey[] = ['reconciliation', 'consequence'];
+/**
+ * D8: the stage that drops the left column and takes the full inner width.
+ *
+ * Only the CONSEQUENCE. What changed for the factory is the climax, and it
+ * earns the whole frame.
+ *
+ * Reconciliation used to be here too, and that was wrong: it is the moment the
+ * governing truth is established, so the document that truth was read from is
+ * at its most relevant exactly then.
+ *
+ * Measured against real runs, that alone does not put the certificate on
+ * screen. `get_source` only succeeds once the decision record is queryable
+ * (~35s), and the backend writes reconciliation, disposition and consequence in
+ * ONE terminal batch — so `active` goes straight to `consequence` and
+ * reconciliation is never the active stage for a human-visible window. The
+ * source column is therefore reachable on a slow or resumed run, and the header
+ * affordance (`View COA`) is what makes the document reachable on every settled
+ * decision. Both routes open the same viewer.
+ */
+const FULL_BLEED: StageKey[] = ['consequence'];
+
+/** Exported so a test can assert the layout rule rather than restate it. */
+export const FULL_BLEED_STAGES: readonly StageKey[] = FULL_BLEED;
 
 const STAGE_ORDER: StageKey[] = [
   'evidence',

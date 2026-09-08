@@ -1,8 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import './app/global.css';
-import { HeroAApp } from './decision/HeroAApp';
-import type { HeroAEntry } from './decision/HeroAPage';
+import { RoutedShell } from './app/RoutedShell';
+import type { HeroAEntry } from './decision/entry';
 // Vite emits this as a fingerprinted asset URL. The file is a symlink to the
 // canonical tracked evidence, so the build cannot ship different bytes.
 import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
@@ -78,9 +79,14 @@ if (import.meta.env.DEV && window.location.pathname === '/dev/vouch-states') {
     renderBaselineRoute(window.location.pathname, root),
   );
 } else {
+  // The URL is the source of truth for navigation. `BrowserRouter` uses real
+  // history, so Back and Forward are the browser's own and a refresh on any
+  // routed path reconstructs that surface from authoritative state.
   root.render(
     <StrictMode>
-      <HeroAApp entry={HERO_A} />
+      <BrowserRouter>
+        <RoutedShell entry={HERO_A} />
+      </BrowserRouter>
     </StrictMode>,
   );
 }

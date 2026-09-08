@@ -44,6 +44,17 @@ const POLL_MS = 900;
  */
 const TERMINAL_CHECK_TICKS = 5;
 
+/**
+ * Ticks between attempts to load the source artifacts.
+ *
+ * The first attempt legitimately fails: the artifact is recorded at RECEIVED
+ * but the decision record it hangs off is not queryable until the run ends, so
+ * `get_source` 400s until then. Retrying every tick is correct and noisy;
+ * retrying on the terminal check's cadence gets the panel populated within a
+ * beat of the record becoming readable without filling the console.
+ */
+const SOURCE_RETRY_TICKS = 5;
+
 export interface DecisionRunState {
   decisionRecordId: string;
   events: LifecycleEventDTO[];
@@ -271,8 +282,26 @@ export function useDecisionRun(initialId?: string) {
    * module constant so two hooks — or two runs — never share one cursor.
    */
   const cursorRef = useRef(0);
-  /** Whether sources have been requested for the current run. */
+  /** Whether sources have been successfully loaded for the current run. */
   const sourcesRef = useRef(false);
+  /**
+   * Whether the snapshot event has EVER been seen on this run.
+   *
+   * The retry has to survive the tick that delivered the event. `get_source`
+   * legitimately 400s the first time — the artifact is recorded before the
+   * decision record is queryable — so the load is retried on later ticks. But
+   * the event only appears in ONE batch, and the poll cursor then moves past
+   * it, so a per-batch flag retries exactly zero times.
+   *
+   * That is fine while a run is watched from its own first event, and wrong the
+   * moment a run is OBSERVED: `observe` seeds the whole history at once, which
+   * consumes the event before any tick can see it, and the source panel then
+   * sat on "Receiving source evidence…" forever with the bytes sitting in S3.
+   * Latching the fact rather than the news fixes both paths.
+   */
+  const sawEvidenceRef = useRef(false);
+  /** Ticks since the last source-load attempt. See SOURCE_RETRY_TICKS. */
+  const sinceSourceRef = useRef(0);
   /**
    * How many terminal checks have been skipped since the last one.
    *
@@ -328,10 +357,19 @@ export function useDecisionRun(initialId?: string) {
       // The record may not be queryable the instant the event lands, so a
       // first attempt can legitimately 400. Only latch on success; the next
       // tick simply tries again.
-      if (sawEvidence && !sourcesRef.current) {
-        void loadSources(recordId).then((found) => {
-          if (found) sourcesRef.current = true;
-        });
+      if (sawEvidence) sawEvidenceRef.current = true;
+      // Retried on the same cadence as the terminal check rather than every
+      // tick. `get_source` answers 400 until the decision record is queryable,
+      // which is most of a run, and asking 900ms apart turned a normal wait
+      // into a wall of red console lines on a screen a judge is watching.
+      if (sawEvidenceRef.current && !sourcesRef.current) {
+        sinceSourceRef.current += 1;
+        if (sinceSourceRef.current >= SOURCE_RETRY_TICKS) {
+          sinceSourceRef.current = 0;
+          void loadSources(recordId).then((found) => {
+            if (found) sourcesRef.current = true;
+          });
+        }
       }
     } catch {
       // A failed poll is not a failed decision. The evaluate call is the thing
@@ -444,14 +482,27 @@ export function useDecisionRun(initialId?: string) {
       /** Base64 bytes for a binary source document (the canonical COA PDF). */
       documentB64?: string;
       contentType?: string;
+      /**
+       * The id to run under, when the CALLER minted it.
+       *
+       * Routing needs the id before the POST resolves: the workspace lives at
+       * `/decisions/:recordId`, so the caller names the decision, navigates,
+       * and hands the same id here. The backend treats a caller-supplied id as
+       * CONTINUED rather than replaced, which is the same property that already
+       * let this hook poll a decision it named first.
+       */
+      decisionRecordId?: string;
     }) => {
       if (liveRef.current) return;
       liveRef.current = true;
-      const recordId = decisionRecordId;
+      const recordId = input.decisionRecordId ?? decisionRecordId;
+      if (recordId !== decisionRecordId) setId(recordId);
 
       setState({ ...EMPTY, running: true });
       cursorRef.current = 0;
       sourcesRef.current = false;
+      sawEvidenceRef.current = false;
+      sinceSourceRef.current = 0;
       sinceCheckRef.current = 0;
 
       try {
@@ -506,6 +557,8 @@ export function useDecisionRun(initialId?: string) {
 
       setState((prev) => ({ ...prev, running: true, failure: null }));
       sourcesRef.current = false;
+      sawEvidenceRef.current = false;
+      sinceSourceRef.current = 0;
       sinceCheckRef.current = 0;
 
       try {
@@ -530,6 +583,88 @@ export function useDecisionRun(initialId?: string) {
       watch(recordId);
     },
     [decisionRecordId, watch],
+  );
+
+  /**
+   * Attach to a decision this client did not start, and follow it to its end.
+   *
+   * This is what makes the workspace addressable by URL. `start` submits work;
+   * `observe` submits NOTHING — it reads the authoritative record, and if the
+   * backend says the decision is still going it watches with the same poll loop
+   * a live run uses. Navigating away and back therefore resumes observation of
+   * the same execution rather than launching a second one, and a deep link into
+   * `/decisions/:id` is just the same thing with no prior mount.
+   *
+   * The record legitimately 400s for most of a run (it becomes queryable only
+   * at the end), so a failed read is NOT treated as a missing decision: if
+   * events exist, the decision exists and is simply still running. Only the
+   * absence of BOTH is a decision this deployment cannot show.
+   */
+  const observe = useCallback(
+    async (recordId: string) => {
+      if (liveRef.current) return;
+      liveRef.current = true;
+      setId(recordId);
+      setState({ ...EMPTY, running: true });
+      cursorRef.current = 0;
+      sourcesRef.current = false;
+      sawEvidenceRef.current = false;
+      sinceSourceRef.current = 0;
+      sinceCheckRef.current = 0;
+
+      try {
+        const [decision, events] = await Promise.all([
+          api.getDecision(recordId).catch(() => ({ ok: false })) as Promise<EvaluateDTO>,
+          api.getEvents(recordId, 0, 1000).catch(() => ({ ok: false })) as Promise<{
+            ok: boolean;
+            events?: LifecycleEventDTO[];
+          }>,
+        ]);
+
+        const history = events.ok ? (events.events ?? []) : [];
+        const document = decision.ok ? recordOf(decision) : null;
+
+        // Neither the record nor a single event: nothing here to observe.
+        if (!decision.ok && history.length === 0) {
+          setState((prev) => ({ ...prev, running: false, failure: classifyFailure(decision) }));
+          liveRef.current = false;
+          return;
+        }
+
+        if (document && hasStopped(document)) {
+          // Already finished. Take the durable answer; do not poll.
+          setState((prev) => ({
+            ...prev,
+            events: mergeEvents(prev.events, history),
+          }));
+          await settle(recordId);
+          return;
+        }
+
+        // Still running. Seed what has happened so far, then watch from that
+        // cursor so the rail continues rather than replaying.
+        for (const e of history) {
+          if (typeof e.sequence === 'number') {
+            cursorRef.current = Math.max(cursorRef.current, e.sequence);
+          }
+          // Seeding consumes the snapshot event, so the FACT is latched here.
+          // Without this the poll would never retry the source load, because
+          // the news of that event has already gone by.
+          if (e.event === 'EVIDENCE_SNAPSHOT_CREATED') sawEvidenceRef.current = true;
+        }
+        setState((prev) => ({ ...prev, events: mergeEvents(prev.events, history) }));
+        if (sawEvidenceRef.current) {
+          void loadSources(recordId).then((found) => {
+            if (found) sourcesRef.current = true;
+          });
+        }
+        watch(recordId);
+      } catch (error) {
+        setState((prev) => ({ ...prev, running: false, failure: classifyFailure(error) }));
+        liveRef.current = false;
+      }
+    },
+    [settle, watch, loadSources],
   );
 
   /** Load a decision that already finished. No polling, no evaluate. */
@@ -558,5 +693,5 @@ export function useDecisionRun(initialId?: string) {
     }
   }, []);
 
-  return { decisionRecordId, ...state, start, resume, load, setDecisionRecordId: setId };
+  return { decisionRecordId, ...state, start, resume, observe, load, setDecisionRecordId: setId };
 }
