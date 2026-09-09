@@ -1,6 +1,6 @@
 {
   "record": {
-    "record_id": "DR-8e0fcdb3c4a6",
+    "record_id": "DR-b467d4192531",
     "lot_id": "LOT-1006",
     "run_count": 1,
     "disposition": "",
@@ -27,7 +27,7 @@
         "coverage": [
           {
             "test": "viscosity",
-            "evidence_ref": "CLM-f3fc636f33f9-00",
+            "evidence_ref": "CLM-ff4fac5713db-00",
             "method_match": true,
             "equivalence_record_id": null,
             "value": 178.0,
@@ -58,7 +58,7 @@
         "coverage": [
           {
             "test": "viscosity",
-            "evidence_ref": "CLM-f3fc636f33f9-01",
+            "evidence_ref": "CLM-ff4fac5713db-01",
             "method_match": false,
             "equivalence_record_id": "EQV-1",
             "value": 312.0,
@@ -75,8 +75,8 @@
     "evidence": {
       "canonical_claims": [
         {
-          "claim_id": "CLM-f3fc636f33f9-00",
-          "evidence_artifact_id": "ART-f3fc636f33f9",
+          "claim_id": "CLM-ff4fac5713db-00",
+          "evidence_artifact_id": "ART-ff4fac5713db",
           "lot_id": "LOT-1006",
           "material_id": "MAT-RESIN-3",
           "claim_type": "measurement",
@@ -94,8 +94,8 @@
           "source_hash": "593dc62a6e4a13ef634bb1633e7af7f13719e284361fd477912cc096679f160a"
         },
         {
-          "claim_id": "CLM-f3fc636f33f9-01",
-          "evidence_artifact_id": "ART-f3fc636f33f9",
+          "claim_id": "CLM-ff4fac5713db-01",
+          "evidence_artifact_id": "ART-ff4fac5713db",
           "lot_id": "LOT-1006",
           "material_id": "MAT-RESIN-3",
           "claim_type": "measurement",
@@ -116,12 +116,12 @@
     },
     "quality_authority": {
       "question": {
-        "question_id": "QQ-DR-8e0fcdb3c4a6-viscosity",
+        "question_id": "QQ-DR-b467d4192531-viscosity",
         "question_type": "EVIDENCE_APPLICABILITY",
         "characteristic": "viscosity",
         "options": [
           {
-            "claim_id": "CLM-f3fc636f33f9-00",
+            "claim_id": "CLM-ff4fac5713db-00",
             "value": 178.0,
             "units": "cP",
             "method": "ASTM-D2196",
@@ -129,10 +129,11 @@
             "equivalence_id": "",
             "selected_by": "INVESTIGATOR",
             "within_limits": false,
-            "threshold": "[200.0, 400.0] cP"
+            "threshold": "[200.0, 400.0] cP",
+            "would_disposition": "QUARANTINE"
           },
           {
-            "claim_id": "CLM-f3fc636f33f9-01",
+            "claim_id": "CLM-ff4fac5713db-01",
             "value": 312.0,
             "units": "cP",
             "method": "ASTM-D445",
@@ -140,11 +141,12 @@
             "equivalence_id": "EQV-1",
             "selected_by": "VERIFIER",
             "within_limits": true,
-            "threshold": "[200.0, 400.0] cP"
+            "threshold": "[200.0, 400.0] cP",
+            "would_disposition": "RELEASE"
           }
         ],
-        "investigator_evidence_ref": "CLM-f3fc636f33f9-00",
-        "verifier_evidence_ref": "CLM-f3fc636f33f9-01",
+        "investigator_evidence_ref": "CLM-ff4fac5713db-00",
+        "verifier_evidence_ref": "CLM-ff4fac5713db-01",
         "equivalence_id": "EQV-1",
         "method_from": "ASTM-D445",
         "method_to": "ASTM-D2196",
@@ -153,20 +155,20 @@
       },
       "decisions": [
         {
-          "authority_decision_id": "HAD-0a8b2868f1c1",
-          "decision_record_id": "DR-8e0fcdb3c4a6",
+          "authority_decision_id": "HAD-89b7a7f51b4b",
+          "decision_record_id": "DR-b467d4192531",
           "lot_id": "LOT-1006",
           "source_run": 1,
-          "evidence_snapshot_id": "SNAP-ed5c86d6db95",
-          "claim_set_hash": "f873657c7c657c16670903acea559316fb27194e58437bd74dc4f520ec988c10",
+          "evidence_snapshot_id": "SNAP-4b525062a7d8",
+          "claim_set_hash": "481521bee026dc96b0922c5367110757150e033f469895859d6cdae0707f5d2d",
           "lot_state_version": 1,
-          "question_id": "QQ-DR-8e0fcdb3c4a6-viscosity",
+          "question_id": "QQ-DR-b467d4192531-viscosity",
           "question_type": "EVIDENCE_APPLICABILITY",
           "characteristic": "viscosity",
           "authorized_evidence_refs": [],
           "disputed_evidence_refs": [
-            "CLM-f3fc636f33f9-00",
-            "CLM-f3fc636f33f9-01"
+            "CLM-ff4fac5713db-00",
+            "CLM-ff4fac5713db-01"
           ],
           "equivalence_id": "EQV-1",
           "method_from": "ASTM-D445",
@@ -180,7 +182,7 @@
           "decision": "KEEP_HELD",
           "accountable_actor": "QA-LEAD",
           "authority_source": "Plant Quality Authority",
-          "created_at": "2026-09-09T19:47:38.169111+00:00"
+          "created_at": "2026-09-09T19:54:48.940400+00:00"
         }
       ]
     }
@@ -188,18 +190,23 @@
   "events": [
     {
       "event": "QUALITY_AUTHORITY_RECORDED",
-      "decision_record_id": "DR-8e0fcdb3c4a6",
-      "at": "2026-09-09T19:47:38.169113+00:00",
-      "authority_decision_id": "HAD-0a8b2868f1c1",
-      "question_id": "QQ-DR-8e0fcdb3c4a6-viscosity",
+      "decision_record_id": "DR-b467d4192531",
+      "at": "2026-09-09T19:54:48.940404+00:00",
+      "authority_decision_id": "HAD-89b7a7f51b4b",
+      "question_id": "QQ-DR-b467d4192531-viscosity",
       "decision": "KEEP_HELD",
       "accountable_actor": "QA-LEAD",
       "authority_source": "Plant Quality Authority",
       "characteristic": "viscosity",
       "equivalence_id": "EQV-1",
       "authorized_evidence_refs": [],
-      "evidence_snapshot_id": "SNAP-ed5c86d6db95",
-      "claim_set_hash": "f873657c7c657c16670903acea559316fb27194e58437bd74dc4f520ec988c10"
+      "evidence_snapshot_id": "SNAP-4b525062a7d8",
+      "claim_set_hash": "481521bee026dc96b0922c5367110757150e033f469895859d6cdae0707f5d2d",
+      "established_value": null,
+      "established_units": "",
+      "established_method": "",
+      "established_condition": "",
+      "established_via_equivalence": ""
     }
   ]
 }

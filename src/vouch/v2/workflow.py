@@ -1248,6 +1248,13 @@ class VouchV2:
             authorized_evidence_refs=authorized,
             evidence_snapshot_id=authority.evidence_snapshot_id,
             claim_set_hash=authority.claim_set_hash,
+            # The measurement itself, so a surface reading the event stream
+            # can say WHAT was established without resolving a claim id.
+            established_value=authority.established_value,
+            established_units=authority.established_units,
+            established_method=authority.established_method,
+            established_condition=authority.established_condition,
+            established_via_equivalence=authority.established_via_equivalence,
         )
 
         if decision == "KEEP_HELD":
@@ -1589,6 +1596,20 @@ class VouchV2:
                     "selected_by": selected_by,
                     "within_limits": within,
                     "threshold": requirement.threshold_text(),
+                    # The disposition this path leads to, named. `within_limits`
+                    # is the arithmetic; this is what the arithmetic MEANS, and
+                    # it is the word the operator is actually choosing between.
+                    #
+                    # Still a counterfactual, never a disposition: nothing is
+                    # recorded from it and the engine recomputes after both
+                    # agents re-derive. Empty where it cannot be computed.
+                    "would_disposition": (
+                        ""
+                        if within is None
+                        else "RELEASE"
+                        if within
+                        else "QUARANTINE"
+                    ),
                 }
 
             options = [option(mine, "INVESTIGATOR"), option(theirs, "VERIFIER")]

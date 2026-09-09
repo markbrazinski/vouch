@@ -117,6 +117,12 @@ export interface QualityOptionDTO {
   within_limits?: boolean | null;
   /** The requirement rendered for display, e.g. "[200.0, 400.0] cP". */
   threshold?: string;
+  /**
+   * The disposition establishing this path would lead to. A counterfactual
+   * computed by the backend, never a disposition — the engine still recomputes
+   * after both agents re-derive. Empty where it cannot be computed.
+   */
+  would_disposition?: string;
 }
 
 /** §3. A scoped authority fact. Never a disposition. */

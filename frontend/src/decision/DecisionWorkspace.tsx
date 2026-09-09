@@ -34,7 +34,7 @@ import {
   ReconciliationStage,
   StageCard,
 } from './Stages';
-import { INK, MONO, N, Pill, SANS, HAIR } from './primitives';
+import { Dot, INK, MONO, N, Pill, SANS, HAIR } from './primitives';
 import type { DecisionWorkspaceVM, StageKey } from './model';
 import { SEM } from '../components/tokens';
 
@@ -358,6 +358,33 @@ export function DecisionWorkspace({
               {vm.receiptMeta}
             </div>
           </div>
+
+          {/* §7. A resumed run says so, and says why. Without it the second
+              pass through the same stages reads as a re-render rather than a
+              continuation the human caused. */}
+          {vm.runBanner && (
+            <div
+              data-testid="run-banner"
+              style={{
+                animation: 'vFade .4s ease-out both',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                marginTop: 12,
+                font: `600 10px ${MONO}`,
+                letterSpacing: '.06em',
+                color: INK.dense,
+                background: N.chip,
+                border: `1px solid ${HAIR}`,
+                borderRadius: 6,
+                padding: '5px 10px',
+                textTransform: 'uppercase',
+              }}
+            >
+              <Dot color="#45508C" />
+              {vm.runBanner}
+            </div>
+          )}
 
           <DecisionSpine nodes={vm.spine} />
 

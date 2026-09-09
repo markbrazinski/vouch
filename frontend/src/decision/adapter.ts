@@ -993,13 +993,36 @@ function outcomeFrom(
   }
 
   const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
-  if (qdr || result?.quality_decision_required) {
+  // A question that has been ANSWERED is no longer open. On a resumed case the
+  // rail deliberately keeps run 1's escalation, so reading it alone left a
+  // released lot still reporting "Quality decision required" — the outcome
+  // panel contradicting the disposition directly beneath it.
+  //
+  // Ordering decides it: an authority recorded AFTER the escalation settled
+  // that escalation. Comparing sequence rather than presence is what keeps a
+  // second, later disagreement legible.
+  const settled = last(events, 'QUALITY_AUTHORITY_RECORDED');
+  const answered =
+    Boolean(settled) &&
+    (num(settled?.sequence) ?? 0) > (num(qdr?.sequence) ?? 0);
+  if (!answered && (qdr || result?.quality_decision_required)) {
     return {
       visible: true,
       kind: 'quality_decision_required',
       headline: 'Quality decision required',
       tone: 'decision',
-      lines: [str(qdr?.reason) || result?.reason || 'The evidence could not establish an answer.'],
+      // `reason` on this event is a CODE ("DISAGREEMENT", "INSUFFICIENT"),
+      // which is fine for a log and unreadable in an outcome panel. Each code
+      // gets its sentence; anything unrecognised falls back to the engine's
+      // own prose rather than a code rendered as English.
+      lines: [
+        str(qdr?.reason) === 'DISAGREEMENT'
+          ? 'Independent review selected different controlling evidence. ' +
+            'No disposition was made.'
+          : str(qdr?.reason) === 'INSUFFICIENT'
+            ? 'The evidence does not establish an answer, so nothing was decided.'
+            : result?.reason || 'The evidence could not establish an answer.',
+      ],
       chip: { label: 'AWAITING QUALITY', tone: 'decision' },
     };
   }
@@ -1012,12 +1035,24 @@ function outcomeFrom(
   const blocked = consequence?.readinessChanges.filter((c) => c.to === 'BLOCKED') ?? [];
 
   if (disposition === 'RELEASE') {
+    // Where a human established the controlling evidence, the outcome says so.
+    // "Every governing requirement was met" is true but omits the fact an
+    // operator most needs to see on this record: the release rests on a
+    // measurement Quality chose, and the choice is part of the answer.
+    const established = str(
+      last(events, 'QUALITY_AUTHORITY_RECORDED')?.decision,
+    ) === 'ESTABLISH_EVIDENCE'
+      ? establishedSummary(events)
+      : '';
     return {
       visible: true,
       kind: 'released',
       headline: 'Released into usable inventory',
       tone: 'released',
       lines: [result?.reason || 'Every governing requirement was met by applicable evidence.'],
+      context: established
+        ? `Quality established ${established} as controlling.`
+        : undefined,
       chip: { label: 'RELEASED', tone: 'released' },
     };
   }
@@ -1530,9 +1565,12 @@ function qualityAuthorityOf(
   return segment ? (segment as QualityAuthorityDTO) : undefined;
 }
 
+//: The canonical role names. "Verifier" alone reads as a generic checker; the
+//: architecture's whole claim is that the second read is INDEPENDENT, and the
+//: name is where an operator learns that.
 const AGENT_LABEL: Record<string, string> = {
   INVESTIGATOR: 'Investigator',
-  VERIFIER: 'Verifier',
+  VERIFIER: 'Independent Verifier',
 };
 
 /** "470 MPa by ASTM-E8 at room_temp" — the operator's own vocabulary. */
@@ -1579,21 +1617,26 @@ export function qualityPanelFrom(
       basis: equivalence
         ? `applicable via ${equivalence}`
         : `the method ${str(question.method_to)} names`,
-      // The verb is "establish", never "release" or "approve": the human is
-      // naming which measurement is controlling, and the engine still decides
-      // what that means.
-      actionLabel: equivalence
-        ? `Establish ${str(o.method)} via ${equivalence}`
-        : `Establish direct ${str(o.method)}`,
-      // Stated, not implied. Where the two paths lead to different
-      // dispositions, an operator choosing between two plausible numbers must
-      // be told what each one leads to.
-      consequence:
-        o.within_limits === null || o.within_limits === undefined
-          ? 'Consequence cannot be computed from this value'
-          : passes
-            ? `Deterministic evaluation will PASS${threshold ? ` — within ${threshold}` : ''}`
-            : `Deterministic evaluation will FAIL${threshold ? ` — outside ${threshold}` : ''}`,
+      routeLabel: equivalence ? `VIA ${equivalence}` : 'DIRECT METHOD',
+      value: [
+        o.value === null || o.value === undefined ? '' : String(o.value),
+        str(o.units),
+      ]
+        .filter(Boolean)
+        .join(' '),
+      methodLine: [str(o.method), str(o.condition)].filter(Boolean).join(' · '),
+      // The same verb on both cards. A label that named the method made the
+      // two buttons different lengths and invited reading one as the primary
+      // action; the choice is between the cards, not between the buttons.
+      actionLabel: 'Establish this evidence',
+      // Named, not implied. The operator is choosing between two dispositions,
+      // so the card says which one — the arithmetic behind it is on the
+      // threshold line above.
+      consequence: str(o.would_disposition)
+        ? `If established: deterministic result = ${str(o.would_disposition)}`
+        : threshold
+          ? `Requirement ${threshold}`
+          : '',
       passes,
     };
   });
@@ -1603,12 +1646,14 @@ export function qualityPanelFrom(
   // The exact sentence. Every noun in it is a backend fact.
   // "Which", not "whether". The two paths lead to different dispositions, so
   // the operator is choosing between them rather than ratifying one.
-  const question_text =
-    `Which ${characteristic} determination should Quality establish as ` +
-    `controlling for this decision?`;
+  //
+  // Deliberately short and free of mechanism: an operator answering this does
+  // not need to know what a material fingerprint is, and the cards below
+  // carry the methods, the routes and the consequences.
+  const question_text = `Which ${characteristic} result should control this decision?`;
 
   const position = (o: QualityAuthorityOptionVM | undefined): string =>
-    o ? `Selected ${o.measurement}, ${o.basis}.` : '';
+    o ? `${o.value} · ${o.methodLine} · ${o.routeLabel}` : '';
 
   return {
     questionId: str(question.question_id),
@@ -1618,9 +1663,11 @@ export function qualityPanelFrom(
     options,
     investigatorPosition: position(options.find((o) => o.selectedBy === 'INVESTIGATOR')),
     verifierPosition: position(options.find((o) => o.selectedBy === 'VERIFIER')),
-    disputed: equivalenceId
-      ? `${equivalenceId} · ${str(question.method_from)} → ${str(question.method_to)} at ${str(question.condition)}`
-      : characteristic,
+    // Why a human is here, in one sentence. The mechanism — reconciliation,
+    // fingerprints, equivalence scope — stays out of the operator's way; it is
+    // all still in the record for an auditor.
+    disputed:
+      'The Investigator and Independent Verifier selected different valid evidence.',
     // Deliberately NOT "Approve"/"Release". Establishing evidence names which
     // measurement is controlling; holding leaves the lot where it is. Neither
     // verb decides the lot.
@@ -1646,24 +1693,20 @@ export function qualityAuthorityFrom(
     // What was established, in the operator's own terms. The backend records
     // the measurement alongside the claim id precisely so this line does not
     // have to name an opaque reference months later.
+    // One line an operator can read at a glance: what controls this decision.
     answer: authorized
       ? [
-          [
-            decision.established_value ?? '',
-            str(decision.established_units),
-          ]
+          [decision.established_value ?? '', str(decision.established_units)]
             .filter(Boolean)
             .join(' '),
           str(decision.established_method),
-          str(decision.established_condition),
+          str(decision.established_via_equivalence)
+            ? `via ${str(decision.established_via_equivalence)}`
+            : 'direct method',
         ]
           .filter(Boolean)
           .join(' · ')
-          .concat(
-            str(decision.established_via_equivalence)
-              ? ` — via ${str(decision.established_via_equivalence)}`
-              : ' — direct method',
-          )
+          .concat(' established as controlling')
       : `Lot kept held; no ${characteristic} determination was established`,
     accountableActor: str(decision.accountable_actor),
     authoritySource: str(decision.authority_source),
@@ -1790,5 +1833,56 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     // unanswered one has no record. The control cannot outlive its decision.
     qualityAuthorityPanel: qualityPanelFrom(qualityAuthorityOf(input.record)),
     qualityAuthority: qualityAuthorityFrom(qualityAuthorityOf(input.record)),
+    runBanner: runBannerFrom(events, input.record),
   };
+}
+
+/**
+ * §7. "Run 2 · resumed after Quality authority", or null on a first run.
+ *
+ * Read from DECISION_RESUMED, which carries both the run number and WHY the
+ * case continued — a human establishing controlling evidence and a human
+ * supplying new evidence are different continuations and must not read the
+ * same. Falls back to the record's own run_count so the banner survives a
+ * reload after the events have scrolled out of the polling window.
+ */
+/** "312 cP · ASTM-D445 via EQV-1", from the recorded authority event. */
+function establishedSummary(events: LifecycleEventDTO[]): string {
+  const recorded = last(events, 'QUALITY_AUTHORITY_RECORDED');
+  if (!recorded) return '';
+  const value = [
+    recorded.established_value === null || recorded.established_value === undefined
+      ? ''
+      : String(recorded.established_value),
+    str(recorded.established_units),
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const equivalence = str(recorded.established_via_equivalence);
+  return [
+    value,
+    str(recorded.established_method),
+    equivalence ? `via ${equivalence}` : 'direct method',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+export function runBannerFrom(
+  events: LifecycleEventDTO[],
+  record?: Record<string, unknown> | null,
+): string | null {
+  const resumed = last(events, 'DECISION_RESUMED');
+  const stored = num(record?.run_count) ?? 1;
+  const run = resumed ? (num(resumed.run_count) ?? stored) : stored;
+  if (run < 2) return null;
+
+  const trigger = resumed ? str(resumed.trigger) : '';
+  const because =
+    trigger === 'QUALITY_AUTHORITY'
+      ? 'resumed after Quality authority'
+      : trigger === 'HUMAN_EVIDENCE'
+        ? 'resumed after human evidence'
+        : 'resumed';
+  return `Run ${run} · ${because}`;
 }

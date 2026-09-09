@@ -847,61 +847,80 @@ export function QualityAuthorityPanel({
 
       <div
         data-testid="quality-authority-question"
-        style={{ font: `600 15px/1.45 ${SANS}`, color: INK.primary, marginBottom: 4 }}
+        style={{ font: `600 15px/1.45 ${SANS}`, color: INK.primary, marginBottom: 3 }}
       >
         {vm.question}
       </div>
-      <div style={{ font: `400 11px ${MONO}`, color: INK.muted, marginBottom: 14 }}>
+      <div style={{ font: `400 12px/1.5 ${SANS}`, color: INK.prose, marginBottom: 14 }}>
         {vm.disputed}
       </div>
 
-      {/* Each path is its own choice, with its own consequence stated. A
-          single button here would silently pick a side, and where the two
-          paths lead to different dispositions that button would be deciding
-          the lot on the operator's behalf. */}
-      <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
+      {/* Side by side and equal weight. The choice is between the two
+          measurements, so neither may read as the default — a single button,
+          or one visually heavier than the other, decides the lot on the
+          operator's behalf where the paths diverge. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: 12,
+          marginBottom: 14,
+        }}
+      >
         {vm.options.map((o) => (
           <div
             key={o.claimId}
             data-testid={`quality-option-${o.selectedBy.toLowerCase()}`}
             style={{
+              display: 'flex',
+              flexDirection: 'column',
               background: N.nested,
               border: `1px solid ${HAIR}`,
               borderRadius: 9,
-              padding: '12px 14px',
+              padding: '13px 14px',
             }}
           >
             <div
               style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 10,
-                marginBottom: 4,
-                flexWrap: 'wrap',
+                font: `600 9px ${MONO}`,
+                color: INK.label,
+                letterSpacing: '.07em',
+                marginBottom: 8,
               }}
             >
-              <span style={{ font: `700 13px ${SANS}`, color: INK.primary }}>
-                {o.measurement}
-              </span>
-              <span style={{ font: `400 11px ${MONO}`, color: INK.muted }}>{o.basis}</span>
+              SELECTED BY {o.agentLabel.toUpperCase()}
+            </div>
+
+            <div style={{ font: `700 20px/1.15 ${SANS}`, color: INK.primary }}>
+              {o.value}
+            </div>
+            <div style={{ font: `400 11px ${MONO}`, color: INK.muted, marginTop: 3 }}>
+              {o.methodLine}
+            </div>
+
+            <div style={{ marginTop: 8 }}>
               <span
                 style={{
+                  display: 'inline-block',
                   font: `600 9px ${MONO}`,
-                  color: INK.label,
                   letterSpacing: '.06em',
-                  marginLeft: 'auto',
+                  color: INK.dense,
+                  background: N.chip,
+                  border: `1px solid ${HAIR}`,
+                  borderRadius: 5,
+                  padding: '3px 7px',
                 }}
               >
-                SELECTED BY {o.agentLabel.toUpperCase()}
+                {o.routeLabel}
               </span>
             </div>
 
             <div
               data-testid={`quality-consequence-${o.selectedBy.toLowerCase()}`}
               style={{
-                font: `400 11px ${MONO}`,
+                font: `400 10px/1.5 ${MONO}`,
                 color: o.passes ? '#3E6B54' : '#9A5A2A',
-                marginBottom: 10,
+                margin: '10px 0 12px',
               }}
             >
               {o.consequence}
@@ -913,12 +932,14 @@ export function QualityAuthorityPanel({
               disabled={submitting}
               onClick={() => onEstablish?.(o.claimId)}
               style={{
+                marginTop: 'auto',
                 font: `600 11px ${MONO}`,
                 color: '#FFFFFF',
                 background: submitting ? '#8189B5' : '#45508C',
                 border: '1px solid rgba(69,80,140,.4)',
                 borderRadius: 8,
-                padding: '8px 14px',
+                padding: '9px 12px',
+                width: '100%',
                 cursor: submitting ? 'progress' : 'pointer',
               }}
             >
@@ -928,18 +949,21 @@ export function QualityAuthorityPanel({
         ))}
       </div>
 
+      {/* Tertiary. Holding the lot is a legitimate answer, but it is not the
+          decision being asked, so it must not compete with the two cards. */}
       <button
         type="button"
         data-testid="quality-keep-held"
         disabled={submitting}
         onClick={() => onHold?.()}
         style={{
-          font: `600 11px ${MONO}`,
-          color: INK.button,
-          background: N.chip,
-          border: '1px solid rgba(0,0,0,.14)',
-          borderRadius: 8,
-          padding: '9px 16px',
+          font: `500 10px ${MONO}`,
+          color: INK.muted,
+          background: 'transparent',
+          border: 'none',
+          borderBottom: `1px solid ${HAIR}`,
+          borderRadius: 0,
+          padding: '2px 0',
           cursor: submitting ? 'progress' : 'pointer',
         }}
       >
@@ -987,7 +1011,7 @@ export function QualityAuthorityStage({ vm }: { vm: QualityAuthorityRecordVM }) 
 
       <div style={{ display: 'grid', gap: 7 }}>
         {[
-          ['Answer', vm.answer],
+          ['Established', vm.answer],
           ['Accountable', vm.accountableActor],
           ['Authority', vm.authoritySource],
           ['Recorded', vm.clock],

@@ -298,6 +298,12 @@ export interface QualityAuthorityOptionVM {
   measurement: string;
   /** How this path is authorized: the named method, or the equivalence. */
   basis: string;
+  /** "DIRECT METHOD" | "VIA EQV-1" — the badge on the card. */
+  routeLabel: string;
+  /** "312 cP" */
+  value: string;
+  /** "ASTM-D445 · 25C" */
+  methodLine: string;
   /** The action label for choosing THIS path. */
   actionLabel: string;
   /**
@@ -426,4 +432,10 @@ export interface DecisionWorkspaceVM {
   qualityAuthorityPanel: QualityAuthorityPanelVM | null;
   /** The durable answered stage. Persists for the life of the record. */
   qualityAuthority: QualityAuthorityRecordVM | null;
+  /**
+   * §7. The banner marking a resumed run, e.g. "Run 2 · resumed after Quality
+   * authority". Null on a first run — a decision that has only ever run once
+   * needs no run label, and adding one would imply a history it does not have.
+   */
+  runBanner: string | null;
 }

@@ -55,14 +55,32 @@ describe('the open applicability question', () => {
     expect(panel.equivalenceId).toBe('EQV-1');
   });
 
-  it('names the real objects, on the option that relies on each', () => {
-    // The QUESTION asks which determination controls; the OPTIONS carry the
-    // methods and the equivalence, because that is where they apply.
+  it('names the real objects on the option that relies on each', () => {
+    // The QUESTION asks which result controls and the SUBHEAD says why a human
+    // is here. The methods, the routes and the equivalence live on the option
+    // cards, because that is where each one applies.
     expect(panel.question).toContain('viscosity');
-    expect(panel.disputed).toContain('EQV-1');
-    expect(panel.disputed).toContain('ASTM-D445');
-    expect(panel.disputed).toContain('ASTM-D2196');
-    expect(panel.disputed).toContain('25C');
+    expect(panel.disputed).toContain('Investigator');
+    expect(panel.disputed).toContain('Independent Verifier');
+
+    const cards = panel.options
+      .map((o) => `${o.value} ${o.methodLine} ${o.routeLabel}`)
+      .join(' | ');
+    expect(cards).toContain('ASTM-D2196');
+    expect(cards).toContain('ASTM-D445');
+    expect(cards).toContain('25C');
+    expect(cards).toContain('VIA EQV-1');
+    expect(cards).toContain('DIRECT METHOD');
+  });
+
+  it('uses the canonical role name for the second read', () => {
+    // "Verifier" alone reads as a generic checker. The architecture's claim is
+    // that the second read is INDEPENDENT, and the label is where an operator
+    // learns it.
+    const labels = panel.options.map((o) => o.agentLabel);
+    expect(labels).toContain('Investigator');
+    expect(labels).toContain('Independent Verifier');
+    for (const l of labels) expect(l).not.toMatch(/auditor|reviewer|checker/i);
   });
 
   it('never asks the human to decide the lot', () => {
@@ -72,33 +90,45 @@ describe('the open applicability question', () => {
     expect(panel.holdActionLabel).toBe('Keep held');
     // The verb is "establish": the human names the controlling measurement,
     // and the engine still decides what it means.
-    for (const o of panel.options) expect(o.actionLabel).toMatch(/^Establish /);
+    // The SAME verb on both cards: the choice is between the measurements,
+    // not between two differently-worded buttons.
+    for (const o of panel.options) {
+      expect(o.actionLabel).toBe('Establish this evidence');
+    }
   });
 
-  it('asks WHICH determination controls, not whether one is acceptable', () => {
-    expect(panel.question).toMatch(/^Which viscosity determination/);
-    expect(panel.question).toContain('controlling');
+  it('asks WHICH result controls, not whether one is acceptable', () => {
+    expect(panel.question).toBe(
+      'Which viscosity result should control this decision?',
+    );
   });
 
   it('states the consequence of each path, because they differ', () => {
-    const direct = panel.options.find((o) => !o.basis.startsWith('applicable via'))!;
-    const alternate = panel.options.find((o) => o.basis.startsWith('applicable via'))!;
+    const direct = panel.options.find((o) => o.routeLabel === 'DIRECT METHOD')!;
+    const alternate = panel.options.find((o) => o.routeLabel.startsWith('VIA '))!;
 
+    // The consequence NAMES the disposition. "FAIL" is the arithmetic; the
+    // operator is choosing between two outcomes and the card says which.
     expect(direct.passes).toBe(false);
-    expect(direct.consequence).toMatch(/will FAIL/);
+    expect(direct.consequence).toContain('QUARANTINE');
     expect(alternate.passes).toBe(true);
-    expect(alternate.consequence).toMatch(/will PASS/);
+    expect(alternate.consequence).toContain('RELEASE');
+    for (const o of panel.options) {
+      expect(o.consequence).not.toMatch(/cannot be computed/);
+    }
   });
 
   it('states both positions as selections, with their real measurements', () => {
     expect(panel.options).toHaveLength(2);
-    const measurements = panel.options.map((o) => o.measurement).join(' | ');
+    const measurements = panel.options
+      .map((o) => `${o.value} ${o.methodLine}`)
+      .join(' | ');
     expect(measurements).toContain('178 cP');
     expect(measurements).toContain('312 cP');
     expect(measurements).toContain('ASTM-D2196');
     expect(measurements).toContain('ASTM-D445');
     // The equivalence path is labelled as authorized, not as wrong.
-    expect(panel.options.map((o) => o.basis).join(' ')).toContain('EQV-1');
+    expect(panel.options.map((o) => o.routeLabel).join(' ')).toContain('EQV-1');
   });
 });
 
@@ -224,10 +254,13 @@ describe('the panel component', () => {
     ].join(' | ');
     expect(rendered).toContain('178 cP');
     expect(rendered).toContain('312 cP');
-    expect(rendered).toMatch(/will FAIL/);
-    expect(rendered).toMatch(/will PASS/);
+    expect(rendered).toContain('QUARANTINE');
+    expect(rendered).toContain('RELEASE');
+    expect(rendered).toContain('DIRECT METHOD');
+    expect(rendered).toContain('VIA EQV-1');
+    expect(rendered).toContain('INDEPENDENT VERIFIER');
     expect(screen.getByTestId('quality-authority-question').textContent).toMatch(
-      /Which viscosity determination/,
+      /Which viscosity result/,
     );
   });
 
@@ -288,5 +321,74 @@ describe('the agent cards show what actually differs', () => {
 
     expect(lanes.filter((l) => l?.includes('direct method'))).toHaveLength(1);
     expect(lanes.filter((l) => l?.includes('via EQV-1'))).toHaveLength(1);
+  });
+});
+
+describe('run 2 reads as a continuation, not a fresh decision', () => {
+  it('marks the resumed run and says what caused it', () => {
+    const vm = project(capture(run2));
+
+    expect(vm.runBanner).toBe('Run 2 · resumed after Quality authority');
+  });
+
+  it('shows no run banner on a first run', () => {
+    // A decision that has only ever run once needs no run label; adding one
+    // would imply a history it does not have.
+    expect(project(capture(run1)).runBanner).toBeNull();
+  });
+
+  it('keeps run 1 in the activity rail after run 2 begins', () => {
+    // The rail is the proof of the whole story: disagreement, human authority,
+    // resume, deterministic outcome, in one continuous history. Clearing it on
+    // resume would destroy exactly the evidence it exists to carry.
+    const labels = project(capture(run2)).activity.map((a) => a.shortLabel);
+
+    expect(labels).toContain('Applicability question raised');
+    expect(labels).toContain('Quality decision required');
+    expect(labels).toContain('Controlling evidence established');
+    expect(labels).toContain('Decision resumed');
+    expect(labels).toContain('Disposition computed');
+  });
+
+  it('orders the rail so the human act sits between the two runs', () => {
+    // Newest first, so reading upward is chronological.
+    const rail = project(capture(run2)).activity;
+    const at = (label: string) => rail.findIndex((a) => a.shortLabel === label);
+
+    expect(at('Quality decision required')).toBeGreaterThan(
+      at('Controlling evidence established'),
+    );
+    expect(at('Controlling evidence established')).toBeGreaterThan(
+      at('Decision resumed'),
+    );
+  });
+
+  it('names what Quality established in the released outcome', () => {
+    const vm = project(capture(run2));
+
+    expect(vm.outcome.kind).toBe('released');
+    expect(vm.outcome.context).toContain('312 cP');
+    expect(vm.outcome.context).toContain('ASTM-D445');
+    expect(vm.outcome.context).toContain('EQV-1');
+    expect(vm.outcome.context).toMatch(/^Quality established/);
+  });
+});
+
+describe('the disagreement never reads as a service error', () => {
+  it('explains the hold in words, not in an event code', () => {
+    const vm = project(capture(run1));
+
+    expect(vm.outcome.kind).toBe('quality_decision_required');
+    expect(vm.outcome.headline).toBe('Quality decision required');
+    expect(vm.outcome.lines.join(' ')).toContain('different controlling evidence');
+    // The raw code must not surface as prose.
+    expect(vm.outcome.lines.join(' ')).not.toBe('DISAGREEMENT');
+    expect(vm.outcome.lines.join(' ')).not.toMatch(/technical failure/i);
+  });
+
+  it('keeps the disposition surface visible while a human is owed an answer', () => {
+    // TECHNICAL_FAILURE suppresses the disposition panel. A disagreement must
+    // not, because that panel is what explains why the lot is being held.
+    expect(project(capture(run1)).failure?.suppressesDisposition).not.toBe(true);
   });
 });
