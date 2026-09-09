@@ -57,6 +57,19 @@ receipt is what changes the answer.
 
 ## northern-alloys-mtr-lot-1003.pdf
 
+> **SUPERSEDED — awaiting re-render.** The facts below describe the document as
+> it exists on disk today. The backend it was qualified against no longer tells
+> this story: `LOT-1003` now carries the human-resolvable **identity binding**
+> case (`EVIDENCE_IDENTITY_UNRESOLVED` → human confirms batch↔lot → same record
+> resumes → `RELEASE`), frozen in
+> `contracts/demo/VOUCH_V2_CANONICAL_SUPPLIER_DOCUMENT_BRIEF.md` §3.
+>
+> The replacement is an ORDINARY-extraction Certificate of Analysis printing
+> `Supplier Batch: WP-26-0317-B` and **no** `LOT-####` string at all. Until it
+> is rendered and re-qualified, this file stays tracked and its hash test keeps
+> passing — deleting it would lose the only qualified bytes for this slot.
+
+
 | | |
 |---|---|
 | Supplier | Northern Alloys (`SUP-NORTH`), site `SITE-N1` |

@@ -5,7 +5,7 @@
 
 > **Rev 2 — Four-Lot Ladder gate.** The demo now runs an intentional
 > increasing-complexity ladder: `LOT-1001` RELEASE, `LOT-1002` QUARANTINE,
-> `LOT-1003` EVIDENCE_UNBOUND, `LOT-1004` SECURITY_QUARANTINE. A fourth
+> `LOT-1003` EVIDENCE_IDENTITY_UNRESOLVED, `LOT-1004` SECURITY_QUARANTINE. A fourth
 > document (§2b, the clean Northern Alloys COA) was added, the structured MTR
 > moved from `LOT-1001` to a new alloy `LOT-1003`, and the MAT-RESIN-3 polymer
 > vertical moved intact to `LOT-1005` (§9). §2 and §4 are unchanged in content;
@@ -151,26 +151,36 @@ document stops being the ordinary-extraction control.
 
 ---
 
-## 3. Supplier B — structured / table-heavy · Textract path
+## 3. Supplier B — legitimate certificate, unresolvable identity
 
-Carries the **`EVIDENCE_UNBOUND`** rung of the ladder.
+Carries the **`EVIDENCE_IDENTITY_UNRESOLVED`** rung of the ladder: the
+human-resolvable case.
 
-Exercises structured extraction. Its facts are chosen so it does **not** disturb
-the Hero A or Hero B outcomes.
+> **This document must look completely normal.** It parses cleanly, its
+> measurements extract cleanly, it clears security, and its supplier, site,
+> material and PO all match the receipt. The one thing it does not do is name a
+> Vouch lot — it names the supplier's OWN batch, and nothing authoritative maps
+> that identifier to an internal lot until a human establishes it.
+>
+> The demo this replaces read as "Textract could not read the document". That
+> is the wrong story. The story is: **a perfectly valid test result for Lot A
+> must never accidentally release Lot B.**
 
 | Field | Frozen value |
 |---|---|
 | Supplier | **Northern Alloys** (`SUP-NORTH`) |
 | Site | `SITE-N1` |
 | Material | `MAT-ALLOY-7` — Alloy 7 billet |
-| Lot | `LOT-1003` |
+| Internal lot (Vouch) | `LOT-1003` |
+| **Supplier batch (printed)** | **`WP-26-0317-B`** |
 | PO reference | `PO-82` |
 | Quantity | 450 kg |
 | Manufactured | 2026-02-15 |
 | Received | 2026-03-06 |
-| Document type | Mill test / material test report |
+| Document type | Certificate of Analysis |
 | Specification cited | `SPEC-A7` **Revision C** (the governing one) |
-| Intended extraction path | **`Textract AnalyzeDocument(TABLES)`** when live-qualified |
+| Supplier conformance wording | `CONFORMS` |
+| Intended extraction path | **ordinary extraction** — Textract NOT required |
 
 ### Measurements (exact)
 
@@ -179,39 +189,57 @@ the Hero A or Hero B outcomes.
 | tensile_strength | **512** | MPa | `ASTM-E8` | `room_temp` |
 | hardness | **31** | HRC | `HRC` | `as_received` |
 
+### The identity gap, stated exactly
+
+The document prints:
+
+```
+Supplier Batch: WP-26-0317-B
+```
+
+Vouch is evaluating `LOT-1003`. No authoritative object states
+
+```
+WP-26-0317-B  →  LOT-1003
+```
+
+so binding resolves to `UNRESOLVED_SUPPLIER_BATCH` and the case halts at
+`IDENTITY CONFIRMATION REQUIRED`. A QA lead holding the shipping paperwork can
+close it; Vouch cannot infer it from supplier, material, PO, date or quantity
+proximity, and deliberately does not try.
+
 ### Required document structure
 
-The measurements **must** live in a real multi-column table — not in
-`key: value` lines. The table needs at least: a characteristic/test column, a
-result column, a units column, a method column and a condition column, with a
-header row that names them.
-
-A flattened text parser must be **insufficient**: reading the page as lines must
-not be enough to bind a result to its method and condition. That is precisely
-what makes structured extraction load-bearing rather than decorative, and it is
-the acceptance criterion for PDF 2.
-
-Additional rows of realistic but non-governing content (chemical composition,
-heat number, dimensional checks) are encouraged — they make the table genuinely
-table-shaped and give `sourceLocators` a real cell to point at.
+- Every field above must be **real selectable PDF text**, not an image. The
+  supplier batch identifier especially: the scenario turns on it being read
+  perfectly.
+- The document **must NOT print `LOT-1003`, or any `LOT-####` string, anywhere.**
+  A lot id on the page binds the document immediately and the case evaporates.
+- Measurements in flat `key: value (method, condition)` lines. This document is
+  on the ordinary extraction path; a table would route it through structure
+  recovery and reintroduce the parsing story this case exists to remove.
+- Avoid the literal phrase `Supplier conformance` — `supplier: <value>` is an
+  identity pattern, and `conformance` would be read as a second, conflicting
+  supplier id. Use `Conformance statement: CONFORMS`.
 
 ### Why 512 and Revision C
 
-512 passes Revision C (≥ 480), so nothing about the MEASUREMENTS is in doubt.
-That is deliberate: this document must fail for an identity reason alone, and a
-failing measurement would give the refusal a second, confounding cause.
+Once identity is established the evidence must be **boring**: 512 passes
+Revision C (≥ 480), hardness 31 is mid-band, the cited revision is the one that
+governs on receipt, and both agents converge. Rev mismatch, equivalence
+disputes and numeric edge cases are demonstrated elsewhere — a second
+difficulty here would confound the identity story.
 
-### Why it does not release
+The terminal reason after run 2 is effectively:
+*identity established; evidence satisfies the governing requirements.*
 
-The lot id is printed in the page HEADER, and `AnalyzeDocument(TABLES)` returns
-table cells only — so `LOT-1003` never appears in the recovered text. Structure
-recovery succeeds; identity binding separately refuses. The worst-cell
-confidence (0.7737 at qualification) is set by the small-type chemical
-composition rows, **not** by the lot id. Anyone re-rendering this document must
-preserve the header/table split and those rows' type size, or the control stops
-firing for the reason it is documented to fire for.
+### Production consequence
 
----
+Releasing `LOT-1003` makes its **450 kg of held inventory usable**. That is the
+whole consequence, and it is deliberate: 450 kg is not enough to change the
+readiness of `C-417`, `C-418` or `C-419`, so this case neither borrows from nor
+disturbs the Hero A and LOT-1006 stories. Pinned by
+`test_it_does_not_touch_the_other_demo_stories`.
 
 ## 4. Supplier C — hostile / adversarial · security quarantine
 

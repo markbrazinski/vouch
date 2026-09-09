@@ -429,3 +429,40 @@ def test_an_answered_question_cannot_be_answered_again_differently(vouch):
     _confirm(v, outcome)
     with pytest.raises(VouchFailure):
         _confirm(v, outcome, decision="KEEP_UNBOUND")
+
+
+# ==========================================================================
+# production consequence — real, and confined to this lot
+# ==========================================================================
+
+
+def test_the_consequence_is_held_inventory_becoming_usable(vouch):
+    """The truthful consequence, and the whole of it."""
+    corpus, v = vouch
+    outcome, _ = _run1(vouch)
+    before = corpus.get("inventory", "LOT-1003")
+    assert (before.usable, before.quantity) == (False, 450.0)
+
+    resumed = _confirm(v, outcome)
+    after = corpus.get("inventory", "LOT-1003")
+    assert (after.usable, after.quantity) == (True, 450.0)
+    assert resumed.mutation["inventory_delta"] == 450.0
+
+
+def test_it_does_not_touch_the_other_demo_stories(vouch):
+    """C-417/C-418 (Hero A) and C-419 (LOT-1006) must not move because of this.
+
+    450 kg is deliberately not enough to change any order's readiness, so this
+    case tells its own story without borrowing or disturbing another's.
+    """
+    from vouch.v2.consequences import compute_readiness
+
+    corpus, v = vouch
+    orders = ("C-417", "C-418", "C-419")
+    before = {o: compute_readiness(corpus, o).as_dict()["readiness"] for o in orders}
+
+    outcome, _ = _run1(vouch)
+    _confirm(v, outcome)
+
+    after = {o: compute_readiness(corpus, o).as_dict()["readiness"] for o in orders}
+    assert after == before
