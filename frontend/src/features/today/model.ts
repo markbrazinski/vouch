@@ -89,7 +89,7 @@ export interface RecoveryCandidateVM {
  * one with nothing saying why.
  */
 export interface CausalEventVM {
-  kind: 'readiness' | 'resequence';
+  kind: 'readiness' | 'resequence' | 'quarantine';
   lotId: string;
   disposition: string;
   orderId: string;
@@ -207,28 +207,102 @@ function candidateDetail(candidate: RecoveryCandidateDTO): string {
  * away, or as the reason another order moved.
  */
 export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEventVM[] {
-  return (rows ?? []).map((row) => {
+  const all = rows ?? [];
+
+  /** The shortfall the blocked order still carries, from the recovery facts. */
+  const shortfallFor = (blockedOrderId: string): { short: number; material: string } | null => {
+    for (const row of all) {
+      if (row.kind !== 'resequence' || row.blocked_order_id !== blockedOrderId) continue;
+      for (const candidate of row.candidates ?? []) {
+        if (candidate.kind !== 'EXISTING_INVENTORY') continue;
+        const facts = candidate.facts ?? {};
+        return {
+          short: (facts.short_by as number) ?? 0,
+          material: candidate.candidate_id,
+        };
+      }
+    }
+    return null;
+  };
+
+  /**
+   * A release whose resequence is reported separately is ONE event.
+   *
+   * The readiness recomputation genuinely produces "C-417 READY -> BLOCKED" on
+   * the release, but saying it that way makes the clean lot read as the thing
+   * that broke the order. It did not: C-417 was short before anything was
+   * released, and releasing 500 kg only made the existing gap measurable. So
+   * the two rows are stated as one sentence — what the release ENABLED, then
+   * what remains short, then the move that followed.
+   */
+  const foldedInto = new Set<CausalEventDTO>();
+  /** The release facts folded into a resequence, keyed by decision record. */
+  const releaseFacts = new Map<string, { delta: number; material: string }>();
+  for (const row of all) {
+    if (row.kind !== 'resequence') continue;
+    for (const other of all) {
+      if (
+        other.kind !== 'resequence' &&
+        other.decision_record_id === row.decision_record_id &&
+        other.order_id === row.blocked_order_id
+      ) {
+        foldedInto.add(other);
+        if ((other.inventory_delta ?? 0) > 0) {
+          releaseFacts.set(row.decision_record_id ?? '', {
+            delta: other.inventory_delta ?? 0,
+            material: other.material_id ?? '',
+          });
+        }
+      }
+    }
+  }
+
+  return all
+    .filter((row) => !foldedInto.has(row))
+    .map((row) => {
     const lot = row.lot_id ?? '';
     const order = row.order_id ?? '';
     let sentence: string;
 
     if (row.kind === 'resequence') {
+      const blocked = row.blocked_order_id ?? '';
+      const gap = shortfallFor(blocked);
+      const released = releaseFacts.get(row.decision_record_id ?? '');
+      const enabling = released
+        ? `${lot} released ${qty(released.delta)} kg of ${released.material}, ` +
+          `making ${order} fully executable. `
+        : row.disposition === 'RELEASE'
+          ? `${lot} released the material ${order} needs, making it fully executable. `
+          : '';
+      const remains = gap
+        ? `${blocked} remains ${qty(gap.short)} kg short, so `
+        : `${blocked} remains blocked, so `;
       sentence =
-        `${order} moved into ${slotClock(row.to_slot ?? '')} because its material ` +
-        `requirements were already fully satisfied by released inventory. ` +
-        `${row.blocked_order_id ?? ''} could not run in that slot.`;
+        `${enabling}${remains}Vouch moved ${order} into the available ` +
+        `${slotClock(row.to_slot ?? '')} slot.`;
+    } else if (row.kind === 'quarantine' || row.disposition === 'QUARANTINE') {
+      // Never "removed inventory": a quarantined lot was never usable, so the
+      // consequence is a QUALITY one. The basis is named because "quarantined"
+      // without the revision it was judged against is not an explanation.
+      const basis = [row.spec_id, row.revision && `Revision ${row.revision}`]
+        .filter(Boolean)
+        .join(' ');
+      sentence =
+        `${lot} was quarantined against ${basis || 'its governing specification'}. ` +
+        `The remaining evidence cannot support release, so ${order || 'the order'} ` +
+        `remains blocked.`;
     } else if ((row.inventory_delta ?? 0) > 0) {
-      // A release. It added material AND revealed what is still uncovered.
       sentence =
-        `${lot} released ${qty(row.inventory_delta)} ${row.material_id ?? ''}, ` +
-        `which moved ${order} from ${row.from} to ${row.to}.`;
+        `${lot} released ${qty(row.inventory_delta)} kg of ${row.material_id ?? ''}, ` +
+        `and ${order} is now ${row.to}.`;
     } else {
-      // Not a release. Say what changed without claiming stock was removed.
-      sentence = `${order} moved from ${row.from} to ${row.to} after ${lot} was assessed.`;
+      sentence = `${order} is now ${row.to} after ${lot} was assessed.`;
     }
 
     return {
-      kind: (row.kind === 'resequence' ? 'resequence' : 'readiness') as CausalEventVM['kind'],
+      kind: (row.kind === 'resequence' || row.kind === 'quarantine'
+        ? row.kind
+        : 'readiness') as CausalEventVM['kind'],
       lotId: lot,
       disposition: row.disposition ?? '',
       orderId: order,

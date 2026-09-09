@@ -68,23 +68,61 @@ const RESEQUENCE: CausalEventDTO = {
 };
 
 describe('Today causal history', () => {
-  it('credits the RELEASE with the material it made usable', () => {
-    const [event] = toCausalHistory([RELEASE_EXPOSES_SHORTFALL]);
-    expect(event.sentence).toContain('LOT-1001 released 500 MAT-ALLOY-7');
-    expect(event.sentence).toContain('C-417');
+  it('states what the release ENABLED, never that it blocked an order', () => {
+    // The readiness recomputation really does emit C-417 READY -> BLOCKED on
+    // this release, but C-417 was short before anything was released. Saying
+    // the clean lot "moved C-417 to BLOCKED" makes the good decision read as
+    // the cause of the problem, so the two rows fold into one sentence.
+    const [event, ...rest] = toCausalHistory([RELEASE_EXPOSES_SHORTFALL, RESEQUENCE]);
+    expect(rest).toHaveLength(0);
+    expect(event.sentence).toBe(
+      'LOT-1001 released 500 kg of MAT-ALLOY-7, making C-418 fully executable. ' +
+        'C-417 remains 400 kg short, so Vouch moved C-418 into the available 08:00 slot.',
+    );
+    expect(event.sentence).not.toMatch(/READY to BLOCKED/);
     expect(event.decisionRecordId).toBe('DR-aaa');
   });
 
-  it('explains the move by the moved order’s own coverage', () => {
-    const [event] = toCausalHistory([RESEQUENCE]);
-    expect(event.sentence).toContain('C-418 moved into 08:00');
-    expect(event.sentence).toContain('already fully satisfied by released inventory');
+  it('names the governing basis a quarantine was decided against', () => {
+    const [event] = toCausalHistory([
+      {
+        kind: 'quarantine',
+        lot_id: 'LOT-1002',
+        disposition: 'QUARANTINE',
+        order_id: 'C-417',
+        spec_id: 'SPEC-A7',
+        revision: 'C',
+        decision_record_id: 'DR-bbb',
+      },
+    ]);
+    expect(event.sentence).toBe(
+      'LOT-1002 was quarantined against SPEC-A7 Revision C. The remaining ' +
+        'evidence cannot support release, so C-417 remains blocked.',
+    );
+    expect(event.sentence).not.toMatch(/removed|took away|reduced|released/i);
   });
 
   it('never attributes the resequence to the quarantine', () => {
     const [event] = toCausalHistory([RESEQUENCE]);
     expect(event.lotId).toBe('LOT-1001');
     expect(event.sentence).not.toContain('LOT-1002');
+  });
+
+  it('keeps the quarantine and the release as separate entries', () => {
+    const history = toCausalHistory([
+      RELEASE_EXPOSES_SHORTFALL,
+      RESEQUENCE,
+      {
+        kind: 'quarantine',
+        lot_id: 'LOT-1002',
+        disposition: 'QUARANTINE',
+        order_id: 'C-417',
+        spec_id: 'SPEC-A7',
+        revision: 'C',
+        decision_record_id: 'DR-bbb',
+      },
+    ]);
+    expect(history.map((e) => e.lotId)).toEqual(['LOT-1001', 'LOT-1002']);
   });
 
   it('never says a quarantine removed usable inventory', () => {
@@ -130,6 +168,7 @@ describe('Today causal history', () => {
       lines: [],
       causal_history: [RELEASE_EXPOSES_SHORTFALL, RESEQUENCE],
     } as TodayDTO);
-    expect(vm.causalHistory.map((e) => e.kind)).toEqual(['readiness', 'resequence']);
+    // The readiness row folds into the resequence it caused.
+    expect(vm.causalHistory.map((e) => e.kind)).toEqual(['resequence']);
   });
 });

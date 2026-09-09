@@ -550,6 +550,39 @@ def _today_causality() -> list[dict]:
                 }
             )
 
+        # A QUARANTINE changes no readiness — a quarantined lot was never usable
+        # inventory — so the consequence engine writes no `caused_by` for it and
+        # it would be absent from this history entirely. That silence is wrong
+        # on the surface whose job is explaining the day: the operator watched a
+        # lot get quarantined and Today said nothing about it. Recorded here as
+        # a QUALITY fact, carrying the governing basis that decided it, with no
+        # claim that any material was removed.
+        if disposition == "QUARANTINE":
+            basis = document.get("basis") or {}
+            blocked = [
+                order.order_id
+                for order in _CORPUS.all("production_order")
+                if order.status == "BLOCKED"
+                and any(
+                    line.material_id == (document.get("identity") or {}).get("material_id", "")
+                    for line in order.requirements
+                )
+            ]
+            history.append(
+                {
+                    "kind": "quarantine",
+                    "lot_id": lot_id,
+                    "disposition": disposition,
+                    "order_id": blocked[0] if blocked else "",
+                    "spec_id": basis.get("spec_id", ""),
+                    "revision": basis.get("revision", ""),
+                    "decision_record_id": record_id,
+                    # After every readiness link this run produced, and there
+                    # are none, so it sorts on the mutation that did happen.
+                    "ledger_sequence": ((document.get("mutation") or {}).get("ledger_sequence") or 0),
+                }
+            )
+
         recovery = consequences.get("recovery") or {}
         moved = recovery.get("caused_by") or {}
         if moved and recovery.get("executed"):

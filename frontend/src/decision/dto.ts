@@ -214,6 +214,9 @@ export interface CausalEventDTO {
   from_slot?: string;
   to_slot?: string;
   blocked_order_id?: string;
+  /** The governing basis a quarantine was decided against. */
+  spec_id?: string;
+  revision?: string;
   decision_record_id?: string;
   ledger_sequence?: number;
   candidates?: RecoveryCandidateDTO[];
