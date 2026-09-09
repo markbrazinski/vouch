@@ -262,11 +262,15 @@ export function RoutedShell({ entry }: { entry: HeroAEntry }) {
               path="/today"
               element={
                 <Scroller>
-                  {/* Today links an order to the decision that changed it. The
-                      causal link is `consequences.caused_by` on the record,
-                      which `get_today` does not carry — so until a decision id
-                      reaches this surface the honest move is the ledger. */}
-                  <TodaySurface onOpenDecision={() => navigate('/records')} />
+                  {/* Today's causal history carries the real decision record
+                      that produced each change, so "Why did this change?" opens
+                      that document. An order card with no causal link still
+                      falls back to the ledger rather than guessing. */}
+                  <TodaySurface
+                    onOpenDecision={(id) =>
+                      navigate(id.startsWith('DR-') ? `/records/${id}` : '/records')
+                    }
+                  />
                 </Scroller>
               }
             />
