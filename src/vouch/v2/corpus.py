@@ -308,6 +308,34 @@ class InventoryRecord:
 
 
 @dataclass(frozen=True)
+class PlannedCoverage:
+    """A named lot queued to cover a named order's requirement.
+
+    Inventory is pooled by material, which answers "is there enough of this
+    material" and cannot answer "is any of it meant for THIS order". Those are
+    different questions, and readiness needs the second one: a shortfall with a
+    specific lot queued against it is a plan that may still work out, while a
+    shortfall with nothing queued is a plan that has already failed.
+
+    Deliberately NOT inferred. Two lots of MAT-ALLOY-7 sitting in receiving do
+    not cover C-417 merely by existing — that inference would have kept C-417
+    permanently AT_RISK behind 650 kg of unrelated material and destroyed the
+    Hero A transition. An allocation is a planning decision someone made, so it
+    is recorded as a row or it does not exist.
+
+    Frozen, with no live attributes and no state machine of its own: this is the
+    PLAN. Whether the lot can still honour it is the lot's status to say, and
+    `Corpus.planned_coverage` reads that rather than duplicating it.
+    """
+
+    coverage_id: str
+    order_id: str
+    material_id: str
+    lot_id: str
+    quantity: float
+
+
+@dataclass(frozen=True)
 class ApprovedSubstitution:
     product: str
     original_material_id: str
@@ -407,6 +435,44 @@ class Corpus:
             for r in self.all("inventory")
             if r.material_id == material_id and r.usable
         )
+
+    #: Lot states where a queued allocation can still be honoured.
+    #:
+    #: RECEIVED and PENDING_QA are both "not usable yet, but the plan still has
+    #: a path": one is awaiting evaluation, the other is awaiting a human. A
+    #: QUARANTINED or REJECTED lot is terminal for this purpose — the plan
+    #: needs another source — and a RELEASED lot is already counted in
+    #: `usable_inventory`, so counting it here would double it.
+    COVERABLE_LOT_STATES = frozenset({"RECEIVED", "PENDING_QA"})
+
+    def planned_coverage(self, order_id: str, material_id: str) -> float:
+        """Quantity queued for this order that could still arrive.
+
+        Only explicit rows count, and only while their lot can still honour
+        them. A lot with no row never contributes, whatever its material.
+        """
+        total = 0.0
+        for row in self.all("planned_coverage"):
+            if row.order_id != order_id or row.material_id != material_id:
+                continue
+            lot = self.lot(row.lot_id)
+            if lot is None or lot.status not in self.COVERABLE_LOT_STATES:
+                continue
+            total += row.quantity
+        return total
+
+    def planned_coverage_rows(self, order_id: str, material_id: str) -> list[PlannedCoverage]:
+        """Every allocation for this requirement, honourable or not.
+
+        Today shows what happened to a queued lot, not merely that it stopped
+        counting — "400 kg unavailable · LOT-1002 quarantined" is the sentence
+        an operator needs, and it cannot be written from a total alone.
+        """
+        return [
+            row
+            for row in self.all("planned_coverage")
+            if row.order_id == order_id and row.material_id == material_id
+        ]
 
     def substitutions_for(self, product: str) -> list[ApprovedSubstitution]:
         return [s for s in self.all("substitution") if s.product == product]

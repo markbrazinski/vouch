@@ -84,29 +84,57 @@ function StatusVsReadiness({ order }: { order: TodayOrderVM }) {
   );
 }
 
+/**
+ * What a requirement is actually made of.
+ *
+ * A single "coverage 0" number could not distinguish an order that is short
+ * with a named lot queued against it from one that is short with nothing
+ * coming — the difference between a plan that may still work and a plan that
+ * has already failed. Each component is stated on its own line, and a queued
+ * lot says what became of it, because "400 kg unavailable · LOT-1002
+ * quarantined" is the sentence that explains the day.
+ */
 function CoverageRow({ order }: { order: TodayOrderVM }) {
   if (order.coverage.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-      {order.coverage.map((c) => (
-        <div
-          key={c.materialId}
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 10,
-            font: "400 11px 'IBM Plex Mono'",
-            color: c.short ? '#8E2B24' : T.muted,
-          }}
-        >
-          <span style={{ minWidth: 118, color: T.ink70 }}>{c.materialId}</span>
-          <span>
-            need {c.required} · have {c.available}
-          </span>
-          {/* Shown only when the backend reported a shortfall. */}
-          {c.short && <span style={{ fontWeight: 700 }}>short {c.shortBy}</span>}
-        </div>
-      ))}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9 }}>
+      {order.coverage.map((c) => {
+        const line = (label: string, value: string, color: string, bold = false) => (
+          <div
+            key={label}
+            style={{
+              display: 'flex',
+              gap: 8,
+              font: `${bold ? 700 : 400} 11px 'IBM Plex Mono'`,
+              color,
+            }}
+          >
+            <span style={{ minWidth: 78, textAlign: 'right' }}>{value} kg</span>
+            <span>{label}</span>
+          </div>
+        );
+        return (
+          <div key={c.materialId} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <div style={{ font: "400 10px 'IBM Plex Mono'", color: T.faint }}>
+              {c.materialId}
+            </div>
+            {line('required', c.required, T.ink70)}
+            {line('released', c.available, '#3E6B54')}
+            {/* Every allocation, honourable or not — a lot that was refused is
+                more informative than its absence. */}
+            {c.sources.map((source) =>
+              line(
+                source.honourable
+                  ? `queued · ${source.lotId} · awaiting Quality`
+                  : `unavailable · ${source.lotId} ${source.lotStatus.toLowerCase()}`,
+                source.quantity,
+                source.honourable ? '#8a6318' : '#8E2B24',
+              ),
+            )}
+            {c.short && c.uncovered !== '0' && line('short', c.uncovered, '#8E2B24', true)}
+          </div>
+        );
+      })}
     </div>
   );
 }

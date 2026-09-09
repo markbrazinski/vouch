@@ -509,7 +509,29 @@ def _today_plan() -> dict:
                 "status": order.status,
                 "readiness": readiness,
                 "reason": result.reason,
-                "coverage": [line.as_dict() for line in result.coverage],
+                "coverage": [
+                    {
+                        **line.as_dict(),
+                        # WHICH lot was queued, and what became of it. A total
+                        # alone cannot say "400 kg unavailable · LOT-1002
+                        # quarantined", which is the sentence that explains the
+                        # day; without it the UI can only show a number
+                        # shrinking for no visible reason.
+                        "planned_sources": [
+                            {
+                                "lot_id": row.lot_id,
+                                "quantity": row.quantity,
+                                "lot_status": (
+                                    getattr(_CORPUS.lot(row.lot_id), "status", "")
+                                ),
+                            }
+                            for row in _CORPUS.planned_coverage_rows(
+                                order.order_id, line.material_id
+                            )
+                        ],
+                    }
+                    for line in result.coverage
+                ],
                 "requirements": [
                     {"material_id": line.material_id, "quantity": line.quantity}
                     for line in order.requirements

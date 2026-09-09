@@ -160,6 +160,8 @@ def test_record_stores_policy_capability_and_mutation(vouch):
 def test_record_stores_consequences_and_recovery(vouch):
     corpus, v = vouch
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    # Recovery runs on the transition to BLOCKED, which the quarantine causes.
+    outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     consequences = outcome.record.consequences
 
     assert consequences.coverage_changes
@@ -300,6 +302,8 @@ def test_new_event_types_are_persisted(vouch, store):
     """The events added this iteration are part of the durable contract."""
     corpus, v = vouch
     outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    # Recovery runs on the transition to BLOCKED, which the quarantine causes.
+    outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     emitted = {row["event"] for row in store.events_for(outcome.decision_record_id)}
 
     assert "READINESS_TRANSITIONED" in emitted

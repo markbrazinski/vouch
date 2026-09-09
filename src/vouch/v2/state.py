@@ -58,6 +58,7 @@ from .corpus import (
     Material,
     MaterialRequirementLine,
     MethodEquivalence,
+    PlannedCoverage,
     ProductionOrder,
     Requirement,
     SpecificationRevision,
@@ -81,6 +82,7 @@ KINDS: dict[str, type] = {
     "lot": Lot,
     "inventory": InventoryRecord,
     "substitution": ApprovedSubstitution,
+    "planned_coverage": PlannedCoverage,
 }
 
 #: Fields that are tuples of nested dataclasses, so rehydration rebuilds them

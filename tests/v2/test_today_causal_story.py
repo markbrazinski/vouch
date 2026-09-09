@@ -8,16 +8,23 @@ without failing a single test.
 
 The causal shape this pins, and it is easy to get backwards:
 
-  * LOT-1001 RELEASE is the event with TWO consequences. It covers C-418
-    outright (500 of 500) AND exposes that C-417 needs 900 against 500 usable.
-    So C-417 blocks and a materially-ready alternative appears in one instant,
-    which is what makes the recovery safe rather than convenient.
+  * LOT-1001 RELEASE covers C-418 outright (500 of 500) and brings C-417 to
+    500 released + 400 queued against a 900 requirement — fully coverable ON
+    PLAN, so AT_RISK rather than BLOCKED. The plan has not failed; it depends
+    on a named lot that has not been decided yet.
 
-  * LOT-1002 QUARANTINE changes NO arithmetic. A quarantined lot was never
-    usable inventory, so quarantine subtracts nothing. Its consequence is that
-    the remaining incoming material cannot close C-417's gap — a quality fact,
-    not an inventory one. Copy that says quarantine "removed 400 kg" is false
-    and this file exists partly to keep it false-able.
+  * LOT-1002 QUARANTINE is what makes it fail. The 400 kg queued against C-417
+    came from that specific lot, and a quarantined lot can no longer honour an
+    allocation, so the requirement becomes genuinely uncoverable and C-417
+    transitions AT_RISK -> BLOCKED. Recovery runs on THAT transition.
+
+    It still removes no usable inventory — a quarantined lot was never usable —
+    so copy saying quarantine "took away 400 kg" remains false. What it removed
+    was a PLAN, and this file exists partly to keep those two distinguishable.
+
+  * LOT-1003 and LOT-1004 hold 650 kg of the same material and have no
+    allocation row, so they correctly do not rescue C-417. Coverage is never
+    inferred from a shared material_id.
 """
 
 from __future__ import annotations
@@ -103,11 +110,13 @@ def test_frame_b_c418_is_covered_outright_by_the_released_lot(world):
     assert compute_readiness(corpus, "C-418").readiness is Readiness.READY
 
 
-def test_frame_b_the_same_release_exposes_c417s_real_shortfall(world):
-    """C-417 needs 900. Releasing 500 does not cover it and never could.
+def test_frame_b_c417_becomes_coverable_on_plan_not_blocked(world):
+    """500 released + 400 queued against 900 required is AT_RISK, not BLOCKED.
 
-    The transition is the plan catching up to a readiness Vouch already
-    reported at Frame A — not the clean lot damaging anything.
+    Calling this BLOCKED asserted something Vouch had not established: a named
+    lot was still queued to close the gap and had not been decided. It also
+    made the one clean decision of the day read as the thing that broke the
+    schedule.
     """
     corpus, vouch = world
     outcome = vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
@@ -115,16 +124,29 @@ def test_frame_b_the_same_release_exposes_c417s_real_shortfall(world):
     change = next(
         c for c in outcome.consequences["readiness_changes"] if c["order_id"] == "C-417"
     )
-    assert (change["from"], change["to"]) == ("READY", "BLOCKED")
+    assert (change["from"], change["to"]) == ("READY", "AT_RISK")
     assert change["persisted"] is True
+
     line = compute_readiness(corpus, "C-417").coverage[0]
-    assert (line.required, line.available, line.short_by) == (900.0, 500.0, 400.0)
+    assert (line.required, line.available, line.planned) == (900.0, 500.0, 400.0)
+    # Nothing is unaccounted for: 500 in stock plus 400 on the way.
+    assert line.uncovered == 0.0
+    # Still genuinely short of RELEASED material, which is a different fact.
+    assert line.short_by == 400.0
 
 
-def test_frame_b_recovery_selects_c418_because_its_material_is_released(world):
+def test_frame_b_no_recovery_runs_while_the_plan_still_holds(world):
+    """An AT_RISK order is not a blocked one. Nothing is rescheduled yet."""
+    _corpus, vouch = world
+    outcome = vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    assert (outcome.consequences.get("recovery") or {}).get("executed") is not True
+
+
+def test_frame_c_recovery_selects_c418_because_its_material_is_released(world):
     """Every candidate, with the reason it was refused or chosen."""
     corpus, vouch = world
-    outcome = vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     recovery = outcome.consequences["recovery"]
 
     assert recovery["blocked_order_id"] == "C-417"
@@ -145,11 +167,12 @@ def test_frame_b_recovery_selects_c418_because_its_material_is_released(world):
     assert selected["facts"]["slot_free"] is True
 
 
-def test_frame_b_c418_actually_moves_into_the_vacated_slot(world):
+def test_frame_c_c418_actually_moves_into_the_vacated_slot(world):
     corpus, vouch = world
     assert corpus.order("C-418").planned_slot == "2026-08-15T14:00"
 
-    outcome = vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     recovery = outcome.consequences["recovery"]
 
     assert recovery["executed"] is True
@@ -180,14 +203,46 @@ def test_frame_c_quarantine_removes_no_usable_inventory(world):
     assert corpus.get("inventory", "LOT-1002").usable is False
 
 
-def test_frame_c_quarantine_causes_no_readiness_transition(world):
-    """Already BLOCKED and persisted, so there is nothing to re-transition."""
+def test_frame_c_the_quarantine_is_what_blocks_the_order(world):
+    """The causal beat: a refused lot cannot honour its allocation.
+
+    LOT-1002 was the named source for C-417's remaining 400 kg. Quarantining it
+    does not remove usable inventory — there was none to remove — it removes the
+    PLAN, and that is what makes the requirement uncoverable.
+    """
     corpus, vouch = world
     vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
 
     outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
-    assert outcome.consequences["readiness_changes"] == []
+
+    change = next(
+        c for c in outcome.consequences["readiness_changes"] if c["order_id"] == "C-417"
+    )
+    assert (change["from"], change["to"]) == ("AT_RISK", "BLOCKED")
     assert corpus.order("C-417").status == "BLOCKED"
+
+    line = compute_readiness(corpus, "C-417").coverage[0]
+    assert line.planned == 0.0, "a quarantined lot cannot honour an allocation"
+    assert line.uncovered == 400.0
+
+
+def test_frame_c_the_other_alloy_lots_do_not_rescue_c417(world):
+    """LOT-1003 + LOT-1004 hold 650 kg of MAT-ALLOY-7 and no allocation row.
+
+    Inferring coverage from a shared material_id would leave C-417 permanently
+    AT_RISK behind material nobody planned to use for it, and the Hero A
+    transition would never happen.
+    """
+    corpus, vouch = world
+    vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+
+    undecided = sum(
+        corpus.get("inventory", lot).quantity for lot in ("LOT-1003", "LOT-1004")
+    )
+    assert undecided == 650.0 > 400.0
+    assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 0.0
+    assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
 
 
 def test_frame_c_c417_remains_short_by_exactly_four_hundred(world):
@@ -224,22 +279,14 @@ def test_frame_d_the_final_plan_is_the_whole_story(world):
     assert corpus.lot("LOT-1004").status == "RECEIVED"
 
 
-def test_frame_d_the_quarantine_triggers_no_second_resequence(world):
-    """The schedule moves once, on the release. Nothing moves on the quarantine.
-
-    Re-enumerating afterwards still reports C-418 ELIGIBLE, because it is
-    already sitting in the target slot and "move it there" is trivially
-    satisfiable. That is a harmless artefact of scoring an already-recovered
-    plan, and it is pinned here so nobody reads it as a second recovery: what
-    matters is that LOT-1002's decision executed no mutation at all.
-    """
+def test_frame_d_the_schedule_moves_exactly_once(world):
+    """One resequence, on the quarantine that caused the block."""
     corpus, vouch = world
     vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
-    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
 
-    assert (outcome.consequences.get("recovery") or {}).get("executed") is not True
     assert corpus.order("C-418").planned_slot == "2026-08-15T08:00"
-    assert corpus.order("C-418").state_version == 2  # moved once, by the release
+    assert corpus.order("C-418").state_version == 2
 
 
 # ==========================================================================
@@ -356,3 +403,64 @@ def test_an_evidence_level_failure_still_asks_for_a_human():
     assert _row_state("RECEIVED", failure="EVIDENCE_UNBOUND") == (
         "QUALITY_DECISION_REQUIRED"
     )
+
+
+# ==========================================================================
+# planned coverage — the allocation itself
+# ==========================================================================
+
+
+def test_coverage_is_never_inferred_from_a_shared_material(world):
+    """The whole reason PlannedCoverage exists.
+
+    LOT-1003 (450 kg) and LOT-1004 (200 kg) are MAT-ALLOY-7 and undecided. If
+    "undecided material of the same type exists" counted as coverage, C-417
+    would stay AT_RISK behind 650 kg nobody planned to use for it, and the Hero
+    A transition would never happen. Only an explicit row counts.
+    """
+    corpus, _ = world
+    rows = corpus.planned_coverage_rows("C-417", "MAT-ALLOY-7")
+    assert [r.lot_id for r in rows] == ["LOT-1002"]
+    assert corpus.planned_coverage("C-418", "MAT-ALLOY-7") == 0.0
+    assert corpus.planned_coverage("C-419", "MAT-RESIN-3") == 0.0
+
+
+def test_a_queued_lot_counts_while_it_can_still_be_released(world):
+    """RECEIVED and PENDING_QA are both "not usable yet, still possible"."""
+    from dataclasses import replace
+
+    corpus, _ = world
+    for status in ("RECEIVED", "PENDING_QA"):
+        corpus.put("lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status=status))
+        assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 400.0, status
+
+
+def test_a_refused_lot_stops_counting(world):
+    """A quarantined or rejected lot cannot honour an allocation."""
+    from dataclasses import replace
+
+    corpus, _ = world
+    for status in ("QUARANTINED", "REJECTED"):
+        corpus.put("lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status=status))
+        assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 0.0, status
+
+
+def test_a_released_lot_is_not_counted_twice(world):
+    """Once released it is usable inventory, and counting it here would double it."""
+    from dataclasses import replace
+
+    corpus, _ = world
+    corpus.put("lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status="RELEASED"))
+    assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 0.0
+
+
+def test_the_opening_frame_is_not_softened_by_the_allocation(world):
+    """0 released + 400 queued against 900 required is still short 500.
+
+    AT_RISK would be a lie here: the plan does not add up even if LOT-1002
+    releases perfectly.
+    """
+    corpus, _ = world
+    line = compute_readiness(corpus, "C-417").coverage[0]
+    assert (line.available, line.planned, line.uncovered) == (0, 400.0, 500.0)
+    assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED

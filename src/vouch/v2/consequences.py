@@ -44,10 +44,19 @@ class CoverageLine:
     material_id: str
     required: float
     available: float
+    #: Quantity queued against THIS order by an explicit PlannedCoverage row,
+    #: counted only while its lot can still honour it. Never inferred from a
+    #: shared material_id.
+    planned: float = 0.0
 
     @property
     def short_by(self) -> float:
         return round(max(0.0, self.required - self.available), 6)
+
+    @property
+    def uncovered(self) -> float:
+        """What neither released nor queued material accounts for."""
+        return round(max(0.0, self.required - self.available - self.planned), 6)
 
     @property
     def ratio(self) -> float:
@@ -57,6 +66,7 @@ class CoverageLine:
         return {
             "material_id": self.material_id, "required": self.required,
             "available": self.available, "short_by": self.short_by,
+            "planned": self.planned, "uncovered": self.uncovered,
             "ratio": round(self.ratio, 4),
         }
 
@@ -88,6 +98,7 @@ def compute_readiness(corpus: Corpus, order_id: str) -> ReadinessResult:
             material_id=line.material_id,
             required=line.quantity,
             available=corpus.usable_inventory(line.material_id),
+            planned=corpus.planned_coverage(order_id, line.material_id),
         )
         for line in order.requirements
     ]
@@ -96,11 +107,26 @@ def compute_readiness(corpus: Corpus, order_id: str) -> ReadinessResult:
     if not shortfalls:
         return ReadinessResult(order_id, Readiness.READY, coverage, "all materials available")
 
-    worst = min(c.ratio for c in shortfalls)
+    # A shortfall with a named lot queued against it is a plan that may still
+    # work out; a shortfall with nothing queued has already failed. That is the
+    # difference between AT_RISK and BLOCKED, and it is decided by explicit
+    # allocation rows — never by other lots that happen to share the material.
+    uncovered = [c for c in shortfalls if c.uncovered > 0]
+    if not uncovered:
+        detail = "; ".join(
+            f"{c.material_id} short by {c.short_by} "
+            f"(need {c.required}, have {c.available}, {c.planned} queued)"
+            for c in shortfalls
+        )
+        return ReadinessResult(order_id, Readiness.AT_RISK, coverage, detail)
+
     detail = "; ".join(
         f"{c.material_id} short by {c.short_by} (need {c.required}, have {c.available})"
-        for c in shortfalls
+        for c in uncovered
     )
+    # The ratio path still decides among orders with nothing queued: an order
+    # covered to 95% is a warning, one covered to 56% is a stop.
+    worst = min(c.ratio for c in uncovered)
     readiness = Readiness.AT_RISK if worst >= AT_RISK_THRESHOLD else Readiness.BLOCKED
     return ReadinessResult(order_id, readiness, coverage, detail)
 

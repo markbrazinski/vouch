@@ -243,10 +243,21 @@ export interface TodayOrderDTO {
   state_version?: number;
 }
 
+export interface PlannedSourceDTO {
+  lot_id: string;
+  quantity?: number;
+  lot_status?: string;
+}
+
 export interface CoverageDTO {
   material_id: string;
   required: number;
   available: number;
   short_by: number;
   ratio: number;
+  /** Queued against THIS order by an explicit allocation. Never inferred. */
+  planned?: number;
+  /** What neither released nor queued material accounts for. */
+  uncovered?: number;
+  planned_sources?: PlannedSourceDTO[];
 }

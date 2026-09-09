@@ -264,10 +264,11 @@ def test_genuine_disagreement_between_valid_briefs_still_fails_closed(vouch):
 def test_quarantine_removes_usable_inventory_and_blocks_the_order(vouch):
     """Readiness is PERSISTED, not merely computed (P1-6).
 
-    Releasing LOT-1001 is already not enough to cover C-417, so the order
-    transitions READY -> BLOCKED on that decision and the transition is written.
-    Quarantining LOT-1002 then adds no usable inventory, so C-417 stays BLOCKED
-    — the same state, already persisted, and therefore no second transition.
+    Releasing LOT-1001 leaves C-417 at 500 released + 400 queued from LOT-1002
+    against a 900 requirement — coverable on plan, so READY -> AT_RISK.
+    Quarantining LOT-1002 then removes the allocation rather than any usable
+    inventory, and the requirement becomes genuinely uncoverable: AT_RISK ->
+    BLOCKED. Both transitions are written.
     """
     corpus, v = vouch
     first = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
@@ -277,18 +278,22 @@ def test_quarantine_removes_usable_inventory_and_blocks_the_order(vouch):
         c for c in first.consequences["readiness_changes"] if c["order_id"] == "C-417"
     )
     assert change == {
-        **change, "from": "READY", "to": "BLOCKED", "persisted": True,
+        **change, "from": "READY", "to": "AT_RISK", "persisted": True,
     }
-    assert corpus.order("C-417").status == "BLOCKED"
-    assert corpus.order("C-417").state_version == 2
+    assert corpus.order("C-417").status == "AT_RISK"
     assert first.consequences["caused_by"]
 
     outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    # The quarantine adds no usable inventory — it never could — but it does
+    # end the plan that depended on that lot.
     assert corpus.usable_inventory("MAT-ALLOY-7") == 500.0
     assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
-    # Already BLOCKED and persisted: no spurious re-transition, no version churn.
-    assert outcome.consequences["readiness_changes"] == []
-    assert corpus.order("C-417").state_version == 2
+    blocked = next(
+        c for c in outcome.consequences["readiness_changes"] if c["order_id"] == "C-417"
+    )
+    assert (blocked["from"], blocked["to"]) == ("AT_RISK", "BLOCKED")
+    # Two authorized transitions, each written: READY -> AT_RISK -> BLOCKED.
+    assert corpus.order("C-417").state_version == 3
 
 
 def test_causal_chain_is_reconstructable(vouch):
@@ -303,7 +308,7 @@ def test_causal_chain_is_reconstructable(vouch):
     assert link["lot_id"] == "LOT-1001"
     assert link["effect"] == "order_readiness"
     assert link["from"] == "READY"
-    assert link["to"] == "BLOCKED"
+    assert link["to"] == "AT_RISK"
     # P1-6: the link points at the ledger entry that actually wrote the change.
     assert link["ledger_sequence"]
 
@@ -520,7 +525,12 @@ def test_recovery_is_returned_to_the_caller_not_only_stored_on_the_record():
     # alternative exists in the same instant. A quarantine cannot produce this:
     # a quarantined lot was never usable, so it changes no arithmetic.
     corpus = build_corpus()
-    outcome = VouchV2(corpus).evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    vouch = VouchV2(corpus)
+    # Recovery runs on the transition to BLOCKED, which is the quarantine: the
+    # release leaves C-417 coverable on plan, and an AT_RISK order is not
+    # rescheduled.
+    vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
 
     recovery = outcome.consequences.get("recovery")
     assert recovery, "recovery must reach the caller"

@@ -177,17 +177,21 @@ def test_readiness_transition_is_written_not_just_computed(vouch):
     corpus, v = vouch
     assert corpus.order("C-417").status == "READY"
 
-    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    # C-417 only reaches BLOCKED — and recovery only runs — when LOT-1002 is
+    # quarantined and its queued 400 kg can no longer cover the requirement.
+    outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
 
     order = corpus.order("C-417")
     assert order.status == "BLOCKED"
-    assert order.state_version == 2  # a real, versioned transition
+    # READY -> AT_RISK on the release, AT_RISK -> BLOCKED on the quarantine.
+    assert order.state_version == 3
 
     change = next(
         c for c in outcome.consequences["readiness_changes"] if c["order_id"] == "C-417"
     )
     assert change["persisted"] is True
-    assert change["state_version"] == 2
+    assert change["state_version"] == 3
 
 
 def test_readiness_transition_goes_through_the_capability_ledger(vouch):
@@ -210,7 +214,9 @@ def test_readiness_emits_a_transition_event(vouch):
     emitted = events.of_type(EventType.READINESS_TRANSITIONED)
     assert emitted
     assert emitted[0].payload["order_id"] == "C-417"
-    assert emitted[0].payload["to"] == "BLOCKED"
+    # The release brings C-417 to 500 released + 400 queued against 900, which
+    # is coverable on plan. BLOCKED comes later, from LOT-1002's quarantine.
+    assert emitted[0].payload["to"] == "AT_RISK"
     assert emitted[0].payload["caused_by_lot"] == "LOT-1001"
 
 
@@ -246,7 +252,10 @@ def test_recovery_executes_a_resequence(vouch):
     before = corpus.order("C-418").planned_slot
     blocked_slot = corpus.order("C-417").planned_slot
 
-    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    # C-417 only reaches BLOCKED — and recovery only runs — when LOT-1002 is
+    # quarantined and its queued 400 kg can no longer cover the requirement.
+    outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     recovery = outcome.record.consequences.recovery
 
     assert recovery["executed"] is True
@@ -260,6 +269,9 @@ def test_recovery_executes_a_resequence(vouch):
 def test_recovery_mutation_is_capability_gated(vouch):
     corpus, v = vouch
     v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    # C-417 only reaches BLOCKED — and recovery only runs — when LOT-1002 is
+    # quarantined and its queued 400 kg can no longer cover the requirement.
+    v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
 
     entries = [
         e for e in v.capabilities.ledger
@@ -273,7 +285,10 @@ def test_recovery_mutation_is_capability_gated(vouch):
 
 def test_recovery_records_all_candidates_and_the_causal_link(vouch):
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    # C-417 only reaches BLOCKED — and recovery only runs — when LOT-1002 is
+    # quarantined and its queued 400 kg can no longer cover the requirement.
+    outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
     recovery = outcome.record.consequences.recovery
 
     kinds = {c["kind"] for c in recovery["candidates"]}
@@ -358,6 +373,8 @@ def test_recovery_emits_an_evaluation_event(vouch):
     corpus, v = vouch
     events = EventLog()
     v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}], events=events)
+    # Recovery runs on the transition to BLOCKED, which is the quarantine.
+    v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}], events=events)
 
     emitted = events.of_type(EventType.RECOVERY_EVALUATED)
     assert emitted

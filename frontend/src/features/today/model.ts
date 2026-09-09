@@ -25,14 +25,29 @@ import { readinessTone } from '../../components/tokens';
 /** Readiness values the UI has a visual language for. */
 const KNOWN: ProductionReadiness[] = ['READY', 'AT_RISK', 'BLOCKED'];
 
+export interface PlannedSourceVM {
+  lotId: string;
+  quantity: string;
+  lotStatus: string;
+  /** False once the lot can no longer honour the allocation. */
+  honourable: boolean;
+}
+
 export interface CoverageVM {
   materialId: string;
   /** Pre-formatted from backend numbers. Never recomputed. */
   required: string;
   available: string;
   shortBy: string;
+  /** Queued against this order by an explicit allocation. */
+  planned: string;
+  /** Neither released nor queued. Zero means the plan adds up. */
+  uncovered: string;
   /** True when the backend reported a shortfall. Not a browser comparison. */
   short: boolean;
+  /** Whether anything is queued at all — drives which sentence is shown. */
+  hasPlanned: boolean;
+  sources: PlannedSourceVM[];
 }
 
 export interface TodayOrderVM {
@@ -139,6 +154,15 @@ function coverageOf(rows: CoverageDTO[] | undefined): CoverageVM[] {
     required: qty(row.required),
     available: qty(row.available),
     shortBy: qty(row.short_by),
+    planned: qty(row.planned ?? 0),
+    uncovered: qty(row.uncovered ?? row.short_by),
+    hasPlanned: (row.planned_sources ?? []).length > 0,
+    sources: (row.planned_sources ?? []).map((source) => ({
+      lotId: source.lot_id,
+      quantity: qty(source.quantity),
+      lotStatus: source.lot_status ?? '',
+      honourable: COVERABLE.has(source.lot_status ?? ''),
+    })),
     // The backend already decided there is a shortfall by computing short_by.
     // This reads that decision; it does not re-derive it from required minus
     // available, which is exactly the arithmetic the contract keeps in Python.
@@ -267,13 +291,21 @@ export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEvent
     if (row.kind === 'resequence') {
       const blocked = row.blocked_order_id ?? '';
       const gap = shortfallFor(blocked);
+      // Who gets credit for the move depends on what the deciding record did.
+      // A RELEASE that also freed the slot enabled the alternative; a
+      // QUARANTINE ended the plan that was holding the slot. Attributing the
+      // resequence to a release when a quarantine caused it reads as the clean
+      // lot rescheduling the factory, which is not what happened.
       const released = releaseFacts.get(row.decision_record_id ?? '');
       const enabling = released
         ? `${lot} released ${qty(released.delta)} kg of ${released.material}, ` +
           `making ${order} fully executable. `
-        : row.disposition === 'RELEASE'
-          ? `${lot} released the material ${order} needs, making it fully executable. `
-          : '';
+        : row.disposition === 'QUARANTINE'
+          ? `${lot} was quarantined, so the material queued for ${blocked} can no ` +
+            `longer arrive. `
+          : row.disposition === 'RELEASE'
+            ? `${lot} released the material ${order} needs, making it fully executable. `
+            : '';
       const remains = gap
         ? `${blocked} remains ${qty(gap.short)} kg short, so `
         : `${blocked} remains blocked, so `;
@@ -323,6 +355,9 @@ export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEvent
     };
   });
 }
+
+/** Lot states in which a queued allocation can still arrive. */
+const COVERABLE = new Set(['RECEIVED', 'PENDING_QA']);
 
 export function toToday(dto: TodayDTO): TodayVM {
   const lines: TodayLineVM[] = (dto.lines ?? []).map((line) => {

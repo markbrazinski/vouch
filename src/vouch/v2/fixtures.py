@@ -16,6 +16,7 @@ from .corpus import (
     Material,
     MaterialRequirementLine,
     MethodEquivalence,
+    PlannedCoverage,
     ProductionOrder,
     Requirement,
     SpecificationRevision,
@@ -292,6 +293,21 @@ def build_corpus() -> Corpus:
             "LINE-2", "2026-08-15T09:00", "READY",
             customer_id="CUST-3", customer_committed=True, need_by="2026-08-18",
         ),
+    )
+
+    # -- planned coverage ---------------------------------------------------
+    # The ONE allocation in this world: C-417's remaining 400 kg is queued
+    # against LOT-1002 specifically.
+    #
+    # C-417 needs 900. LOT-1001 covers 500 of it once released; this row is
+    # where the other 400 was planned to come from. That is what lets Vouch
+    # distinguish "short, but a named lot is queued" from "short, with nothing
+    # queued" — and it is why LOT-1002's quarantine can BLOCK the order while
+    # LOT-1003 and LOT-1004, which hold 650 kg of the same material and have no
+    # row here, correctly do not rescue it.
+    corpus.put(
+        "planned_coverage", "PC-1",
+        PlannedCoverage("PC-1", "C-417", "MAT-ALLOY-7", "LOT-1002", 400.0),
     )
 
     # MAT-SUB-9 is explicitly NOT approved for P-417.
