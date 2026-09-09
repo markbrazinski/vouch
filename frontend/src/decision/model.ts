@@ -265,6 +265,61 @@ export interface OutcomeSummaryVM {
   nextAction?: string;
 }
 
+/**
+ * §8. The disputed applicability question, ready to render.
+ *
+ * `question` is the exact sentence an operator answers, composed from the
+ * backend's structured facts rather than written by the frontend. The two
+ * positions are stated as what each agent SELECTED, never as which is right —
+ * the whole point is that both are defensible.
+ */
+export interface QualityAuthorityOptionVM {
+  claimId: string;
+  selectedBy: 'INVESTIGATOR' | 'VERIFIER';
+  agentLabel: string;
+  /** "470 MPa by ASTM-E8 at room_temp" */
+  measurement: string;
+  /** How this path is authorized: the named method, or the equivalence. */
+  basis: string;
+}
+
+export interface QualityAuthorityPanelVM {
+  questionId: string;
+  /** The exact question, e.g. "Does Quality authorize EQ-2 ...?" */
+  question: string;
+  characteristic: string;
+  equivalenceId: string;
+  options: QualityAuthorityOptionVM[];
+  /** Concise position lines, one per agent, in a fixed order. */
+  investigatorPosition: string;
+  verifierPosition: string;
+  /** The disputed object, stated plainly for the panel subhead. */
+  disputed: string;
+  primaryActionLabel: string;
+  secondaryActionLabel: string;
+}
+
+/**
+ * §8. The durable stage that REPLACES the action panel once a human answers.
+ *
+ * Its presence is what removes the affordance: the workspace renders one or
+ * the other, never both, and never a disabled button.
+ */
+export interface QualityAuthorityRecordVM {
+  decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD';
+  /** "Applicability authorized" | "Kept held" */
+  headline: string;
+  tone: SemanticTone;
+  question: string;
+  answer: string;
+  accountableActor: string;
+  authoritySource: string;
+  timestamp: string;
+  clock: string;
+  /** Evidence-snapshot binding, so the record shows what it was answered against. */
+  snapshotBinding: string;
+}
+
 /** D7. One row in the far-right chronology. */
 export interface ActivityEventVM {
   eventId: string;
@@ -333,4 +388,12 @@ export interface DecisionWorkspaceVM {
   consequence: ConsequenceVM | null;
   activity: ActivityEventVM[];
   failure: FailureVM | null;
+  /**
+   * §8. Present ONLY while a disputed question is open and unanswered. The
+   * moment an authority is recorded this becomes null and `qualityAuthority`
+   * takes its place, so the controls cannot outlive the decision they made.
+   */
+  qualityAuthorityPanel: QualityAuthorityPanelVM | null;
+  /** The durable answered stage. Persists for the life of the record. */
+  qualityAuthority: QualityAuthorityRecordVM | null;
 }

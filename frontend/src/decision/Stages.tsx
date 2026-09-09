@@ -14,6 +14,8 @@ import type {
   CompletedStageVM,
   ConsequenceVM,
   DispositionVM,
+  QualityAuthorityPanelVM,
+  QualityAuthorityRecordVM,
   ReconciliationVM,
   SourceArtifactVM,
   StageKey,
@@ -796,6 +798,185 @@ export function CompletedStageStack({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * §8. The one open applicability question, and the two things a human may do
+ * about it.
+ *
+ * Deliberately narrow. The verbs are "Authorize applicability" and "Keep held"
+ * — never Approve, Deny, Release or Override — because the human is
+ * establishing a missing authoritative fact, not deciding the lot. What the
+ * evidence then means is still computed downstream, and the copy must not
+ * suggest otherwise.
+ *
+ * Rendered only while the question is genuinely unanswered: the projection
+ * returns null once an authority exists, so this component disappears rather
+ * than going disabled.
+ */
+export function QualityAuthorityPanel({
+  vm,
+  onDecide,
+  submitting = false,
+}: {
+  vm: QualityAuthorityPanelVM;
+  onDecide?: (decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD') => void;
+  submitting?: boolean;
+}) {
+  return (
+    <div
+      data-testid="quality-authority-panel"
+      style={{
+        animation: 'vFade .4s ease-out both',
+        marginTop: 14,
+        background: '#F3F4F9',
+        border: '1px solid rgba(69,80,140,.24)',
+        borderRadius: 12,
+        padding: '18px 20px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Dot color="#45508C" />
+        <Eyebrow>Quality decision required</Eyebrow>
+      </div>
+
+      <div
+        data-testid="quality-authority-question"
+        style={{
+          font: `600 15px/1.45 ${SANS}`,
+          color: INK.primary,
+          marginBottom: 4,
+        }}
+      >
+        {vm.question}
+      </div>
+      <div style={{ font: `400 11px ${MONO}`, color: INK.muted, marginBottom: 14 }}>
+        {vm.disputed}
+      </div>
+
+      {/* The two positions, stated as selections rather than as right and
+          wrong. Both agents were operating correctly. */}
+      <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+        {vm.options.map((o) => (
+          <div
+            key={o.claimId}
+            data-testid={`quality-option-${o.selectedBy.toLowerCase()}`}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '104px 1fr',
+              gap: 10,
+              alignItems: 'baseline',
+              background: N.nested,
+              border: `1px solid ${HAIR}`,
+              borderRadius: 8,
+              padding: '9px 12px',
+            }}
+          >
+            <span style={{ font: `600 10px ${MONO}`, color: INK.label, letterSpacing: '.06em' }}>
+              {o.agentLabel.toUpperCase()}
+            </span>
+            <span style={{ font: `400 12px/1.5 ${SANS}`, color: INK.dense }}>
+              <strong style={{ fontWeight: 600 }}>{o.measurement}</strong>
+              <span style={{ color: INK.muted }}> — {o.basis}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button
+          type="button"
+          data-testid="quality-authorize"
+          disabled={submitting}
+          onClick={() => onDecide?.('AUTHORIZE_APPLICABILITY')}
+          style={{
+            font: `600 11px ${MONO}`,
+            color: '#FFFFFF',
+            background: submitting ? '#8189B5' : '#45508C',
+            border: '1px solid rgba(69,80,140,.4)',
+            borderRadius: 8,
+            padding: '9px 16px',
+            cursor: submitting ? 'progress' : 'pointer',
+          }}
+        >
+          {vm.primaryActionLabel}
+        </button>
+        <button
+          type="button"
+          data-testid="quality-keep-held"
+          disabled={submitting}
+          onClick={() => onDecide?.('KEEP_HELD')}
+          style={{
+            font: `600 11px ${MONO}`,
+            color: INK.button,
+            background: N.chip,
+            border: '1px solid rgba(0,0,0,.14)',
+            borderRadius: 8,
+            padding: '9px 16px',
+            cursor: submitting ? 'progress' : 'pointer',
+          }}
+        >
+          {vm.secondaryActionLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * §8. The durable record of an answered question.
+ *
+ * This is what the action panel becomes. It never disappears again: the
+ * accountable actor, the authority they acted under and what they settled are
+ * part of the audit surface for the life of the record.
+ */
+export function QualityAuthorityStage({ vm }: { vm: QualityAuthorityRecordVM }) {
+  return (
+    <div
+      data-testid="quality-authority-stage"
+      style={{
+        marginTop: 14,
+        background: N.card,
+        border: `1px solid ${HAIR}`,
+        borderRadius: 12,
+        padding: '16px 20px',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 10,
+        }}
+      >
+        <Eyebrow>Quality authority</Eyebrow>
+        <Pill tone={vm.tone}>{vm.headline}</Pill>
+      </div>
+
+      <div style={{ font: `400 12px/1.55 ${SANS}`, color: INK.prose, marginBottom: 12 }}>
+        {vm.question}
+      </div>
+
+      <div style={{ display: 'grid', gap: 7 }}>
+        {[
+          ['Answer', vm.answer],
+          ['Accountable', vm.accountableActor],
+          ['Authority', vm.authoritySource],
+          ['Recorded', vm.clock],
+          ['Evidence snapshot', vm.snapshotBinding],
+        ].map(([label, value]) => (
+          <div
+            key={label}
+            style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: 10 }}
+          >
+            <span style={{ font: `400 10px ${MONO}`, color: INK.label }}>{label}</span>
+            <span style={{ font: `400 12px ${SANS}`, color: INK.dense }}>{value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

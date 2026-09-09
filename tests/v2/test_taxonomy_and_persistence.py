@@ -342,10 +342,18 @@ def test_recovery_reverifies_the_slot_at_execution(vouch):
     assert decision.capability.params["target_slot"] == target_slot
 
     # ...and only NOW someone else parks an order in that slot.
+    #
+    # `status="READY"` is explicit rather than inherited: a BLOCKED order does
+    # not occupy a slot, so cloning whichever status C-419 happens to carry
+    # made this test depend on an unrelated fixture. The intercept being proved
+    # here is a LIVE order taking the slot mid-flight.
     c419 = corpus.order("C-419")
     corpus.put(
         "production_order", "C-500",
-        replace(c419, order_id="C-500", resource="LINE-1", planned_slot=target_slot),
+        replace(
+            c419, order_id="C-500", resource="LINE-1",
+            planned_slot=target_slot, status="READY",
+        ),
     )
 
     with pytest.raises(VouchFailure) as exc:

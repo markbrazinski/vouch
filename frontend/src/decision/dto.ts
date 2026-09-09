@@ -80,11 +80,71 @@ export interface RecoveryCandidateDTO {
   facts?: Record<string, unknown>;
 }
 
+/**
+ * §4. The one disputed applicability question a MATERIAL_DISAGREEMENT raised.
+ *
+ * Every field is structured: the frontend composes the sentence an operator
+ * reads, but every noun in it comes from here. Nothing is inferred, and no
+ * wording is invented for facts the backend did not state.
+ */
+export interface QualityQuestionDTO {
+  question_id: string;
+  question_type: string;
+  characteristic: string;
+  options: QualityOptionDTO[];
+  investigator_evidence_ref: string;
+  verifier_evidence_ref: string;
+  equivalence_id: string;
+  method_from: string;
+  method_to: string;
+  condition: string;
+  status: 'OPEN' | 'RESOLVED' | 'HELD' | string;
+}
+
+export interface QualityOptionDTO {
+  claim_id: string;
+  value: number | string | null;
+  units: string;
+  method: string;
+  condition: string;
+  equivalence_id: string;
+  selected_by: 'INVESTIGATOR' | 'VERIFIER' | string;
+}
+
+/** §3. A scoped authority fact. Never a disposition. */
+export interface HumanAuthorityDecisionDTO {
+  authority_decision_id: string;
+  decision_record_id: string;
+  lot_id: string;
+  source_run: number;
+  evidence_snapshot_id: string;
+  claim_set_hash: string;
+  question_id: string;
+  question_type: string;
+  characteristic: string;
+  authorized_evidence_refs: string[];
+  disputed_evidence_refs: string[];
+  equivalence_id: string;
+  method_from: string;
+  method_to: string;
+  condition: string;
+  decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD' | string;
+  accountable_actor: string;
+  authority_source: string;
+  created_at: string;
+}
+
+export interface QualityAuthorityDTO {
+  question?: QualityQuestionDTO;
+  decisions?: HumanAuthorityDecisionDTO[];
+}
+
 export interface RecordSummaryDTO {
   record_id?: string;
   lot_id?: string;
   run_count?: number;
   disposition?: string;
+  quality_authority?: QualityAuthorityDTO;
   [key: string]: unknown;
 }
 

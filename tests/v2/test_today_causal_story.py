@@ -424,7 +424,15 @@ def test_coverage_is_never_inferred_from_a_shared_material(world):
     rows = corpus.planned_coverage_rows("C-417", "MAT-ALLOY-7")
     assert [r.lot_id for r in rows] == ["LOT-1002"]
     assert corpus.planned_coverage("C-418", "MAT-ALLOY-7") == 0.0
-    assert corpus.planned_coverage("C-419", "MAT-RESIN-3") == 0.0
+
+    # C-419 has an EXPLICIT row (PC-2, LOT-1006), which is the point rather
+    # than a counterexample: its 200 kg counts because someone allocated that
+    # named lot to that order. LOT-1005 is also MAT-RESIN-3 and also undecided,
+    # and contributes nothing — sharing a material is still not coverage.
+    resin_rows = corpus.planned_coverage_rows("C-419", "MAT-RESIN-3")
+    assert [r.lot_id for r in resin_rows] == ["LOT-1006"]
+    assert corpus.planned_coverage("C-419", "MAT-RESIN-3") == 200.0
+    assert "LOT-1005" not in [r.lot_id for r in resin_rows]
 
 
 def test_a_queued_lot_counts_while_it_can_still_be_released(world):

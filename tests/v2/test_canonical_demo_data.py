@@ -80,10 +80,21 @@ def test_the_substitute_stock_is_a_different_900():
 
 
 def test_canonical_orders_and_slots():
-    """The identifiers the demo copy names, and the slot recovery vacates."""
+    """The identifiers the demo copy names, and the slot recovery vacates.
+
+    Each order's seeded status is its OWN correct starting state, not a blanket
+    READY. C-419 needs 800 kg of MAT-RESIN-3 against 600 usable, with the
+    missing 200 queued against LOT-1006 by PC-2 — that is AT_RISK, and seeding
+    it READY would be a stale value the coverage arithmetic contradicts. The
+    seed is still fixed and reseed still repeatable; it is simply not uniform.
+    """
     corpus = build_corpus()
-    for order_id, resource in (("C-417", "LINE-1"), ("C-418", "LINE-1"), ("C-419", "LINE-2")):
+    for order_id, resource, status in (
+        ("C-417", "LINE-1", "READY"),
+        ("C-418", "LINE-1", "READY"),
+        ("C-419", "LINE-2", "AT_RISK"),
+    ):
         order = corpus.order(order_id)
         assert order is not None, f"{order_id} is canonical and must exist"
         assert order.resource == resource
-        assert order.status == "READY", "every order starts READY; reseed is repeatable"
+        assert order.status == status, f"{order_id} must seed as {status}"

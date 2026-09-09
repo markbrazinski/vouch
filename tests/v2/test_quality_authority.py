@@ -12,7 +12,7 @@ The case this file proves is the one Vouch could not previously make:
       -> RELEASE
 
 The disagreement is NOT manufactured. LOT-1006's snapshot carries two real
-tensile results — one by the method SPEC-A7:C names, one by a method an
+viscosity results — one by the method SPEC-R3:A names, one by a method an
 authoritative equivalence genuinely covers — and the corpus states no
 precedence between them. Both briefs survive every deterministic check. That
 is the authority gap a human exists to close, and these tests assert it is
@@ -90,18 +90,18 @@ def test_the_briefs_differ_on_evidence_selection(disagreed):
     assert reconciliation.outcome == "MATERIAL_DISAGREEMENT"
     assert "coverage" in reconciliation.differing_fields
 
-    def tensile(values):
+    def viscosity(values):
         rows = {row["test"]: row for row in values["coverage"]}
-        return rows["tensile_strength"]
+        return rows["viscosity"]
 
-    mine = tensile(reconciliation.investigator_values)
-    theirs = tensile(reconciliation.verifier_values)
+    mine = viscosity(reconciliation.investigator_values)
+    theirs = viscosity(reconciliation.verifier_values)
 
     assert mine["evidence_ref"] != theirs["evidence_ref"]
     # The Investigator took the spec's own method; the Verifier took the
     # equivalence-covered path. Both are authorized routes to the requirement.
     assert mine["equivalence_record_id"] is None
-    assert theirs["equivalence_record_id"] == "EQV-2"
+    assert theirs["equivalence_record_id"] == "EQV-1"
 
 
 def test_both_selected_claims_are_real_and_applicable(disagreed):
@@ -115,7 +115,7 @@ def test_both_selected_claims_are_real_and_applicable(disagreed):
         claim = claims.get(option["claim_id"])
         assert claim is not None, option
         assert claim.lot_id == "LOT-1006"
-        assert claim.characteristic == "tensile_strength"
+        assert claim.characteristic == "viscosity"
 
 
 def test_run_one_does_not_disposition_or_mutate(disagreed):
@@ -138,18 +138,18 @@ def test_run_one_raises_exactly_one_answerable_question(disagreed):
 
     assert question.question_id
     assert question.question_type == "EVIDENCE_APPLICABILITY"
-    assert question.characteristic == "tensile_strength"
+    assert question.characteristic == "viscosity"
     assert question.status == "OPEN"
-    assert question.equivalence_id == "EQV-2"
-    assert question.method_from == "ASTM-E8M"
-    assert question.method_to == "ASTM-E8"
-    assert question.condition == "room_temp"
+    assert question.equivalence_id == "EQV-1"
+    assert question.method_from == "ASTM-D445"
+    assert question.method_to == "ASTM-D2196"
+    assert question.condition == "25C"
     # Two options, one per agent, each carrying what an operator needs to see.
     assert len(question.options) == 2
     assert {o["selected_by"] for o in question.options} == {
         "INVESTIGATOR", "VERIFIER"
     }
-    assert {o["value"] for o in question.options} == {470.0, 495.0}
+    assert {o["value"] for o in question.options} == {285.0, 312.0}
 
 
 def test_run_one_emits_the_escalation_events(disagreed):
@@ -180,7 +180,7 @@ def test_authorize_resumes_the_same_record_and_releases(disagreed):
     assert corpus.lot("LOT-1006").status == "RELEASED"
     assert corpus.get("inventory", "LOT-1006").usable is True
     assert outcome.record.mutation.action == "release_lot"
-    assert outcome.record.mutation.inventory_delta == 380.0
+    assert outcome.record.mutation.inventory_delta == 200.0
 
 
 def test_the_human_did_not_release_the_lot(disagreed):
@@ -228,16 +228,16 @@ def test_both_agents_converge_on_the_authorized_path(disagreed):
     )
     outcome = authorize(v, first)
 
-    def tensile(brief):
+    def viscosity(brief):
         rows = {row["test"]: row for row in brief["coverage"]}
-        return rows["tensile_strength"]
+        return rows["viscosity"]
 
-    mine = tensile(outcome.record.investigator.brief)
-    theirs = tensile(outcome.record.verifier.brief)
+    mine = viscosity(outcome.record.investigator.brief)
+    theirs = viscosity(outcome.record.verifier.brief)
 
     assert mine["evidence_ref"] == theirs["evidence_ref"]
     assert mine["evidence_ref"] in authorized
-    assert mine["equivalence_record_id"] == "EQV-2"
+    assert mine["equivalence_record_id"] == "EQV-1"
 
 
 def test_run_two_emits_resume_and_authority_events(disagreed):
@@ -401,13 +401,13 @@ def test_authority_cannot_be_recorded_on_a_record_with_no_question(vouch):
 def test_authority_does_not_mutate_the_global_equivalence_catalog(disagreed):
     """The scoped fact must not widen EQV-2 for any other lot or decision."""
     corpus, v, first = disagreed
-    before = corpus.get("equivalence", "EQV-2")
+    before = corpus.get("equivalence", "EQV-1")
     authorize(v, first)
-    after = corpus.get("equivalence", "EQV-2")
+    after = corpus.get("equivalence", "EQV-1")
 
     assert after == before
-    assert after.condition_scope == ("room_temp",)
-    assert after.material_scope == ("MAT-ALLOY-8",)
+    assert after.condition_scope == ("25C",)
+    assert after.material_scope == ("MAT-RESIN-3",)
     assert after.status == "APPROVED"
 
 
@@ -478,22 +478,61 @@ def test_the_authority_event_carries_no_private_reasoning(disagreed):
 # ==========================================================================
 
 
-def test_lot_1006_does_not_disturb_the_c417_recovery_story(vouch):
-    """LOT-1006 carries no planned coverage, so releasing it changes usable
-    inventory and nothing about C-417 or C-418."""
+def test_lot_1006_recovers_c419_and_leaves_c417_c418_alone(vouch):
+    """The consequence is real, and it lands where it belongs.
+
+    C-419 needs 800 kg of MAT-RESIN-3 against 600 usable, with the missing 200
+    queued against LOT-1006 — so it starts AT_RISK. LOT-1006 is exactly that
+    200. Releasing it closes the gap and nothing else: the alloy orders belong
+    to the LOT-1001/LOT-1002 story and must not move.
+    """
     corpus, v = vouch
-    before = {
-        order_id: corpus.get("production_order", order_id).status
-        for order_id in ("C-417", "C-418", "C-419")
-    }
+    assert corpus.get("production_order", "C-419").status == "AT_RISK"
 
     first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    # Run 1 changes nothing — the disagreement stopped before any mutation.
+    assert corpus.get("production_order", "C-419").status == "AT_RISK"
+
     outcome = authorize(v, first)
 
     assert outcome.disposition == "RELEASE"
-    for order_id, status in before.items():
-        assert corpus.get("production_order", order_id).status == status
-    assert not outcome.record.consequences.readiness_changes
+    assert corpus.get("production_order", "C-419").status == "READY"
+    assert corpus.get("production_order", "C-417").status == "READY"
+    assert corpus.get("production_order", "C-418").status == "READY"
+
+    changes = outcome.record.consequences.readiness_changes
+    assert [(c["order_id"], c["from"], c["to"]) for c in changes] == [
+        ("C-419", "AT_RISK", "READY")
+    ]
+    assert changes[0]["persisted"] is True
+
+
+def test_the_c417_recovery_story_is_unchanged_by_lot_1006(corpus):
+    """The canonical LOT-1001 -> LOT-1002 sequence must reach exactly the same
+    place whether or not LOT-1006 was decided first."""
+
+    def sequence(with_1006: bool):
+        from vouch.v2.fixtures import COA_HERO
+
+        world = build_corpus()
+        v = VouchV2(world, record_store=InMemoryRecordStore())
+        if with_1006:
+            first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+            authorize(v, first)
+        v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+        outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+        recovery = outcome.record.consequences.recovery
+        return {
+            "c417": world.get("production_order", "C-417").status,
+            "c418_slot": world.get("production_order", "C-418").planned_slot,
+            "candidates": len(recovery.get("candidates") or []),
+            "changes": [
+                (c["order_id"], c["from"], c["to"])
+                for c in outcome.record.consequences.readiness_changes
+            ],
+        }
+
+    assert sequence(True) == sequence(False)
 
 
 # ==========================================================================
@@ -513,7 +552,7 @@ def _tools_for(corpus, lot_id, claims, agent):
 
 def _claim(
     claim_id, characteristic, value, method, condition,
-    trust="UNTRUSTED_SUPPLIER", lot_id="LOT-1006", material_id="MAT-ALLOY-8",
+    trust="UNTRUSTED_SUPPLIER", lot_id="LOT-1006", material_id="MAT-RESIN-3",
 ):
     """A real CanonicalEvidenceClaim, so the reasoners run against the same
     typed objects the pipeline gives them."""
@@ -524,7 +563,7 @@ def _claim(
     return CanonicalEvidenceClaim(
         claim_id=claim_id, evidence_artifact_id="ART-test", lot_id=lot_id,
         material_id=material_id, claim_type="measurement",
-        characteristic=characteristic, value=value, units="MPa",
+        characteristic=characteristic, value=value, units="cP",
         method=method, condition=condition, source_locator="line:1",
         extraction_method=ExtractionMethod.DETERMINISTIC_PARSER,
         extraction_version="test", trust_label=TrustLabel(trust),
@@ -552,10 +591,7 @@ def test_the_two_reasoners_agree_when_only_one_path_applies(corpus):
     """Independence is not disagreement. Given a single applicable evidence
     path, the two derivations must reach the SAME answer — otherwise they
     would manufacture disputes on ordinary lots."""
-    claims = [
-        _claim("CLM-a", "tensile_strength", 500.0, "ASTM-E8", "room_temp"),
-        _claim("CLM-b", "hardness", 31.0, "HRC", "as_received"),
-    ]
+    claims = [_claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C")]
     investigator, verifier = _briefs(corpus, "LOT-1006", claims)
 
     assert investigator.material_fingerprint() == verifier.material_fingerprint()
@@ -563,7 +599,7 @@ def test_the_two_reasoners_agree_when_only_one_path_applies(corpus):
 
 def test_the_two_reasoners_agree_when_no_evidence_applies(corpus):
     """A method nothing covers is uncovered for both of them."""
-    claims = [_claim("CLM-a", "tensile_strength", 500.0, "ASTM-XX", "room_temp")]
+    claims = [_claim("CLM-a", "viscosity", 285.0, "ASTM-XX", "25C")]
     investigator, verifier = _briefs(corpus, "LOT-1006", claims)
 
     assert investigator.material_fingerprint() == verifier.material_fingerprint()
@@ -573,10 +609,10 @@ def test_the_two_reasoners_agree_when_no_evidence_applies(corpus):
 def test_the_reasoners_diverge_only_when_several_paths_are_authorized(corpus):
     """The divergence is a property of the EVIDENCE, not of the lot id: two
     equally authorized paths for one requirement is what separates them."""
-    one_path = [_claim("CLM-a", "tensile_strength", 500.0, "ASTM-E8", "room_temp")]
+    one_path = [_claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C")]
     two_paths = [
-        _claim("CLM-a", "tensile_strength", 470.0, "ASTM-E8", "room_temp"),
-        _claim("CLM-b", "tensile_strength", 495.0, "ASTM-E8M", "room_temp"),
+        _claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C"),
+        _claim("CLM-b", "viscosity", 312.0, "ASTM-D445", "25C"),
     ]
 
     same = _briefs(corpus, "LOT-1006", one_path)
@@ -590,11 +626,11 @@ def test_the_verifier_prefers_the_direct_method_when_it_is_the_latest(corpus):
     """The Verifier is not hard-coded to the equivalence path. Reverse the
     snapshot order and it selects the direct-method result instead."""
     claims = [
-        _claim("CLM-a", "tensile_strength", 495.0, "ASTM-E8M", "room_temp"),
-        _claim("CLM-b", "tensile_strength", 470.0, "ASTM-E8", "room_temp"),
+        _claim("CLM-a", "viscosity", 312.0, "ASTM-D445", "25C"),
+        _claim("CLM-b", "viscosity", 285.0, "ASTM-D2196", "25C"),
     ]
     _, verifier = _briefs(corpus, "LOT-1006", claims)
-    row = {c.test: c for c in verifier.coverage}["tensile_strength"]
+    row = {c.test: c for c in verifier.coverage}["viscosity"]
 
     assert row.evidence_ref == "CLM-b"
     assert row.equivalence_record_id is None
@@ -603,8 +639,8 @@ def test_the_verifier_prefers_the_direct_method_when_it_is_the_latest(corpus):
 def test_a_scoped_authority_converges_the_two_reasoners(corpus):
     """The authorized path is what makes them agree — on any evidence set."""
     claims = [
-        _claim("CLM-a", "tensile_strength", 470.0, "ASTM-E8", "room_temp"),
-        _claim("CLM-b", "tensile_strength", 495.0, "ASTM-E8M", "room_temp"),
+        _claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C"),
+        _claim("CLM-b", "viscosity", 312.0, "ASTM-D445", "25C"),
     ]
     before = _briefs(corpus, "LOT-1006", claims)
     assert before[0].material_fingerprint() != before[1].material_fingerprint()
@@ -614,7 +650,7 @@ def test_a_scoped_authority_converges_the_two_reasoners(corpus):
         context={"authorized_evidence_refs": ["CLM-b"]},
     )
     assert after[0].material_fingerprint() == after[1].material_fingerprint()
-    row = {c.test: c for c in after[0].coverage}["tensile_strength"]
+    row = {c.test: c for c in after[0].coverage}["viscosity"]
     assert row.evidence_ref == "CLM-b"
 
 
@@ -622,14 +658,14 @@ def test_higher_trust_evidence_still_wins_for_both(corpus):
     """A QA retest supersedes a supplier claim in both derivations, so the
     existing human-evidence continuation keeps working."""
     claims = [
-        _claim("CLM-a", "tensile_strength", 470.0, "ASTM-E8", "room_temp"),
+        _claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C"),
         _claim(
-            "CLM-qa", "tensile_strength", 505.0, "ASTM-E8", "room_temp",
+            "CLM-qa", "viscosity", 305.0, "ASTM-D2196", "25C",
             trust="HUMAN_AUTHORIZED",
         ),
     ]
     investigator, verifier = _briefs(corpus, "LOT-1006", claims)
 
     for brief in (investigator, verifier):
-        row = {c.test: c for c in brief.coverage}["tensile_strength"]
+        row = {c.test: c for c in brief.coverage}["viscosity"]
         assert row.evidence_ref == "CLM-qa"

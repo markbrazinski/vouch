@@ -63,27 +63,29 @@ viscosity: 305 cP (ASTM-D2196, 25C)
 
 # LOT-1006 — the applicability-disagreement lot.
 #
-# TWO tensile results, both real, both applicable on their face, and they point
-# opposite ways:
+# TWO viscosity results, both real, both applicable on their face, and no rule
+# in the corpus ranks them:
 #
-#   * 470 MPa by ASTM-E8 at room_temp — the method SPEC-A8:A names outright.
-#     It is below the 480 MPa minimum.
-#   * 495 MPa by ASTM-E8M at room_temp — a different method, but EQV-2 is an
-#     authoritative equivalence that genuinely covers E8M->E8 for this
-#     material, characteristic and condition. It is above the minimum.
+#   * 285 cP by ASTM-D2196 at 25C — the method SPEC-R3:A names outright.
+#   * 312 cP by ASTM-D445 at 25C — a different method, but EQV-1 is an
+#     authoritative equivalence that genuinely covers D445->D2196 for this
+#     material, characteristic and condition.
 #
-# Nothing in the corpus ranks a direct-method result against an
-# equivalence-covered one, so which of the two establishes the requirement is a
-# real authority question with two defensible answers. That gap is the case.
+# Both fall inside the [200, 400] cP limit, so the disagreement is purely about
+# WHICH evidence establishes the requirement — never about conformance. That
+# keeps the human question narrow: applicability, not a quality verdict.
+#
+# Note this is the SAME EQV-1 that does NOT cover LOT-1005's 40C result. One
+# equivalence, two lots, opposite outcomes, decided entirely by condition
+# scope — the scoping field doing real work in both directions.
 COA_DISPUTED = b"""Certificate of Analysis - Lot LOT-1006
-Supplier: SUP-CENTRAL (Central Forgeworks)
-Site: SITE-C1
-Material: MAT-ALLOY-8
-Purchase Order: PO-84
-Specification SPEC-A8 Revision A
-tensile_strength: 470 MPa (ASTM-E8, room_temp)
-tensile_strength: 495 MPa (ASTM-E8M, room_temp)
-hardness: 31 HRC (HRC, as_received)
+Supplier: SUP-WEST (Western Polymers)
+Site: SITE-W1
+Material: MAT-RESIN-3
+Purchase Order: PO-86
+Specification SPEC-R3 Revision A
+viscosity: 285 cP (ASTM-D2196, 25C)
+viscosity: 312 cP (ASTM-D445, 25C)
 """
 
 
@@ -112,13 +114,6 @@ def build_corpus() -> Corpus:
     corpus.put("material", "MAT-ALLOY-7", Material("MAT-ALLOY-7", "Alloy 7 billet", "alloy"))
     corpus.put("material", "MAT-RESIN-3", Material("MAT-RESIN-3", "Resin 3", "polymer"))
     corpus.put("material", "MAT-SUB-9", Material("MAT-SUB-9", "Alloy 9 billet", "alloy"))
-    # LOT-1006's material. Deliberately its OWN material rather than
-    # MAT-ALLOY-7: inventory is pooled by material, so a LOT-1006 release into
-    # the alloy-7 pool would change C-417's shortfall arithmetic and C-418's
-    # recovery — the story that belongs to LOT-1001/LOT-1002. Its own material
-    # keeps the applicability case operationally real and arithmetically
-    # separate.
-    corpus.put("material", "MAT-ALLOY-8", Material("MAT-ALLOY-8", "Alloy 8 billet", "alloy"))
 
     # -- specifications ----------------------------------------------------
     # Rev B is superseded by C. C keys on date of RECEIPT and is effective
@@ -165,18 +160,6 @@ def build_corpus() -> Corpus:
         ),
     )
     corpus.put(
-        "spec_revision", "SPEC-A8:A",
-        SpecificationRevision(
-            spec_id="SPEC-A8", revision="A", status="ACTIVE",
-            effective_date="2024-01-01", effective_basis="date_of_receipt",
-            material_scope=("MAT-ALLOY-8",),
-            requirements=(
-                Requirement("REQ-A8-1", "tensile_strength", "ASTM-E8", "room_temp", 480.0, None, "MPa"),
-                Requirement("REQ-A8-2", "hardness", "HRC", "as_received", 28.0, 36.0, "HRC"),
-            ),
-        ),
-    )
-    corpus.put(
         "spec_revision", "SPEC-A9:A",
         SpecificationRevision(
             spec_id="SPEC-A9", revision="A", status="ACTIVE",
@@ -198,7 +181,6 @@ def build_corpus() -> Corpus:
         # halt at SECURITY_QUARANTINE, so its supplier must not be independently
         # disqualified - that would give the refusal a second, confounding cause.
         ("QUAL-5", "SUP-CENTRAL", "MAT-ALLOY-7", ("SITE-C1",)),
-        ("QUAL-6", "SUP-CENTRAL", "MAT-ALLOY-8", ("SITE-C1",)),
     ]:
         corpus.put(
             "supplier_qualification", f"{supplier}:{material}",
@@ -216,27 +198,6 @@ def build_corpus() -> Corpus:
             alternate_method="ASTM-D445", status="APPROVED",
             effective_date="2024-01-01", material_scope=("MAT-RESIN-3",),
             condition_scope=("25C",), characteristic_scope=("viscosity",),
-        ),
-    )
-
-    # A SECOND authoritative equivalence, genuinely in scope for LOT-1006.
-    #
-    # EQV-1 exists so an out-of-scope citation can be caught. EQV-2 is its
-    # opposite and is just as deliberate: it really does cover ASTM-E8M in
-    # place of ASTM-E8, for this material, characteristic and condition. So a
-    # brief that cites it survives every deterministic check.
-    #
-    # That is what makes LOT-1006 a disagreement rather than a validation
-    # failure: the equivalence path is legitimate, the direct-method path is
-    # legitimate, and the corpus states no precedence between them.
-    corpus.put(
-        "equivalence", "EQV-2",
-        MethodEquivalence(
-            equivalence_id="EQV-2", required_method="ASTM-E8",
-            alternate_method="ASTM-E8M", status="APPROVED",
-            effective_date="2024-01-01", material_scope=("MAT-ALLOY-8",),
-            condition_scope=("room_temp",),
-            characteristic_scope=("tensile_strength",),
         ),
     )
 
@@ -286,15 +247,16 @@ def build_corpus() -> Corpus:
         Lot("LOT-1005", "SUP-WEST", "MAT-RESIN-3", "PO-79", 300.0,
             supplier_site="SITE-W1", manufactured_at="2026-02-10", received_at="2026-03-03"),
     )
-    # The applicability-disagreement lot. Deliberately carries NO
-    # `planned_coverage` row and its own PO, so releasing it changes usable
-    # inventory and nothing else: C-417's shortfall and C-418's recovery stay
-    # exactly the LOT-1001/LOT-1002 story they already are. Its operational
-    # consequence is RECEIVED -> RELEASED and 380 kg becoming usable.
+    # The applicability-disagreement lot, and C-419's missing coverage.
+    #
+    # MAT-RESIN-3 rather than an alloy, deliberately: the alloy pool carries
+    # C-417's shortfall and C-418's recovery, and a release into it would
+    # change arithmetic that belongs to the LOT-1001/LOT-1002 story. Resin
+    # touches only C-419, which is the consequence this case is meant to have.
     corpus.put(
         "lot", "LOT-1006",
-        Lot("LOT-1006", "SUP-CENTRAL", "MAT-ALLOY-8", "PO-84", 380.0,
-            supplier_site="SITE-C1", manufactured_at="2026-02-20", received_at="2026-03-08"),
+        Lot("LOT-1006", "SUP-WEST", "MAT-RESIN-3", "PO-86", 200.0,
+            supplier_site="SITE-W1", manufactured_at="2026-02-20", received_at="2026-03-08"),
     )
     corpus.put(
         "lot", "LOT-8001",
@@ -314,7 +276,7 @@ def build_corpus() -> Corpus:
         ("LOT-1003", "MAT-ALLOY-7", 450.0, False),
         ("LOT-1004", "MAT-ALLOY-7", 200.0, False),
         ("LOT-1005", "MAT-RESIN-3", 300.0, False),
-        ("LOT-1006", "MAT-ALLOY-8", 380.0, False),
+        ("LOT-1006", "MAT-RESIN-3", 200.0, False),
         ("LOT-8001", "MAT-RESIN-3", 600.0, True),
         ("LOT-9001", "MAT-SUB-9", 900.0, True),  # stock exists; authority does not
     ]:
@@ -366,8 +328,24 @@ def build_corpus() -> Corpus:
     corpus.put(
         "production_order", "C-419",
         ProductionOrder(
-            "C-419", "P-419", 50.0, (MaterialRequirementLine("MAT-RESIN-3", 200.0),),
-            "LINE-2", "2026-08-15T09:00", "READY",
+            # MAT-RESIN-3 800.0, against 600.0 of released LOT-8001. C-419 is
+            # therefore short by exactly 200 — precisely LOT-1006's quantity.
+            #
+            # That exactness is the point: when the applicability question is
+            # answered and LOT-1006 releases, C-419's coverage closes to zero
+            # remaining, so the causal link "quality resolved the dispute ->
+            # this order can run" is literal arithmetic rather than a
+            # narrative. LOT-1005's 300 kg cannot rescue it, because LOT-1005
+            # abstains and never becomes usable.
+            #
+            # Seeded AT_RISK, not READY, because that is what its own coverage
+            # says: 800 needed, 600 usable, and the missing 200 queued against
+            # LOT-1006 by PC-2. "Short, but a named lot is on its way" IS
+            # AT_RISK — a seeded READY would be a stale value contradicting the
+            # corpus, and the release would then record no transition at all,
+            # making a real consequence invisible.
+            "C-419", "P-419", 50.0, (MaterialRequirementLine("MAT-RESIN-3", 800.0),),
+            "LINE-2", "2026-08-15T09:00", "AT_RISK",
             customer_id="CUST-3", customer_committed=True, need_by="2026-08-18",
         ),
     )
@@ -385,6 +363,14 @@ def build_corpus() -> Corpus:
     corpus.put(
         "planned_coverage", "PC-1",
         PlannedCoverage("PC-1", "C-417", "MAT-ALLOY-7", "LOT-1002", 400.0),
+    )
+    # C-419's remaining 200 kg is queued against LOT-1006 specifically, which
+    # is why C-419 reads AT_RISK rather than BLOCKED before the applicability
+    # question is settled: a named lot is on its way. Resolving that question
+    # is what turns the queued quantity into usable inventory.
+    corpus.put(
+        "planned_coverage", "PC-2",
+        PlannedCoverage("PC-2", "C-419", "MAT-RESIN-3", "LOT-1006", 200.0),
     )
 
     # MAT-SUB-9 is explicitly NOT approved for P-417.

@@ -29,6 +29,9 @@ import type {
   ExtractionProvenanceVM,
   FailureVM,
   OutcomeSummaryVM,
+  QualityAuthorityOptionVM,
+  QualityAuthorityPanelVM,
+  QualityAuthorityRecordVM,
   ReconciliationVM,
   SourceArtifactVM,
   SourceLocatorVM,
@@ -37,7 +40,9 @@ import type {
 } from './model';
 import type {
   EvaluateDTO,
+  HumanAuthorityDecisionDTO,
   LifecycleEventDTO,
+  QualityAuthorityDTO,
   RecoveryCandidateDTO,
   SourceArtifactDTO,
   SourceClaimDTO,
@@ -1320,6 +1325,140 @@ export interface ProjectInput {
 }
 
 /** The one projection. Everything the workspace renders comes from here. */
+/** The quality-authority segment off a stored record, narrowed once. */
+function qualityAuthorityOf(
+  record: Record<string, unknown> | null | undefined,
+): QualityAuthorityDTO | undefined {
+  const segment = record?.quality_authority;
+  return segment ? (segment as QualityAuthorityDTO) : undefined;
+}
+
+const AGENT_LABEL: Record<string, string> = {
+  INVESTIGATOR: 'Investigator',
+  VERIFIER: 'Verifier',
+};
+
+/** "470 MPa by ASTM-E8 at room_temp" — the operator's own vocabulary. */
+function measurementOf(option: {
+  value?: number | string | null;
+  units?: string;
+  method?: string;
+  condition?: string;
+}): string {
+  const value = option.value === null || option.value === undefined ? '' : String(option.value);
+  const amount = [value, str(option.units)].filter(Boolean).join(' ');
+  const method = str(option.method);
+  const condition = str(option.condition);
+  const how = [method && `by ${method}`, condition && `at ${condition}`]
+    .filter(Boolean)
+    .join(' ');
+  return [amount, how].filter(Boolean).join(' ');
+}
+
+/**
+ * §8. The disputed question, ready to answer — or null.
+ *
+ * Null whenever there is nothing to ask OR the question has already been
+ * answered. That is what makes the affordance disappear: the panel is not
+ * hidden by a flag, it ceases to exist in the projection.
+ */
+export function qualityPanelFrom(
+  authority: QualityAuthorityDTO | undefined,
+): QualityAuthorityPanelVM | null {
+  const question = authority?.question;
+  if (!question?.question_id) return null;
+  if (str(question.status) !== 'OPEN') return null;
+  if ((authority?.decisions ?? []).length > 0) return null;
+
+  const options: QualityAuthorityOptionVM[] = (question.options ?? []).map((o) => {
+    const equivalence = str(o.equivalence_id);
+    return {
+      claimId: str(o.claim_id),
+      selectedBy: str(o.selected_by) === 'VERIFIER' ? 'VERIFIER' : 'INVESTIGATOR',
+      agentLabel: AGENT_LABEL[str(o.selected_by)] ?? str(o.selected_by),
+      measurement: measurementOf(o),
+      basis: equivalence
+        ? `applicable via ${equivalence}`
+        : `the method ${str(question.method_to)} names`,
+    };
+  });
+
+  const characteristic = str(question.characteristic).replace(/_/g, ' ');
+  const equivalenceId = str(question.equivalence_id);
+  const alternate = options.find((o) => o.basis.startsWith('applicable via'));
+  const direct = options.find((o) => !o.basis.startsWith('applicable via'));
+
+  // The exact sentence. Every noun in it is a backend fact.
+  const question_text = equivalenceId
+    ? `Does Quality authorize ${equivalenceId} — ${str(question.method_from)} in place of ` +
+      `${str(question.method_to)} at ${str(question.condition)} — as applicable to the ` +
+      `${characteristic} requirement for this decision?`
+    : `Does Quality authorize the disputed ${characteristic} evidence as applicable ` +
+      `for this decision?`;
+
+  const position = (o: QualityAuthorityOptionVM | undefined): string =>
+    o ? `Selected ${o.measurement}, ${o.basis}.` : '';
+
+  return {
+    questionId: str(question.question_id),
+    question: question_text,
+    characteristic: str(question.characteristic),
+    equivalenceId,
+    options,
+    investigatorPosition: position(options.find((o) => o.selectedBy === 'INVESTIGATOR')),
+    verifierPosition: position(options.find((o) => o.selectedBy === 'VERIFIER')),
+    disputed: equivalenceId
+      ? `${equivalenceId} · ${str(question.method_from)} → ${str(question.method_to)} at ${str(question.condition)}`
+      : characteristic,
+    // Deliberately NOT "Approve"/"Release". The human authorizes applicability
+    // or leaves the lot where it is; neither verb decides the lot.
+    primaryActionLabel: alternate ? 'Authorize applicability' : 'Authorize applicability',
+    secondaryActionLabel: direct ? 'Keep held' : 'Keep held',
+  };
+}
+
+/** §8. The durable stage that replaces the panel once a human has answered. */
+export function qualityAuthorityFrom(
+  authority: QualityAuthorityDTO | undefined,
+): QualityAuthorityRecordVM | null {
+  const decisions = authority?.decisions ?? [];
+  if (decisions.length === 0) return null;
+  const decision: HumanAuthorityDecisionDTO = decisions[decisions.length - 1];
+  const authorized = str(decision.decision) === 'AUTHORIZE_APPLICABILITY';
+  const characteristic = str(decision.characteristic).replace(/_/g, ' ');
+  const equivalenceId = str(decision.equivalence_id);
+
+  return {
+    decision: authorized ? 'AUTHORIZE_APPLICABILITY' : 'KEEP_HELD',
+    headline: authorized ? 'Applicability authorized' : 'Kept held',
+    tone: authorized ? 'released' : 'atrisk',
+    question: qualityQuestionText(decision),
+    answer: authorized
+      ? equivalenceId
+        ? `${equivalenceId} authorized as applicable to the ${characteristic} requirement`
+        : `Disputed ${characteristic} evidence authorized as applicable`
+      : `Lot kept held; the ${characteristic} question was not authorized`,
+    accountableActor: str(decision.accountable_actor),
+    authoritySource: str(decision.authority_source),
+    timestamp: str(decision.created_at),
+    clock: clockOf(str(decision.created_at)),
+    snapshotBinding: str(decision.claim_set_hash).slice(0, 12),
+  };
+}
+
+function qualityQuestionText(decision: HumanAuthorityDecisionDTO): string {
+  const characteristic = str(decision.characteristic).replace(/_/g, ' ');
+  const equivalenceId = str(decision.equivalence_id);
+  if (!equivalenceId) {
+    return `Does Quality authorize the disputed ${characteristic} evidence as applicable for this decision?`;
+  }
+  return (
+    `Does Quality authorize ${equivalenceId} — ${str(decision.method_from)} in place of ` +
+    `${str(decision.method_to)} at ${str(decision.condition)} — as applicable to the ` +
+    `${characteristic} requirement for this decision?`
+  );
+}
+
 export function project(input: ProjectInput): DecisionWorkspaceVM {
   const events = [...input.events].sort(
     (a, b) => (num(a.sequence) ?? 0) - (num(b.sequence) ?? 0),
@@ -1403,5 +1542,9 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     consequence,
     activity: toActivity(events).reverse(), // newest first (D7)
     failure,
+    // One or the other, never both: an answered question has no panel, and an
+    // unanswered one has no record. The control cannot outlive its decision.
+    qualityAuthorityPanel: qualityPanelFrom(qualityAuthorityOf(input.record)),
+    qualityAuthority: qualityAuthorityFrom(qualityAuthorityOf(input.record)),
   };
 }
