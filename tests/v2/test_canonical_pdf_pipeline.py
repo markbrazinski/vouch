@@ -28,7 +28,7 @@ ENTRYPOINT = ROOT / "app" / "Gatehouse" / "main.py"
 
 PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
-PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1003.pdf"
+PDF2 = EVIDENCE / "northern-alloys-coa-batch-wp-26-0317-b.pdf"
 PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
 PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
 
@@ -113,33 +113,82 @@ def test_pdf1_never_needs_a_structured_extractor(runtime):
 
 
 # ==========================================================================
-# PDF 2 — the table defeats the ordinary path and fails SAFE
+# PDF 2 — reads perfectly, and still cannot be attributed
 # ==========================================================================
 
 
-def test_pdf2_cannot_be_read_by_the_ordinary_path_and_mutates_nothing(runtime):
-    """The table is unreadable line-by-line, so Vouch abstains rather than guesses.
+def test_pdf2_reads_and_extracts_and_still_refuses_to_bind(runtime):
+    """The real bytes, through the real entrypoint.
 
-    This is the honest state of PDF 2 until Textract is granted: no claims, no
-    disposition, no mutation. An abstention is a first-class outcome, and it is
-    emphatically not a quality finding against the lot.
+    Everything about the document works — it parses, it clears security, both
+    measurements extract at full confidence — and Vouch still refuses, because
+    it cannot prove these results describe THIS lot. That separation is the
+    product: a valid result for Lot A must never release Lot B.
     """
-    outcome = _evaluate(runtime, PDF2, "LOT-1003", "MILL_TEST_REPORT")
+    outcome = _evaluate(runtime, PDF2, "LOT-1003", "COA")
     assert outcome["ok"]
+    assert outcome["failure_category"] == "EVIDENCE_IDENTITY_UNRESOLVED"
     assert outcome["disposition"] == ""
     assert outcome["quality_decision_required"] is True
     assert outcome["mutation"] == {}
 
+    record = outcome["decision_record"]
+    # Positively true, so this can never be read as an extraction failure.
+    assert record["security"]["blocked"] is False
+    assert record["security"]["held_claim_count"] == 2
+    # Neither agent ever saw the evidence.
+    assert not record["investigator"]["brief_hash"]
+    assert not record["verifier"]["brief_hash"]
+
     events = _events(outcome)
     assert "MUTATION_COMPLETED" not in events
+    assert "INVESTIGATOR_STARTED" not in events
     assert runtime._CORPUS.lot("LOT-1003").status == "RECEIVED"
 
 
-def test_pdf2_is_not_treated_as_defective_merely_for_being_unreadable(runtime):
-    """Absence of evidence is an escalation, never a defect finding."""
-    outcome = _evaluate(runtime, PDF2, "LOT-1003", "MILL_TEST_REPORT")
+def test_pdf2_asks_a_question_naming_both_identifiers(runtime):
+    outcome = _evaluate(runtime, PDF2, "LOT-1003", "COA")
+    question = outcome["decision_record"]["quality_authority"]["question"]
+    assert question["question_type"] == "IDENTITY_BINDING"
+    assert question["supplier_batch"] == "WP-26-0317-B"
+    assert question["internal_lot_id"] == "LOT-1003"
+
+
+def test_pdf2_is_not_treated_as_defective_for_being_unattributable(runtime):
+    """An unbindable document says nothing about the material's quality."""
+    outcome = _evaluate(runtime, PDF2, "LOT-1003", "COA")
     assert outcome["disposition"] != "QUARANTINE"
     assert runtime._CORPUS.lot("LOT-1003").status != "QUARANTINED"
+
+
+def test_pdf2_releases_once_a_human_establishes_the_identity(runtime):
+    """The whole chain on the real PDF: same record, agents run, RELEASE."""
+    first = _evaluate(runtime, PDF2, "LOT-1003", "COA")
+    question = first["decision_record"]["quality_authority"]["question"]
+
+    resumed = runtime.invoke({
+        "action": "submit_quality_authority",
+        "decision_record_id": first["decision_record_id"],
+        "decision": "CONFIRM_BINDING",
+        "accountable_actor": "QA-LEAD",
+        "authority_source": "Plant Quality Authority",
+        "question_id": question["question_id"],
+        "supplier_batch": question["supplier_batch"],
+        "bound_lot_id": question["internal_lot_id"],
+        "artifact_id": question["artifact_id"],
+        "content_hash": question["content_hash"],
+    })
+
+    assert resumed["decision_record_id"] == first["decision_record_id"]
+    assert resumed["decision_record"]["run_count"] == 2
+    assert resumed["disposition"] == "RELEASE"
+    # The agents run for the FIRST time on the resumed run.
+    assert resumed["decision_record"]["investigator"]["brief_hash"]
+    assert resumed["decision_record"]["verifier"]["brief_hash"]
+
+    assert runtime._CORPUS.lot("LOT-1003").status == "RELEASED"
+    inventory = runtime._CORPUS.get("inventory", "LOT-1003")
+    assert (inventory.usable, inventory.quantity) == (True, 450.0)
 
 
 # ==========================================================================
@@ -205,38 +254,42 @@ def test_the_hostile_lot_is_not_refused_for_being_unqualified(runtime):
 
 
 # ==========================================================================
-# PDF 2's AWS-live meaning, pinned
+# The identity floor, and what PDF 2 no longer proves
 # ==========================================================================
 
 
-def test_pdf2_identity_floor_is_not_quietly_lowered() -> None:
-    """The 0.99 floor is what makes PDF 2's outcome meaningful.
+def test_the_identity_confidence_floor_is_not_quietly_lowered() -> None:
+    """The 0.99 floor still guards OCR-derived identity.
 
-    Live qualification (runtime v26): Textract recovered all three
-    measurements, but its worst-cell confidence was 0.9341 — below this floor —
-    so the document bound to no lot and the evidence went unused.
+    Its rationale used to rest on PDF 2: live qualification showed Textract
+    recovering that document's measurements at a worst-cell confidence below
+    this floor, so identity was not trusted and the evidence went unused.
 
-    That is the approved canonical behaviour: structured extraction SUCCEEDED,
-    autonomous use of the evidence was REFUSED. Lowering this constant would
-    convert a deliberate abstention into a release and silently delete the
-    distinction, so the value is pinned here rather than left to a code review.
+    PDF 2 no longer exercises it — the binding case is on the ordinary
+    extraction path by design, because a refusal that turned on OCR confidence
+    read as an OCR failure. The floor is kept and still pinned: a mis-read lot
+    id binds evidence to the WRONG lot, and every check after it then uses the
+    wrong id. `fixtures/textract/` still covers the path itself.
     """
     from vouch.v2.aws import IDENTITY_CONFIDENCE_FLOOR
 
     assert IDENTITY_CONFIDENCE_FLOOR == 0.99
 
 
-def test_pdf2_is_not_expected_to_release() -> None:
-    """Guards the documentation against reverting to the old expectation.
+def test_pdf2_releases_only_after_a_human_establishes_identity() -> None:
+    """Guards the documentation against two opposite reversions.
 
-    The qualification plan originally predicted `RELEASE` for this document.
-    Live AWS disproved it. The manifest now states the corrected outcome, and a
-    future edit that reinstates "-> RELEASE" for PDF 2 should fail here.
+    PDF 2 must not be described as releasing autonomously (it cannot — run 1
+    reaches no disposition), and must not be described as never releasing (it
+    does, on run 2, once a human confirms the mapping). The manifest has to
+    state the human step, not just the outcome on either side of it.
     """
     manifest = (EVIDENCE / "MANIFEST.md").read_text()
-    assert "identityTrusted = false" in manifest
-    assert "EVIDENCE_UNBOUND" in manifest
-    assert "NOT expected to reach RELEASE" in manifest
+    assert "UNRESOLVED_SUPPLIER_BATCH" in manifest
+    assert "human confirms" in manifest
+    assert "same record, run 2" in manifest
+    # The predecessor's OCR-confidence framing must not creep back.
+    assert "identityTrusted = false" not in manifest
 
 
 # ==========================================================================

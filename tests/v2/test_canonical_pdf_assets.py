@@ -35,7 +35,7 @@ EVIDENCE = ROOT / "demo" / "evidence"
 
 PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
-PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1003.pdf"
+PDF2 = EVIDENCE / "northern-alloys-coa-batch-wp-26-0317-b.pdf"
 PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
 PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
 
@@ -44,7 +44,7 @@ PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
 SHA256 = {
     PDF0: "765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181",
     PDF1: "bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be",
-    PDF2: "3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a",
+    PDF2: "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
     PDF3: "5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947",
     PDF4: "e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4",
 }
@@ -107,7 +107,7 @@ def test_the_manifest_records_every_asset_and_hash() -> None:
 @pytest.mark.parametrize(
     "path,lot_id",
     [
-        (PDF0, "LOT-1001"), (PDF1, "LOT-1002"), (PDF2, "LOT-1003"),
+        (PDF0, "LOT-1001"), (PDF1, "LOT-1002"),
         (PDF3, "LOT-1004"), (PDF4, "LOT-1006"),
     ],
 )
@@ -131,7 +131,6 @@ def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus)
     [
         (PDF0, "LOT-1001", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
         (PDF1, "LOT-1002", "MAT-ALLOY-7", "SUP-EAST", "SITE-E1"),
-        (PDF2, "LOT-1003", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
         (PDF3, "LOT-1004", "MAT-ALLOY-7", "SUP-CENTRAL", "SITE-C1"),
         (PDF4, "LOT-1006", "MAT-RESIN-3", "SUP-WEST", "SITE-W1"),
     ],
@@ -166,16 +165,47 @@ def test_pdf1_states_the_superseded_revision_and_its_measurements() -> None:
     assert "CONFORMS" in text
 
 
-def test_pdf2_states_the_governing_revision_and_its_table() -> None:
+def test_pdf2_names_its_own_batch_and_never_a_vouch_lot() -> None:
+    """The load-bearing property of the binding case.
+
+    ANY `LOT-####` string on this page binds the certificate immediately and
+    the human question is never asked. Two re-renders reintroduced one — the
+    document is derived from the LOT-1001 certificate — so this is asserted on
+    the pattern, not on one known-bad value.
+    """
+    text = _text(PDF2)
+    assert "WP-26-0317-B" in text, "the supplier's own batch id is the identifier"
+    assert re.findall(r"LOT-\d+", text) == [], (
+        "this certificate must state no Vouch lot id; printing one binds it "
+        "and the identity case cannot run"
+    )
+
+
+def test_pdf2_states_the_governing_revision_and_its_measurements() -> None:
+    """Once identity is established the evidence must be BORING.
+
+    512 passes Rev C (>= 480) and hardness 31 is mid-band, so nothing about
+    the measurements is in doubt and the refusal has exactly one cause.
+    """
     text = _text(PDF2)
     assert "SPEC-A7 Revision C" in text
     assert "512" in text and "31" in text
-    # The table header is what makes structured extraction meaningful.
-    for column in ("CHARACTERISTIC", "RESULT", "UNITS", "METHOD", "CONDITION"):
-        assert column in text.upper(), f"table column {column} is gone"
-    # Approved synthetic supporting facts — presentation, not governed facts.
-    for supporting in ("H-4471", "0.41", "1.12", "50.0"):
+    assert "CONFORMS" in text
+    # Supporting identity that agrees with the receipt on every axis EXCEPT
+    # the lot. That agreement is what makes the missing mapping the only
+    # open question rather than one of several.
+    for supporting in ("SUP-NORTH", "SITE-N1", "MAT-ALLOY-7", "PO-82", "450 kg"):
         assert supporting in text
+
+
+def test_pdf2_does_not_phrase_conformance_as_a_supplier_assertion() -> None:
+    """`supplier: <value>` is an identity pattern.
+
+    "Supplier conformance statement" parses as a SECOND supplier id, which
+    turns the document into an IDENTITY_CONFLICT and routes it away from the
+    human question entirely.
+    """
+    assert "Supplier conformance" not in _text(PDF2)
 
 
 def test_pdf3_states_its_measurement_and_specification() -> None:
@@ -255,23 +285,35 @@ def test_pdf1_is_readable_by_the_ordinary_parser() -> None:
     assert needed is False, "PDF 1 must not require structure recovery"
 
 
-def test_pdf2_defeats_the_ordinary_parser_and_requires_structure() -> None:
-    """The load-bearing assertion.
+def test_pdf2_reads_perfectly_on_the_ordinary_path() -> None:
+    """The document must NOT be hard to read.
 
-    If the flattened parser ever succeeds here, the document stopped being
-    table-shaped and Textract became decoration. This asserts the CURRENT
-    document's behaviour; it does not weaken the parser to manufacture it.
+    The old PDF 2 was a table that defeated the flat parser, which made its
+    refusal look like an extraction problem. This one is the opposite claim:
+    both measurements parse at full confidence, so when Vouch still refuses,
+    the only remaining explanation is identity.
     """
     text = _text(PDF2)
     claims, confidence = parse_deterministic(text)
-    assert claims == [], "PDF 2's table is now readable line-by-line"
-    needed, reason = structure_needed(text, confidence)
-    assert needed is True and reason
+    assert confidence == 1.0
+    assert {c.characteristic for c in claims} == {"tensile_strength", "hardness"}
+    assert [(c.value, c.units, c.method, c.condition) for c in claims] == [
+        (512.0, "MPa", "ASTM-E8", "room_temp"),
+        (31.0, "HRC", "HRC", "as_received"),
+    ]
+    needed, _ = structure_needed(text, confidence)
+    assert needed is False, "the binding case must not depend on Textract"
 
 
-def test_only_pdf2_needs_structure_recovery() -> None:
+def test_no_canonical_document_needs_structure_recovery() -> None:
+    """Structure recovery is now unexercised by the canonical set.
+
+    Recorded rather than hidden: the Textract path still has its own fixtures
+    under `fixtures/textract/`, but no DEMO document depends on it since the
+    binding case replaced the table-based one.
+    """
     for path, expected in (
-        (PDF0, False), (PDF1, False), (PDF2, True), (PDF3, False), (PDF4, False),
+        (PDF0, False), (PDF1, False), (PDF2, False), (PDF3, False), (PDF4, False),
     ):
         text = _text(path)
         _claims, confidence = parse_deterministic(text)

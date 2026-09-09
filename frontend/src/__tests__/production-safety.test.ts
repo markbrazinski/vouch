@@ -279,7 +279,7 @@ describe('the product surface carries no demo apparatus', () => {
     // exhaustively rather than pattern-matched on a directory, so adding a
     // fifth document is a deliberate edit here and not an accident.
     const CANONICAL =
-      /(northern-alloys-coa-lot-1001|eastern-metals-coa-lot-1002|northern-alloys-mtr-lot-1003|central-forgeworks-coa-lot-1004|western-polymers-coa-lot-1006)\.pdf/;
+      /(northern-alloys-coa-lot-1001|eastern-metals-coa-lot-1002|northern-alloys-coa-batch-wp-26-0317-b|central-forgeworks-coa-lot-1004|western-polymers-coa-lot-1006)\.pdf/;
     for (const f of productFiles) {
       const src = readFileSync(f, 'utf8');
       for (const match of src.match(/[\w./-]+\.pdf/g) ?? []) {

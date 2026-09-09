@@ -91,16 +91,13 @@ describe('production build excludes the dev fixture harness', () => {
       createHash('sha256').update(readFileSync(join(DIST, 'assets', f))).digest('hex'),
     );
     // Frozen in demo/evidence/MANIFEST.md and re-checked by
-    // tests/v2/test_canonical_pdf_assets.py. If this differs, the UI is
-    // submitting bytes that were never qualified.
-    // Frozen in demo/evidence/MANIFEST.md and re-checked by
     // tests/v2/test_canonical_pdf_assets.py. If any differs, the UI is
     // submitting bytes that were never qualified.
     expect(shipped.sort()).toEqual(
       [
         '765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181', // 1001
         'bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be', // 1002
-        '3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a', // 1003
+        '326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242', // 1003 batch WP-26-0317-B
         '5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947', // 1004
         'e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4', // 1006
       ].sort(),

@@ -16,7 +16,8 @@ certificate is represented, and each document says so on its face.
 
 The first four form a deliberate increasing-complexity ladder: a normal
 release, a release that cannot be defended, evidence that cannot be safely
-attached to a lot at all, and evidence that attacks the reader. The fifth is a
+attached to a lot until a human says whose it is, and evidence that attacks the
+reader. The fifth is a
 different axis entirely — evidence that is entirely legitimate and still cannot
 be acted on autonomously, because it supports two defensible readings.
 
@@ -55,45 +56,44 @@ The supplier's own conclusion is `CONFORMS`, and against the revision it cites
 that is true. Reconciliation against the revision that actually governs on
 receipt is what changes the answer.
 
-## northern-alloys-mtr-lot-1003.pdf
-
-> **SUPERSEDED — awaiting re-render.** The facts below describe the document as
-> it exists on disk today. The backend it was qualified against no longer tells
-> this story: `LOT-1003` now carries the human-resolvable **identity binding**
-> case (`EVIDENCE_IDENTITY_UNRESOLVED` → human confirms batch↔lot → same record
-> resumes → `RELEASE`), frozen in
-> `contracts/demo/VOUCH_V2_CANONICAL_SUPPLIER_DOCUMENT_BRIEF.md` §3.
->
-> The replacement is an ORDINARY-extraction Certificate of Analysis printing
-> `Supplier Batch: WP-26-0317-B` and **no** `LOT-####` string at all. Until it
-> is rendered and re-qualified, this file stays tracked and its hash test keeps
-> passing — deleting it would lose the only qualified bytes for this slot.
-
+## northern-alloys-coa-batch-wp-26-0317-b.pdf
 
 | | |
 |---|---|
 | Supplier | Northern Alloys (`SUP-NORTH`), site `SITE-N1` |
-| Lot | `LOT-1003` · `MAT-ALLOY-7` · PO-82 · 450 kg |
-| Document type | Materials Test Report |
+| Internal lot | `LOT-1003` · `MAT-ALLOY-7` · PO-82 · 450 kg |
+| **Supplier batch (printed)** | **`WP-26-0317-B`** |
+| Document type | Certificate of Analysis |
 | Cites | `SPEC-A7` **Revision C** (the governing revision) |
-| Measurements | tensile_strength 512 MPa (ASTM-E8, Room Temperature) · hardness 31 HRC (HRC, As Received) |
-| Supporting synthetic facts | heat H-4471 · C 0.41% · Mn 1.12% · diameter 50.0 mm |
-| SHA-256 | `3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a` |
-| Intended path | **`Textract AnalyzeDocument(TABLES)`** — results live in a real table |
-| Qualified outcome (**AWS-live**) | ordinary extraction yields **0 claims** → structure recovery → real `AnalyzeDocument(TABLES)` recovers the measurements with exact cell provenance → worst-cell confidence **0.7737** is below the **0.99** identity floor → `identityTrusted = false` → `EVIDENCE_UNBOUND` / `UNBOUND_NO_IDENTITY` → no mutation |
+| Measurements | tensile_strength 512 MPa (ASTM-E8, room_temp) · hardness 31 HRC (HRC, as_received) |
+| SHA-256 | `326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242` |
+| Intended path | **ordinary extraction** — Textract NOT required |
+| Qualified outcome | 2 claims @ confidence 1.0 → `UNRESOLVED_SUPPLIER_BATCH` → identity question → human confirms `WP-26-0317-B` = `LOT-1003` → **same record, run 2** → both agents → `RELEASE` → `release_lot` → 450 kg usable |
 
-> **Textract succeeded; autonomous use of the evidence did not.** Structured
-> extraction recovered the measurements. The binding gate separately refused
-> to attach them to a lot identity it could not establish safely, so the
-> evidence is retained and unused rather than acted upon. These are two
-> different mechanisms and the distinction is deliberate — this document is
-> NOT expected to reach RELEASE.
->
-> The identity failure is **structural, not marginal**: `LOT-1003` is printed
-> in the page header, and `AnalyzeDocument(TABLES)` returns table cells only,
-> so the lot id never appears in the recovered text at all. The worst-cell
-> confidence is set by the small-type chemical-composition rows, not by the
-> lot id — a fact worth knowing before anyone re-renders this document.
+The human-resolvable case. The certificate is legitimate, parses cleanly,
+clears security and extracts both measurements at full confidence. Supplier,
+site, material and PO all agree with the receipt. The one thing it does not do
+is name a Vouch lot — it names the supplier's own consignment, and nothing
+authoritative maps `WP-26-0317-B` to `LOT-1003` until Quality establishes it.
+
+> **The document must not name a Vouch lot.** Any `LOT-####` string on the page
+> binds the certificate immediately and the human is never asked anything. This
+> is not hypothetical: the document is derived from the LOT-1001 certificate and
+> two re-renders reintroduced a `LOT` field printing `LOT-1001`, which resolved
+> to `EVIDENCE_BINDING_MISMATCH` — "this is about another lot" — and skipped the
+> identity question entirely. `test_pdf2_names_its_own_batch_and_never_a_vouch_lot`
+> asserts on the PATTERN, not on that one known-bad value.
+
+> **Nothing here is hard to read, and that is the point.** The predecessor was a
+> table-based mill test report whose refusal turned on Textract cell confidence,
+> which made a valid authority control look like an OCR failure. Extraction now
+> succeeds completely and the refusal has exactly one cause: Vouch cannot prove
+> whose lot these results describe. A perfectly valid test result for Lot A must
+> never accidentally release Lot B.
+
+Its 450 kg is deliberately too little to change the readiness of `C-417`,
+`C-418` or `C-419`, so this case tells its own story without disturbing Hero A
+or the LOT-1006 disagreement.
 
 ## central-forgeworks-coa-lot-1004.pdf
 

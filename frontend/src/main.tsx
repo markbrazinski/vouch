@@ -8,7 +8,7 @@ import type { ArrivalDocuments, HeroAEntry } from './decision/entry';
 // canonical tracked evidence, so the build cannot ship different bytes.
 import COA_1001 from './evidence/northern-alloys-coa-lot-1001.pdf?url';
 import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
-import MTR_1003 from './evidence/northern-alloys-mtr-lot-1003.pdf?url';
+import COA_BATCH_WP from './evidence/northern-alloys-coa-batch-wp-26-0317-b.pdf?url';
 import COA_1004 from './evidence/central-forgeworks-coa-lot-1004.pdf?url';
 import COA_1006 from './evidence/western-polymers-coa-lot-1006.pdf?url';
 
@@ -77,8 +77,8 @@ const ARRIVALS: ArrivalDocuments = {
     material: 'MAT-ALLOY-7',
     receiptMeta: 'SUP-NORTH · site SITE-N1 · 450 kg',
     contentType: 'application/pdf',
-    documentUrl: MTR_1003,
-    documentName: 'northern-alloys-mtr-lot-1003.pdf',
+    documentUrl: COA_BATCH_WP,
+    documentName: 'northern-alloys-coa-batch-wp-26-0317-b.pdf',
   },
   'LOT-1004': {
     lotId: 'LOT-1004',
