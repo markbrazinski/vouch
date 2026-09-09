@@ -1147,9 +1147,6 @@ class DynamoCapabilityStore:
                     }
                 )
                 labels.append("inventory")
-                inventory_delta = float(bound.get("quantity", 0.0) or 0.0)
-                if not usable:
-                    inventory_delta = -inventory_delta
                 after_state["inventory_usable"] = usable
 
                 # Parity with the local backend: the record must show that the
@@ -1157,6 +1154,14 @@ class DynamoCapabilityStore:
                 # (quarantining a lot that was never usable) is evidenced
                 # rather than indistinguishable from a step that never ran.
                 was_usable = bool(inventory_row.get("usable", False))
+                # The quantity comes from the INVENTORY ROW, not from the
+                # capability's bound parameters. A release is authorized with
+                # `parameters={}` — there is no quantity to sign, because the
+                # lot's quantity is not the caller's to choose — so reading it
+                # from `bound` yielded 0.0 on every durable release. The record
+                # then showed inventory going False -> True with a delta of
+                # zero, and every consumer of that delta (the causal copy most
+                # visibly) had to describe a release that moved nothing.
                 quantity = float(
                     inventory_row.get("quantity", bound.get("quantity", 0.0) or 0.0)
                 )
@@ -1165,6 +1170,8 @@ class DynamoCapabilityStore:
                 if was_usable == usable:
                     # Already in the target state: the transition moves nothing.
                     inventory_delta = 0.0
+                else:
+                    inventory_delta = quantity if usable else -quantity
 
             elif action is Action.CREATE_QA_REVIEW:
                 # F6: the QA action must actually create the QA record.

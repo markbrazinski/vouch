@@ -29,6 +29,8 @@ The causal shape this pins, and it is easy to get backwards:
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from vouch.v2.consequences import Readiness, compute_readiness, enumerate_recovery
@@ -488,3 +490,28 @@ def test_deferred_terminal_hold_policy_is_recorded_not_implemented():
     # And the current rule is exactly as documented: RECEIVED still counts.
     assert "RECEIVED" in corpus.COVERABLE_LOT_STATES
     assert "QUARANTINED" not in corpus.COVERABLE_LOT_STATES
+
+
+def test_a_durable_release_records_the_quantity_it_made_usable():
+    """The durable ledger's inventory delta comes from the INVENTORY ROW.
+
+    A release is authorized with `parameters={}` — the lot's quantity is not
+    the caller's to choose, so there is nothing to sign — and the durable path
+    read the delta from those bound parameters, yielding 0.0 on every real
+    release. The record showed inventory moving False -> True with a delta of
+    zero, and the causal copy had to describe a release that moved nothing.
+    Local runs compute the delta from the row and were correct, so no test saw
+    it; this one pins the durable branch specifically.
+
+    A source assertion, deliberately, and its limits are real: it proves the
+    delta is no longer taken from `bound`, not that the transaction behaves.
+    Exercising the true path needs a live table (see the VOUCH_LIVE_AWS suite),
+    and a mock rebuilt around this branch would only assert the mock.
+    """
+    import inspect as _inspect
+
+    from vouch.v2.aws import DynamoCapabilityStore
+
+    source = _inspect.getsource(DynamoCapabilityStore)
+    assert "inventory_delta = quantity if usable else -quantity" in source
+    assert 'inventory_delta = float(bound.get("quantity"' not in source

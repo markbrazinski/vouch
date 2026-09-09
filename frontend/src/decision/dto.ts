@@ -220,6 +220,12 @@ export interface CausalEventDTO {
   decision_record_id?: string;
   ledger_sequence?: number;
   candidates?: RecoveryCandidateDTO[];
+  /** The order's coverage as it stands now, for the explanatory sentence. */
+  required?: number;
+  available?: number;
+  planned?: number;
+  uncovered?: number;
+  planned_sources?: PlannedSourceDTO[];
 }
 
 export interface TodayLineDTO {

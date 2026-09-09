@@ -348,14 +348,24 @@ export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEvent
         `The remaining evidence cannot support release, so ${order || 'the order'} ` +
         `remains blocked.`;
     } else if ((row.inventory_delta ?? 0) > 0) {
-      // A release ADDS material, so this is an improvement, and saying so
-      // matters: "C-417 is now AT_RISK" made the one clean decision of the day
-      // read as damage. The plan is untouched — what moved is Vouch readiness.
-      const to = READINESS_WORDING[row.to ?? ''] ?? row.to;
-      const from = READINESS_WORDING[row.from ?? ''] ?? row.from;
-      sentence =
-        `${lot} released ${qty(row.inventory_delta)} kg of ${row.material_id ?? ''}, ` +
-        `improving ${order} readiness from ${from} to ${to}. The plan is unchanged.`;
+      // A release ADDS material, so this is an improvement — and the useful
+      // sentence says what the requirement is now MADE of, not which way a
+      // readiness enum moved. "C-417 is now AT_RISK" made the one clean
+      // decision of the day read as damage; the badges still carry the
+      // authoritative PLAN and VOUCH states, so the prose does not need to.
+      const released = `${lot} released ${qty(row.inventory_delta)} kg of ${row.material_id ?? ''}.`;
+      const queued = (row.planned_sources ?? [])
+        .map((source) => `${qty(source.quantity)} kg queued from ${source.lot_id}`)
+        .join(' and ');
+      const composition =
+        (row.uncovered ?? 0) === 0 && queued
+          ? ` ${order} is now fully coverable on plan: ${qty(row.available)} kg ` +
+            `released and ${queued}, awaiting Quality.`
+          : queued
+            ? ` ${order} has ${qty(row.available)} kg released and ${queued}, ` +
+              `still short ${qty(row.uncovered)} kg.`
+            : ` ${order} has ${qty(row.available)} kg of ${qty(row.required)} kg released.`;
+      sentence = `${released}${composition} The plan is unchanged.`;
     } else {
       const to = READINESS_WORDING[row.to ?? ''] ?? row.to;
       sentence = `${order} readiness is now ${to} after ${lot} was assessed.`;

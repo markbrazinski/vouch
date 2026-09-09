@@ -553,6 +553,34 @@ def _today_plan() -> dict:
     }
 
 
+def _coverage_now(order_id: str, material_id: str) -> dict:
+    """Current composition of one requirement, for causal copy.
+
+    A causal link records which way readiness moved; it does not record what
+    the requirement is MADE of, and "C-417 is now at risk" is a poorer sentence
+    than "500 kg released and 400 kg queued from LOT-1002". These are the facts
+    that let the copy say the second one.
+    """
+    if not order_id or not material_id:
+        return {}
+    result = compute_readiness(_CORPUS, order_id)
+    line = next((c for c in result.coverage if c.material_id == material_id), None)
+    if line is None:
+        return {}
+    return {
+        "required": line.required,
+        "available": line.available,
+        "planned": line.planned,
+        "uncovered": line.uncovered,
+        "planned_sources": [
+            {"lot_id": row.lot_id, "quantity": row.quantity}
+            for row in _CORPUS.planned_coverage_rows(order_id, material_id)
+            if getattr(_CORPUS.lot(row.lot_id), "status", "")
+            in _CORPUS.COVERABLE_LOT_STATES
+        ],
+    }
+
+
 def _today_causality() -> list[dict]:
     """Why the plan looks like this — read back from the stored decisions.
 
@@ -647,6 +675,12 @@ def _today_causality() -> list[dict]:
                     "decision_record_id": link.get("decision_record_id", record_id),
                     "ledger_sequence": link.get("ledger_sequence", 0),
                     "saved_at": document.get("saved_at", ""),
+                    # The order's coverage AS IT STANDS NOW, so the sentence can
+                    # say what the order is made of rather than only which way
+                    # its readiness moved. Read live rather than from the record:
+                    # the record captured the moment of the decision, and this
+                    # link is describing the plan as it is today.
+                    **_coverage_now(link.get("order_id", ""), link.get("material_id", "")),
                 }
             )
 

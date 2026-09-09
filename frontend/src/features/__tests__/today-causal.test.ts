@@ -88,13 +88,27 @@ describe('Today causal history', () => {
     // Rendering the raw enum ("C-417 is now AT_RISK") read as a plan change and
     // made the day's one clean decision look like damage.
     // Alone — with no resequence to fold into — the readiness link stands on
-    // its own sentence, and that sentence must say what improved.
+    // its own sentence, and that sentence says what the requirement is now made
+    // of rather than which way a readiness enum moved. The badges carry the
+    // authoritative PLAN and VOUCH states; the prose does not repeat them.
     const [event] = toCausalHistory([
-      { ...RELEASE_EXPOSES_SHORTFALL, to: 'AT_RISK' },
+      {
+        ...RELEASE_EXPOSES_SHORTFALL,
+        to: 'AT_RISK',
+        required: 900,
+        available: 500,
+        planned: 400,
+        uncovered: 0,
+        planned_sources: [{ lot_id: 'LOT-1002', quantity: 400 }],
+      },
     ]);
-    expect(event.sentence).toContain('improving C-417 readiness from ready to at risk');
-    expect(event.sentence).toContain('The plan is unchanged');
-    expect(event.sentence).not.toMatch(/AT_RISK|READY/);
+    expect(event.sentence).toBe(
+      'LOT-1001 released 500 kg of MAT-ALLOY-7. C-417 is now fully coverable on ' +
+        'plan: 500 kg released and 400 kg queued from LOT-1002, awaiting Quality. ' +
+        'The plan is unchanged.',
+    );
+    // Never the raw enums, and never a READY -> AT_RISK narration.
+    expect(event.sentence).not.toMatch(/AT_RISK|READY|at risk/);
   });
 
   it('says the queued coverage was lost, never that stock was removed', () => {
