@@ -36,6 +36,9 @@ const SEAL_STYLE: Record<
 };
 
 function nodePill(node: SpineNodeVM): { label: string; tone: SemanticTone } {
+  // An explicit tone always wins: the projection knows whether a completed
+  // node is good news, and `state` alone cannot.
+  if (node.tone) return { label: node.headline.toUpperCase(), tone: node.tone };
   switch (node.state) {
     case 'halted':
       return { label: '⊘ HALTED', tone: 'quarantine' };

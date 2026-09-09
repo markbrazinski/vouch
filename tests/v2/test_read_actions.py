@@ -415,6 +415,69 @@ def test_incoming_survives_a_malformed_lot_and_hides_test_debris(runtime):
     assert "LOT-MALFORMED" not in listed
 
 
+def test_a_resolved_disagreement_stops_asking_for_a_decision(runtime):
+    """Run 1's failure must not outlive the answer that settled it.
+
+    `failure_category` is the LAST failure a record saw, and on a resumed case
+    run 1's MATERIAL_DISAGREEMENT stays on the document after run 2 released
+    the lot. Reading it alone made a reseeded LOT-1006 sit in Incoming asking
+    for a quality decision that had already been given — work nobody owed.
+    """
+    import base64
+    from pathlib import Path
+
+    pdf = Path(__file__).resolve().parents[2] / "demo" / "evidence" / (
+        "western-polymers-coa-lot-1006.pdf"
+    )
+    first = runtime.invoke({
+        "action": "evaluate_lot", "lot_id": "LOT-1006",
+        "document_b64": base64.b64encode(pdf.read_bytes()).decode(),
+        "content_type": "application/pdf",
+    })
+    assert first["failure_category"] == "MATERIAL_DISAGREEMENT"
+
+    rows = runtime.invoke({"action": "list_decisions"})["rows"]
+    open_row = next(r for r in rows if r["lot_id"] == "LOT-1006")
+    assert open_row["row_state"] == "QUALITY_DECISION_REQUIRED"
+    assert open_row["attention_required"] is True
+
+    resumed = runtime.invoke({
+        "action": "submit_quality_authority",
+        "decision_record_id": first["decision_record_id"],
+        "decision": "AUTHORIZE_APPLICABILITY",
+        "accountable_actor": "QA-LEAD",
+        "authority_source": "Plant Quality Authority",
+    })
+    assert resumed["disposition"] == "RELEASE"
+
+    # Now roll the lot back the way a reseed does, leaving the record behind.
+    # The runtime fixture is module-scoped, so the corpus is restored
+    # afterwards — this test borrows LOT-1006's state and must give it back.
+    from dataclasses import replace
+
+    corpus = runtime._CORPUS
+    released = corpus.lot("LOT-1006")
+    corpus.put("lot", "LOT-1006", replace(released, status="RECEIVED"))
+    try:
+        rows = runtime.invoke({"action": "list_decisions"})["rows"]
+        settled = next(r for r in rows if r["lot_id"] == "LOT-1006")
+
+        assert settled["row_state"] == "EVIDENCE_RECEIVED"
+        assert settled["attention_required"] is False
+    finally:
+        # Hand LOT-1006 back UNDECIDED, not released. This test drove it all
+        # the way to RELEASE, and the module-scoped fixture would carry that
+        # into every later test — one of which needs a fresh disagreement on
+        # this same lot. Restoring the released row would leak this test's
+        # effect into its neighbours.
+        corpus.put("lot", "LOT-1006", replace(released, status="RECEIVED"))
+        inventory = corpus.get("inventory", "LOT-1006")
+        if inventory is not None:
+            corpus.put(
+                "inventory", "LOT-1006", replace(inventory, usable=False)
+            )
+
+
 def test_a_decided_lot_is_not_duplicated_by_its_arrival(runtime):
     """The record wins. An arrival row must never mask a real decision."""
     import base64
@@ -433,10 +496,20 @@ def test_a_decided_lot_is_not_duplicated_by_its_arrival(runtime):
     rows = runtime.invoke({"action": "list_decisions"})["rows"]
     mine = [r for r in rows if r["lot_id"] == "LOT-1006"]
 
-    assert len(mine) == 1, "the arrival must not duplicate the decided lot"
-    assert mine[0]["decision_record_id"] == outcome["decision_record_id"]
-    assert mine[0]["row_state"] == "QUALITY_DECISION_REQUIRED"
-    assert mine[0]["attention_required"] is True
+    # Every row for this lot is a REAL DecisionRecord. The ledger legitimately
+    # holds one per evaluation — Incoming collapses them to the newest — and
+    # what must never appear beside them is a recordless arrival row claiming
+    # the lot is still untouched.
+    assert mine, "the decided lot must still be listed"
+    assert all(r["decision_record_id"] for r in mine), (
+        "an arrival row must not duplicate a lot that has a decision"
+    )
+
+    this_run = next(
+        r for r in mine if r["decision_record_id"] == outcome["decision_record_id"]
+    )
+    assert this_run["row_state"] == "QUALITY_DECISION_REQUIRED"
+    assert this_run["attention_required"] is True
 
 
 def test_list_decisions_invents_no_unsupported_counts(hero):

@@ -1183,6 +1183,16 @@ function spineFrom(
   active: StageKey | null,
   reconciliation: ReconciliationVM | null,
   record?: Record<string, unknown> | null,
+  /**
+   * The PROJECTED consequence, not the last raw event.
+   *
+   * A recovery pass emits its own CONSEQUENCE_RECALCULATED, so `last()` was
+   * returning C-418's READY and the spine announced "READY · C-418" — a green
+   * node that read as a successful decision and hid the quarantine's actual
+   * impact. The projection already knows which order stopped and which one
+   * moved; the spine now says the same thing.
+   */
+  consequenceVM?: ConsequenceVM | null,
 ): SpineNodeVM[] {
   const halted = securityHalted(events);
   const snapshot = last(events, 'EVIDENCE_SNAPSHOT_CREATED');
@@ -1282,14 +1292,47 @@ function spineFrom(
           : str(computed?.disposition) || 'Pending',
       note: computed ? str(computed.basis) : '',
     },
-    {
+    consequenceNode(consequenceState, consequence, consequenceVM),
+  ];
+}
+
+/**
+ * The Consequence spine node: what the disposition did to the plan.
+ *
+ * States the blocked order as the headline and the recovery as supporting
+ * detail, because that is the causal order — an order stopped, and another
+ * one filled the gap. Falls back to the raw event only when no projection
+ * exists (mid-run, before the recalculation lands).
+ */
+function consequenceNode(
+  state: SpineNodeVM['state'],
+  raw: LifecycleEventDTO | undefined,
+  vm: ConsequenceVM | null | undefined,
+): SpineNodeVM {
+  const blocked = vm?.readinessChanges.filter((c) => c.to === 'BLOCKED') ?? [];
+  const moved = vm?.candidates.find((c) => c.selected);
+
+  if (blocked.length) {
+    return {
       key: 'consequence',
       label: 'Consequence',
-      state: consequenceState,
-      headline: consequence ? str(consequence.order_readiness) || 'Recalculated' : 'Pending',
-      note: consequence ? str(consequence.order_id) : '',
-    },
-  ];
+      state,
+      headline: `${blocked.map((c) => c.orderId).join(', ')} blocked`,
+      // Supporting recovery information, deliberately the note and not the
+      // headline: C-418 being fine is not the consequence of a quarantine.
+      note: moved && vm?.executed ? `${moved.candidateId} moved into its slot` : '',
+      // Rust, not green. An order stopped.
+      tone: 'quarantine',
+    };
+  }
+
+  return {
+    key: 'consequence',
+    label: 'Consequence',
+    state,
+    headline: raw ? str(raw.order_readiness) || 'Recalculated' : 'Pending',
+    note: raw ? str(raw.order_id) : '',
+  };
 }
 
 function completedFrom(
@@ -1365,7 +1408,9 @@ function completedFrom(
     });
   if (parts.consequence) {
     const blocked = parts.consequence.readinessChanges.filter((c) => c.to === 'BLOCKED').length;
-    const moved = parts.consequence.executed ? 1 : 0;
+    const moved = parts.consequence.executed
+      ? parts.consequence.candidates.find((c) => c.selected)
+      : undefined;
     add(
       'consequence',
       'Consequence',
@@ -1373,7 +1418,13 @@ function completedFrom(
       // deliberate act rather than the default state.
       `${parts.consequence.candidates.length} recovery options evaluated`,
       {
-        label: moved ? 'RECOVERED' : blocked ? 'BLOCKED' : 'EVALUATED',
+        // Names the order that moved. "RECOVERED" was generic enough that a
+        // viewer had to open the grid to learn what actually happened.
+        label: moved
+          ? `${moved.candidateId} MOVED UP`
+          : blocked
+            ? 'BLOCKED'
+            : 'EVALUATED',
         tone: moved ? 'released' : blocked ? 'refused' : 'progress',
       },
     );
@@ -1598,7 +1649,7 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     running: Boolean(input.running),
     authoritative: Boolean(result),
     durable: input.durable ?? true,
-    spine: spineFrom(events, active, reconciliation, input.record),
+    spine: spineFrom(events, active, reconciliation, input.record, consequence),
     outcome: outcomeFrom(events, result, failure),
     activeStage: terminal ? null : active,
     // Still full-bleed at the terminal frame. The stage collapsed, but the

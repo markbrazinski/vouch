@@ -44,6 +44,15 @@ export interface SpineNodeVM {
   investigatorLane?: string | null;
   verifierLane?: string | null;
   reconciliationSeal?: 'pending' | 'match' | 'disagreement' | 'halted';
+  /**
+   * Overrides the tone the node's state would otherwise imply.
+   *
+   * A completed node is normally green, which is right for every stage that
+   * completing IS the good outcome. Consequence is the exception: the
+   * quarantine's whole point is that an order stopped, and rendering that
+   * green read as a successful decision.
+   */
+  tone?: SemanticTone;
 }
 
 /**

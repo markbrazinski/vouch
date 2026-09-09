@@ -443,6 +443,46 @@ describe('terminal summary answers the three questions', () => {
   });
 });
 
+describe('the Consequence spine node states the impact, not the recovery', () => {
+  const node = (events: typeof dto.events) =>
+    project({
+      decisionRecordId: dto.decision_record_id,
+      lotId: dto.lot_id!,
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events,
+      result: dto,
+      running: false,
+    }).spine.find((n) => n.key === 'consequence')!;
+
+  it('leads with the blocked order and keeps recovery as the note', () => {
+    const n = node(events);
+    expect(n.headline).toBe('C-417 blocked');
+    expect(n.note).toBe('C-418 moved into its slot');
+    // Rust, not green: an order stopped. A completed node defaults to
+    // 'released', which read as a successful decision.
+    expect(n.tone).toBe('quarantine');
+  });
+
+  it('survives the recovery pass that used to overwrite it', () => {
+    // The live run emits a SECOND CONSEQUENCE_RECALCULATED for the resequenced
+    // order. Reading the last event made the spine announce "READY · C-418".
+    const n = node([
+      ...events,
+      {
+        event: 'CONSEQUENCE_RECALCULATED',
+        decision_record_id: dto.decision_record_id,
+        at: '2026-09-03T05:09:00Z',
+        order_id: 'C-418',
+        order_readiness: 'READY',
+        sequence: 999,
+      },
+    ] as typeof dto.events);
+    expect(n.headline).toBe('C-417 blocked');
+    expect(n.headline).not.toMatch(/READY/);
+  });
+});
+
 describe('failureProse reads payload fields, never the reason prose', () => {
   it('returns null when the engine emitted no structured failure', () => {
     expect(failureProse(undefined, 'SPEC-A7:C')).toBeNull();

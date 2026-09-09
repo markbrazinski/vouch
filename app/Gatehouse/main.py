@@ -532,9 +532,16 @@ def _incoming_row(summary: dict) -> dict:
         # is back at RECEIVED that refusal describes a world that no longer
         # exists, and letting it colour the row left a freshly reseeded lot
         # asking for a quality decision nobody owes it.
+        # A record that reached a DISPOSITION has no open question, whatever
+        # failure an earlier run of it recorded. `failure_category` is the
+        # LAST failure this record saw; on a resumed case, run 1's
+        # MATERIAL_DISAGREEMENT stays on the document after run 2 released the
+        # lot. Reading it alone made a reseeded LOT-1006 ask for a quality
+        # decision that had already been answered and rolled back.
+        answered = bool(disposition)
         row_state = (
             "QUALITY_DECISION_REQUIRED"
-            if failure and failure not in _STALE_ON_RESET
+            if failure and failure not in _STALE_ON_RESET and not answered
             else "EVIDENCE_RECEIVED"
         )
     elif disposition == "RELEASE":
