@@ -56,11 +56,21 @@ class EvidenceSegment:
     #: from a text COA, and would have to guess a document type it must never
     #: invent.
     content_types: list[str] = field(default_factory=list)
+    #: Claims extracted successfully from an artifact whose identity is not yet
+    #: resolved to this lot. They are NOT in the autonomous snapshot and no
+    #: agent ever sees them; they are retained so a human confirmation does not
+    #: require re-ingesting (and therefore re-writing) the original artifact.
+    held_claims: list[dict] = field(default_factory=list)
 
 
 @dataclass
 class SecuritySegment:
     inspection_performed: bool = False
+    #: Artifacts read and extracted successfully whose supplier-namespace
+    #: identity is not authoritatively linked to this lot.
+    identity_unresolved_artifact_ids: list[str] = field(default_factory=list)
+    #: The unresolved (supplier batch, internal lot) pairs, verbatim.
+    unresolved_batch_identities: list[dict] = field(default_factory=list)
     config_version: str = ""
     detector: str = ""
     #: P0-6: Guardrails provenance — which guardrail ran, at which version.
@@ -252,6 +262,17 @@ class QualityQuestion:
     method_to: str = ""
     condition: str = ""
     status: str = "OPEN"
+    #: IDENTITY_BINDING questions only. The two identifiers the human is asked
+    #: to correspond, plus the supporting context that makes the question
+    #: answerable. Empty on an EVIDENCE_APPLICABILITY question.
+    supplier_batch: str = ""
+    internal_lot_id: str = ""
+    artifact_id: str = ""
+    content_hash: str = ""
+    supplier_id: str = ""
+    supplier_site: str = ""
+    material_id: str = ""
+    po_reference: str = ""
 
 
 @dataclass
@@ -298,7 +319,15 @@ class HumanAuthorityDecision:
     #: Whether the established path relied on an equivalence, and which. Empty
     #: when the direct method was chosen.
     established_via_equivalence: str = ""
-    decision: str = ""  # ESTABLISH_EVIDENCE | KEEP_HELD
+    #: IDENTITY_BINDING authorities only. Scoped to THIS record and THIS
+    #: artifact: the pair is never promoted to a global alias, and the supplier
+    #: document is never rewritten to assert the internal lot id.
+    supplier_batch: str = ""
+    bound_lot_id: str = ""
+    artifact_id: str = ""
+    content_hash: str = ""
+    binding_ref: str = ""
+    decision: str = ""  # ESTABLISH_EVIDENCE | KEEP_HELD | CONFIRM_BINDING | KEEP_UNBOUND
     accountable_actor: str = ""
     authority_source: str = ""
     created_at: str = field(default_factory=utcnow)
@@ -326,6 +355,23 @@ class QualityAuthoritySegment:
     @property
     def held(self) -> bool:
         return any(d.decision == "KEEP_HELD" for d in self.decisions)
+
+    @property
+    def confirmed_batch_bindings(self) -> frozenset[str]:
+        """Batch->lot correspondences an accountable human established HERE.
+
+        Scoped to this record by construction: it is derived from this
+        record's own decisions and nothing else reads it.
+        """
+        return frozenset(
+            d.binding_ref
+            for d in self.decisions
+            if d.decision == "CONFIRM_BINDING" and d.binding_ref
+        )
+
+    @property
+    def unbound(self) -> bool:
+        return any(d.decision == "KEEP_UNBOUND" for d in self.decisions)
 
 
 @dataclass

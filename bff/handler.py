@@ -184,7 +184,9 @@ def _validated(action: str, body: dict) -> dict:
         # and they are answered by the runtime against durable state.
         record_id()
         decision = body.get("decision")
-        if decision not in ("ESTABLISH_EVIDENCE", "KEEP_HELD"):
+        if decision not in (
+            "ESTABLISH_EVIDENCE", "KEEP_HELD", "CONFIRM_BINDING", "KEEP_UNBOUND"
+        ):
             raise BadRequest("decision is not a recognised quality authority decision")
         payload["decision"] = decision
         for field in ("accountable_actor", "authority_source"):
@@ -202,6 +204,14 @@ def _validated(action: str, body: dict) -> dict:
             payload["evidence_ref"] = value[:256]
         text("claim_set_hash", limit=128)
         text("question_id", limit=256)
+        # Identity-binding echoes. Every one of these must MATCH the open
+        # question; none of them selects anything. The proxy bounds them, the
+        # runtime refuses any that disagrees — a confirmation must answer the
+        # question that was asked, not one the caller composed.
+        text("supplier_batch", limit=128)
+        text("bound_lot_id", limit=128)
+        text("artifact_id", limit=128)
+        text("content_hash", limit=128)
 
     return payload
 

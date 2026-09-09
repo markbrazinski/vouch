@@ -102,6 +102,18 @@ def _record_summary(record) -> dict:
             "inspection_performed": record.security.inspection_performed,
             "prompt_attack_detected": record.security.prompt_attack_detected,
             "blocked": record.security.blocked,
+            # The identity case, stated POSITIVELY. A surface must be able to
+            # show "read fine, extracted fine, not attributable" without
+            # inferring any of the three from the absence of an error — that
+            # inference is exactly how this outcome gets misread as an OCR
+            # failure.
+            "identity_unresolved_artifact_ids": list(
+                record.security.identity_unresolved_artifact_ids
+            ),
+            "unresolved_batch_identities": [
+                dict(pair) for pair in record.security.unresolved_batch_identities
+            ],
+            "held_claim_count": len(record.evidence.held_claims),
         },
         "snapshot_hash": record.snapshot.claim_set_hash,
         "investigator": {
@@ -370,6 +382,9 @@ def _apply_exclusions(artifacts: dict[str, dict], record: dict) -> None:
         "rejected_artifact_ids",
         "unbound_artifact_ids",
         "identity_conflicts",
+        # Read and extracted successfully, and still not usable: the claims are
+        # HELD pending a human identity confirmation, not admitted.
+        "identity_unresolved_artifact_ids",
     ):
         excluded.update(security.get(key) or [])
     for artifact_id in excluded:
@@ -1030,6 +1045,10 @@ def invoke(payload: dict, context=None) -> dict:
                 evidence_ref=payload.get("evidence_ref", ""),
                 claim_set_hash=payload.get("claim_set_hash", ""),
                 question_id=payload.get("question_id", ""),
+                supplier_batch=payload.get("supplier_batch", ""),
+                bound_lot_id=payload.get("bound_lot_id", ""),
+                artifact_id=payload.get("artifact_id", ""),
+                content_hash=payload.get("content_hash", ""),
             )
             return {
                 "ok": True,

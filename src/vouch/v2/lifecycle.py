@@ -31,6 +31,10 @@ class EventType(str, Enum):
     #: UNBOUND/CONFLICT outcomes, so the frontend never has to infer a
     #: binding result from the absence of a mismatch event.
     EVIDENCE_BINDING_COMPLETED = "EVIDENCE_BINDING_COMPLETED"
+    #: An accountable human established that a supplier-namespace batch id
+    #: corresponds to an internal lot, for THIS decision only. The scoped
+    #: authoritative fact that unblocks binding — never a disposition.
+    EVIDENCE_IDENTITY_ESTABLISHED = "EVIDENCE_IDENTITY_ESTABLISHED"
     EVIDENCE_EXTRACTED = "EVIDENCE_EXTRACTED"
     EVIDENCE_SNAPSHOT_CREATED = "EVIDENCE_SNAPSHOT_CREATED"
     INVESTIGATOR_STARTED = "INVESTIGATOR_STARTED"

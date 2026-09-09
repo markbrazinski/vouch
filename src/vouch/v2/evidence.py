@@ -271,6 +271,7 @@ def ingest(
     received_at: str | None = None,
     trust_label: TrustLabel = TrustLabel.UNTRUSTED_SUPPLIER,
     structured_extractor: StructuredExtractor | None = None,
+    confirmed_batch_bindings: frozenset[str] | set[str] | None = None,
 ) -> ExternalEvidenceArtifact:
     """S1 + S2. Store the original, inspect it, and bind its identity.
 
@@ -369,6 +370,7 @@ def ingest(
         target_material_id=material_id,
         target_supplier_id=supplier_id,
         target_supplier_site=supplier_site,
+        confirmed_batch_bindings=confirmed_batch_bindings,
     )
     mismatches = (
         binding_reasons if binding_status is BindingStatus.MISMATCH else []
@@ -404,6 +406,8 @@ def ingest(
         status = ArtifactStatus.EVIDENCE_IDENTITY_CONFLICT
     elif binding_status is BindingStatus.UNBOUND_NO_IDENTITY:
         status = ArtifactStatus.EVIDENCE_UNBOUND
+    elif binding_status is BindingStatus.UNRESOLVED_SUPPLIER_BATCH:
+        status = ArtifactStatus.EVIDENCE_IDENTITY_UNRESOLVED
     elif inspection.blocked:
         status = ArtifactStatus.QUARANTINED_SECURITY
     else:
@@ -542,7 +546,21 @@ _CLAIMED_MATERIAL = re.compile(
     r"\bmaterial[:\s#-]+(?P<material>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
 )
 _CLAIMED_SUPPLIER = re.compile(
-    r"\bsupplier[:\s#-]+(?P<supplier>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
+    # `(?!batch|lot|site)` matters: "Supplier Batch: WP-26-0317-B" is a batch
+    # assertion, not a supplier-id one, and reading it as `supplier=BATCH`
+    # manufactures a phantom mismatch against the real supplier.
+    r"\bsupplier[:\s#-]+(?!batch\b|lot\b|site\b)(?P<supplier>[A-Z][A-Z0-9-]{2,})\b",
+    re.IGNORECASE,
+)
+#: The supplier's OWN identifier for the material it shipped. It is a real
+#: identity — it is simply not an identity in Vouch's namespace, and no
+#: authoritative object maps it to an internal lot until a human establishes
+#: one. Parsed separately from `lot` for exactly that reason: treating it as a
+#: lot id would let a supplier name Vouch's internal objects.
+_CLAIMED_SUPPLIER_BATCH = re.compile(
+    r"\b(?:supplier|manufacturer|mill|producer)[\s_-]*(?:batch|heat)"
+    r"(?:[\s_-]*(?:no|number|id))?[:\s#-]+(?P<batch>[A-Z0-9][A-Z0-9-]{3,})\b",
+    re.IGNORECASE,
 )
 _CLAIMED_SITE = re.compile(
     r"\b(?:supplier[\s_-]*)?site[:\s#-]+(?P<site>[A-Z][A-Z0-9-]{2,})\b", re.IGNORECASE
@@ -563,6 +581,7 @@ _FIELD_ALIASES = {
     "material": "material_id",
     "supplier": "supplier_id",
     "site": "supplier_site",
+    "batch": "supplier_batch",
 }
 
 
@@ -583,6 +602,13 @@ class BindingStatus(str, Enum):
     MISMATCH = "MISMATCH"
     #: The document contradicts ITSELF: two different lots, materials, etc.
     IDENTITY_CONFLICT = "IDENTITY_CONFLICT"
+    #: The document states a SUPPLIER-NAMESPACE identity (its own batch/heat
+    #: number) that is consistent with everything else on the receipt, but no
+    #: authoritative object maps that identifier to an internal lot. Distinct
+    #: from UNBOUND_NO_IDENTITY: the document is not anonymous, it is precisely
+    #: identified in a namespace Vouch does not own. A human with the shipping
+    #: paperwork can establish the correspondence; Vouch cannot infer it.
+    UNRESOLVED_SUPPLIER_BATCH = "UNRESOLVED_SUPPLIER_BATCH"
 
     @property
     def usable(self) -> bool:
@@ -607,6 +633,10 @@ class DocumentIdentity:
     material_ids: tuple[str, ...] = ()
     supplier_ids: tuple[str, ...] = ()
     supplier_sites: tuple[str, ...] = ()
+    #: The supplier's own batch/heat identifier. Held separately from `lot_ids`
+    #: because it is an identity in the SUPPLIER's namespace: it can identify
+    #: the document precisely and still not name an internal lot.
+    supplier_batches: tuple[str, ...] = ()
 
     #: Single-value accessors. They return a value ONLY when the artifact is
     #: unambiguous about it; a conflicted field reads as empty so no caller can
@@ -628,9 +658,16 @@ class DocumentIdentity:
         return self.supplier_sites[0] if len(self.supplier_sites) == 1 else ""
 
     @property
+    def supplier_batch(self) -> str:
+        return self.supplier_batches[0] if len(self.supplier_batches) == 1 else ""
+
+    @property
     def states_any(self) -> bool:
         return any(
-            (self.lot_ids, self.material_ids, self.supplier_ids, self.supplier_sites)
+            (
+                self.lot_ids, self.material_ids, self.supplier_ids,
+                self.supplier_sites, self.supplier_batches,
+            )
         )
 
     @property
@@ -642,6 +679,7 @@ class DocumentIdentity:
             ("material", self.material_ids),
             ("supplier", self.supplier_ids),
             ("supplier_site", self.supplier_sites),
+            ("supplier_batch", self.supplier_batches),
         ):
             if len(values) > 1:
                 found.append(
@@ -656,12 +694,14 @@ class DocumentIdentity:
             "claimed_material": self.material_id,
             "claimed_supplier": self.supplier_id,
             "claimed_supplier_site": self.supplier_site,
+            "claimed_supplier_batch": self.supplier_batch,
             # F4: the complete set, so an auditor sees the conflict itself and
             # not just the fact that one was reported.
             "claimed_lots": list(self.lot_ids),
             "claimed_materials": list(self.material_ids),
             "claimed_suppliers": list(self.supplier_ids),
             "claimed_supplier_sites": list(self.supplier_sites),
+            "claimed_supplier_batches": list(self.supplier_batches),
         }
 
 
@@ -678,7 +718,8 @@ def extract_document_identity(text: str) -> DocumentIdentity:
     has is not a parsing question.
     """
     found: dict[str, list[str]] = {
-        "lot_id": [], "material_id": [], "supplier_id": [], "supplier_site": []
+        "lot_id": [], "material_id": [], "supplier_id": [], "supplier_site": [],
+        "supplier_batch": [],
     }
 
     def record(field: str, value: str) -> None:
@@ -690,7 +731,7 @@ def extract_document_identity(text: str) -> DocumentIdentity:
     for match in _STRUCTURED_FIELD.finditer(text):
         key = match.group("key").lower()
         # Longest alias first so "supplier_site" is not read as "supplier".
-        for alias in ("site", "supplier", "material", "lot"):
+        for alias in ("batch", "site", "supplier", "material", "lot"):
             if alias in key:
                 record(_FIELD_ALIASES[alias], match.group("value"))
                 break
@@ -701,6 +742,7 @@ def extract_document_identity(text: str) -> DocumentIdentity:
         (_CLAIMED_MATERIAL, "material", "material_id"),
         (_CLAIMED_SUPPLIER, "supplier", "supplier_id"),
         (_CLAIMED_SITE, "site", "supplier_site"),
+        (_CLAIMED_SUPPLIER_BATCH, "batch", "supplier_batch"),
     ):
         for match in pattern.finditer(text):
             record(field, match.group(group))
@@ -717,6 +759,7 @@ def extract_document_identity(text: str) -> DocumentIdentity:
         material_ids=tuple(found["material_id"]),
         supplier_ids=tuple(found["supplier_id"]),
         supplier_sites=tuple(found["supplier_site"]),
+        supplier_batches=tuple(found["supplier_batch"]),
     )
 
 
@@ -741,7 +784,22 @@ class EvidenceBindingMismatch(ValueError):
 def _is_affirmatively_bound(identity: DocumentIdentity) -> bool:
     if identity.lot_id:
         return True
+    if identity.supplier_batch:
+        # A document that names its OWN batch is not a shipment-level document
+        # that happens to omit a lot number — it is a document about one
+        # specific consignment, identified in a namespace Vouch does not own.
+        # Material+supplier would otherwise bind it to ANY open lot from that
+        # supplier for that material, which is precisely the "valid result for
+        # Lot A releases Lot B" failure. The batch id makes the ambiguity
+        # explicit, so it must narrow the binding, never widen it.
+        return False
     return bool(identity.material_id and identity.supplier_id)
+
+
+def _batch_binding_ref(batch: str, lot_id: str) -> str:
+    """The stable identifier a human authority binds. Deterministic, so a
+    replayed confirmation resolves to the same reference it was granted for."""
+    return f"BATCH:{batch.upper()}->{lot_id.upper()}"
 
 
 def validate_binding(
@@ -751,15 +809,24 @@ def validate_binding(
     target_material_id: str,
     target_supplier_id: str,
     target_supplier_site: str,
+    confirmed_batch_bindings: "frozenset[str] | set[str] | None" = None,
 ) -> tuple[BindingStatus, list[str]]:
     """Reconcile claimed identity against the authoritative receiving record.
 
     Returns (status, reasons). audit-2 F3: three distinct negative outcomes,
     because they mean different things to whoever triages them.
 
-      MISMATCH             the document is about something else
-      IDENTITY_CONFLICT    the document contradicts itself
-      UNBOUND_NO_IDENTITY  the document could be about anything
+      MISMATCH                   the document is about something else
+      IDENTITY_CONFLICT          the document contradicts itself
+      UNBOUND_NO_IDENTITY        the document could be about anything
+      UNRESOLVED_SUPPLIER_BATCH  the document names ITSELF precisely, in the
+                                 supplier's namespace, and nothing authoritative
+                                 maps that name to an internal lot
+
+    `confirmed_batch_bindings` carries the batch->lot correspondences an
+    accountable human has established for THIS decision. It is the only way a
+    supplier batch becomes bindable: no heuristic, no fuzzy match, no date or
+    quantity proximity. Absent it, the outcome is fail-closed by construction.
 
     Only BOUND yields claims usable for an autonomous disposition. None of the
     three marks the lot defective: an artifact that cannot be tied to a lot
@@ -788,6 +855,23 @@ def validate_binding(
         return BindingStatus.MISMATCH, mismatches
 
     if not _is_affirmatively_bound(identity):
+        # The supplier named the shipment precisely — in ITS OWN namespace.
+        # Everything else on the document agrees with the receipt, so this is
+        # not a mismatch and not an anonymous document; it is an unresolved
+        # correspondence between two identifier systems. Only a human holding
+        # the shipping paperwork can close it, so it gets its own state rather
+        # than being flattened into "states no identity".
+        batch = identity.supplier_batch
+        if batch and target_lot_id:
+            if _batch_binding_ref(batch, target_lot_id) in (
+                confirmed_batch_bindings or frozenset()
+            ):
+                return BindingStatus.BOUND, []
+            return BindingStatus.UNRESOLVED_SUPPLIER_BATCH, [
+                f"document identifies itself as supplier batch {batch}, which "
+                f"is not authoritatively linked to internal lot "
+                f"{target_lot_id.upper()}"
+            ]
         # F3. The exploit: a COA stating no lot, material, supplier or site
         # released LOT-1001 because "no mismatch" was read as "bound". Absence
         # of a contradiction is not evidence of identity.
@@ -1265,4 +1349,5 @@ __all__ = [
     "extract_document_identity",
     "parse_deterministic",
     "validate_binding",
+    "_batch_binding_ref",
 ]

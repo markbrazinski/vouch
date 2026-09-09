@@ -179,6 +179,11 @@ class ArtifactStatus(str, Enum):
     #: audit-2 F4. The artifact contradicts ITSELF — two different lots,
     #: materials, suppliers or sites inside one document.
     EVIDENCE_IDENTITY_CONFLICT = "EVIDENCE_IDENTITY_CONFLICT"
+    #: The artifact identifies itself precisely, in the SUPPLIER's namespace,
+    #: and no authoritative object maps that identifier to an internal lot.
+    #: Read successfully, extracted successfully, not attachable — the one
+    #: outcome an accountable human can resolve without new evidence.
+    EVIDENCE_IDENTITY_UNRESOLVED = "EVIDENCE_IDENTITY_UNRESOLVED"
     EXTRACTED = "EXTRACTED"
     REJECTED = "REJECTED"
 
@@ -700,6 +705,12 @@ class FailureCategory(str, Enum):
     EVIDENCE_UNBOUND = "EVIDENCE_UNBOUND"
     #: audit-2 F4. The artifact asserts contradictory identities internally.
     EVIDENCE_IDENTITY_CONFLICT = "EVIDENCE_IDENTITY_CONFLICT"
+    #: The document was read and extracted successfully; the supplier's own
+    #: batch identifier is not authoritatively linked to the internal lot.
+    #: Fail-closed and HUMAN-RESOLVABLE: an accountable human can establish the
+    #: correspondence, and the same record then continues. NOT a defect finding
+    #: and NOT a technical failure.
+    EVIDENCE_IDENTITY_UNRESOLVED = "EVIDENCE_IDENTITY_UNRESOLVED"
     #: P0-8. Extraction was too uncertain to support an autonomous decision.
     EXTRACTION_LOW_CONFIDENCE = "EXTRACTION_LOW_CONFIDENCE"
     #: The brief was well-formed but contradicts the authoritative corpus, and

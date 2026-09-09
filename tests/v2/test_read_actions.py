@@ -354,6 +354,40 @@ def test_list_decisions_returns_rows_with_a_server_computed_state(hero):
     assert row["supplier_id"] == "SUP-EAST"
 
 
+def test_an_identity_halt_needs_no_binding_specific_incoming_rule(runtime):
+    """The version-based Incoming contract covers a NEW halt category for free.
+
+    Pinned deliberately. The reset contract replaced a per-category allowlist
+    precisely so each new evidence-level halt would not need `_incoming_row`
+    extended; the human-resolvable identity case is the first new category
+    since, so it is the first real test of that claim.
+    """
+    batch_only = (
+        b"Certificate of Analysis\n"
+        b"Northern Alloys - Supplier: SUP-NORTH\n"
+        b"Site: SITE-N1\n"
+        b"Material: MAT-ALLOY-7\n"
+        b"Purchase Order: PO-82\n"
+        b"Supplier Batch: WP-26-0317-B\n"
+        b"Specification SPEC-A7 Revision C\n"
+        b"tensile_strength: 512 MPa (ASTM-E8, room_temp)\n"
+        b"hardness: 31 HRC (HRC, as_received)\n"
+    )
+    outcome = runtime._VOUCH.evaluate_lot(
+        "LOT-1003", documents=[{"raw": batch_only, "document_identity": "COA"}]
+    )
+    assert outcome.failure_category == "EVIDENCE_IDENTITY_UNRESOLVED"
+
+    row = next(
+        r for r in runtime.invoke({"action": "list_decisions", "limit": 50})["rows"]
+        if r["lot_id"] == "LOT-1003"
+    )
+    assert row["row_state"] == "QUALITY_DECISION_REQUIRED"
+    assert row["attention_required"] is True
+    # The lot never moved: an unattributable document says nothing about it.
+    assert row["lot_status"] == "RECEIVED"
+
+
 def _equivalence_option(runtime, record_id):
     """The offered path that relies on an equivalence — the one that RELEASES.
 

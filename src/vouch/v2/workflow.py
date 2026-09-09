@@ -49,6 +49,7 @@ from .decision_record import (
 from .disposition import compute_disposition
 from .evidence import (
     LOW_CONFIDENCE,
+    _batch_binding_ref,
     LocalEvidenceStore,
     canonicalize,
     extract,
@@ -106,6 +107,13 @@ def _binding_reasons(artifact, inspection) -> list[str]:
                     + ", ".join(values)
                 )
         return conflicts
+    if artifact.binding_status == "UNRESOLVED_SUPPLIER_BATCH":
+        identity = inspection.claimed_identity
+        batch = identity.get("claimed_supplier_batch", "")
+        return [
+            f"document identifies itself as supplier batch {batch}, which is "
+            f"not authoritatively linked to internal lot {artifact.lot_id}"
+        ]
     if artifact.binding_status == "UNBOUND_NO_IDENTITY":
         return [
             "document states no lot, material or supplier identity, so it "
@@ -185,6 +193,11 @@ class VouchV2:
         # a fresh process resumes a case rather than failing to find it.
         self.records: dict[str, DecisionRecord] = {}
         self.claims: dict[str, list[CanonicalEvidenceClaim]] = {}
+        #: Claims extracted from an artifact whose identity is not yet resolved
+        #: to the lot. Deliberately a SEPARATE map from `claims`: nothing that
+        #: builds a snapshot, a brief or a disposition reads it, so a held claim
+        #: cannot reach an agent by being one forgotten filter away.
+        self.held_claims: dict[str, list[CanonicalEvidenceClaim]] = {}
 
     # ------------------------------------------------------------------
     # incremental event delivery (change A)
@@ -247,6 +260,9 @@ class VouchV2:
         record = hydrate_record(stored)
         self.records[record_id] = record
         self.claims.setdefault(record_id, hydrate_claims(stored))
+        self.held_claims.setdefault(
+            record_id, hydrate_claims(stored, key="held_claims")
+        )
         return record
 
     def resume(self, record_id: str) -> DecisionRecord | None:
@@ -274,6 +290,7 @@ class VouchV2:
         source: str = "supplier-portal",
         events: EventLog,
         trust_label: TrustLabel = TrustLabel.UNTRUSTED_SUPPLIER,
+        confirmed_batch_bindings: frozenset[str] | None = None,
     ) -> tuple[list[CanonicalEvidenceClaim], dict]:
         """S1-S6 for one artifact. Returns (claims, security_summary).
 
@@ -301,6 +318,7 @@ class VouchV2:
             scanner=self.scanner,
             trust_label=trust_label,
             structured_extractor=self.structured_extractor,
+            confirmed_batch_bindings=confirmed_batch_bindings,
         )
 
         inspection = artifact.security_inspection
@@ -322,6 +340,9 @@ class VouchV2:
             "binding_status": artifact.binding_status,
             "binding_reasons": _binding_reasons(artifact, inspection),
             "identity_stated": artifact.identity_stated,
+            "supplier_batch": inspection.claimed_identity.get(
+                "claimed_supplier_batch", ""
+            ),
         }
 
         if artifact.parse_error:
@@ -368,6 +389,18 @@ class VouchV2:
             summary["identity_trusted"] = artifact.structured_identity_trusted
             summary["structured_reason"] = artifact.structured_reason
             summary["source_locators"] = [dict(l) for l in artifact.structured_locators]
+
+        if artifact.status is ArtifactStatus.EVIDENCE_IDENTITY_UNRESOLVED:
+            # Read fine, extracted fine, not attachable. The claims are HELD,
+            # not discarded and not admitted: keeping them is what lets a human
+            # confirmation resume without re-ingesting the original artifact,
+            # and holding them is what stops an unattributed measurement from
+            # reaching an agent. They are returned OUT of band — the caller
+            # never mixes them into the autonomous claim set.
+            summary["held_claims"] = canonicalize(
+                candidates, artifact, method, trust_label
+            )
+            return [], summary
 
         if artifact.status is not ArtifactStatus.RECEIVED:
             # F3/F4: mismatch, self-conflict or no identity at all. No claims
@@ -417,11 +450,17 @@ class VouchV2:
         # F8: prior claims come from the hydrated record when this process did
         # not itself extract them.
         claims = list(self.claims.get(record_id, []))
+        # Whatever an accountable human has established about identity for THIS
+        # record. On run 1 it is empty by construction, which is why run 1 is
+        # fail-closed without anyone having to remember to make it so.
+        confirmed_bindings = record.quality_authority.confirmed_batch_bindings
+        held_claims: list = []
         for document in documents or []:
             new_claims, summary = self.ingest_evidence(
                 decision_record_id=record_id,
                 lot_id=lot_id,
                 events=events,
+                confirmed_batch_bindings=confirmed_bindings,
                 **document,
             )
             inspection = summary["inspection"]
@@ -474,6 +513,27 @@ class VouchV2:
                 record.security.rejected_artifact_ids.append(summary["artifact_id"])
                 continue
 
+            if summary["status"] is ArtifactStatus.EVIDENCE_IDENTITY_UNRESOLVED:
+                # The document read cleanly and its measurements extracted. The
+                # only open question is whose lot they describe, and that is a
+                # question a human can answer from the shipping paperwork.
+                record.security.identity_unresolved_artifact_ids.append(
+                    summary["artifact_id"]
+                )
+                record.security.unresolved_batch_identities.append({
+                    "artifact_id": summary["artifact_id"],
+                    "supplier_batch": summary["supplier_batch"],
+                    "internal_lot_id": lot_id,
+                    "content_hash": summary["content_hash"],
+                    "supplier_id": lot.supplier_id,
+                    "supplier_site": lot.supplier_site,
+                    "material_id": lot.material_id,
+                    "po_reference": lot.po_reference,
+                    "extracted_claim_count": len(summary.get("held_claims", [])),
+                })
+                held_claims.extend(summary.get("held_claims", []))
+                continue
+
             if summary["status"] is ArtifactStatus.EVIDENCE_UNBOUND:
                 # audit-2 F3. The artifact states no identity, so it cannot be
                 # affirmatively bound. Preserved, no claims, human review — and
@@ -503,6 +563,11 @@ class VouchV2:
             claims.extend(new_claims)
 
         self.claims[record_id] = claims
+        if held_claims:
+            self.held_claims[record_id] = held_claims
+            record.evidence.held_claims = [
+                claim.model_dump(mode="json") for claim in held_claims
+            ]
 
         # P0-4. Evidence that belongs to another lot/material/supplier/site is
         # a distinct outcome from insufficiency AND from a security quarantine:
@@ -531,6 +596,23 @@ class VouchV2:
                 record, events, lot_id,
                 FailureCategory.EVIDENCE_IDENTITY_CONFLICT,
                 "; ".join(record.security.identity_conflicts),
+            )
+
+        # The identity case. Ordered before the generic unbound branch because
+        # a document that names its own batch is NOT anonymous, and reporting
+        # it as "states no identity" would send triage looking for a missing
+        # header that is not missing. Everything about this document worked
+        # except attributing it — so this is the one non-autonomous exit a
+        # human can close from the paperwork already in their hand.
+        if record.security.identity_unresolved_artifact_ids and not claims:
+            unresolved = record.security.unresolved_batch_identities[0]
+            self._raise_identity_question(record, events, unresolved)
+            return self._quality_decision(
+                record, events, lot_id,
+                FailureCategory.EVIDENCE_IDENTITY_UNRESOLVED,
+                f"supplier batch {unresolved['supplier_batch']} is not "
+                f"authoritatively linked to internal lot {lot_id}; identity "
+                f"confirmation required",
             )
 
         # audit-2 F3. Evidence that cannot be affirmatively bound to the
@@ -1052,6 +1134,189 @@ class VouchV2:
     # ------------------------------------------------------------------
     # human authority (quality decision on a disputed applicability question)
     # ------------------------------------------------------------------
+    def _submit_identity_binding(
+        self,
+        *,
+        record: DecisionRecord,
+        question: QualityQuestion,
+        decision: str,
+        accountable_actor: str,
+        authority_source: str,
+        supplier_batch: str,
+        lot_id: str,
+        artifact_id: str,
+        content_hash: str,
+        events: EventLog,
+    ) -> DecisionOutcome:
+        """An accountable human settles WHOSE lot this evidence describes.
+
+        This establishes an IDENTITY, never a disposition. `CONFIRM_BINDING`
+        says only "for this decision, supplier batch X is internal lot Y". It
+        confers no power to release, quarantine or approve anything: the held
+        claims simply become admissible, both agents then read them for the
+        first time, and the deterministic engine still computes the outcome
+        from the governing spec exactly as it would have.
+
+        The scoping is what makes it safe. The authority is recorded against
+        one record, one artifact and one content hash, so it cannot alias the
+        supplier's batch id globally, cannot carry to another lot, and cannot
+        survive the artifact being replaced.
+        """
+        record_id = record.record_id
+
+        # Every identifier the caller supplies must MATCH the open question.
+        # None of them selects anything — they exist so a confirmation is
+        # answering the question that was actually asked, not one the caller
+        # composed. A blank field means "no assertion" and is accepted; a
+        # populated one that disagrees is refused rather than ignored.
+        for label, given, expected in (
+            ("supplier batch", supplier_batch, question.supplier_batch),
+            ("lot", lot_id, question.internal_lot_id),
+            ("artifact", artifact_id, question.artifact_id),
+            ("content hash", content_hash, question.content_hash),
+        ):
+            if given and given.upper() != expected.upper():
+                raise VouchFailure(
+                    FailureCategory.STATE_CONFLICT,
+                    f"{label} {given} is not the {label} this identity "
+                    f"question is about ({expected})",
+                )
+
+        # The artifact must still be the one the question was raised against.
+        # A re-ingested or replaced document invalidates the authority, because
+        # the human confirmed a correspondence for bytes they were shown.
+        if question.content_hash not in record.evidence.source_artifact_hashes:
+            raise VouchFailure(
+                FailureCategory.STATE_CONFLICT,
+                "the artifact this identity question was raised against is no "
+                "longer part of this decision; re-read the case",
+            )
+
+        binding_ref = _batch_binding_ref(
+            question.supplier_batch, question.internal_lot_id
+        )
+
+        # Idempotency on (record, question, decision). A duplicate CONFIRM is
+        # inert: it returns the current outcome rather than recording a second
+        # authority fact or starting a third run.
+        for existing in record.quality_authority.decisions:
+            if (
+                existing.question_id == question.question_id
+                and existing.decision == decision
+            ):
+                return DecisionOutcome(
+                    decision_record_id=record_id,
+                    lot_id=record.identity.lot_id,
+                    disposition=record.disposition.disposition,
+                    failure_category=record.failure_category,
+                    quality_decision_required=question.status == "OPEN",
+                    reason="this identity binding decision is already recorded",
+                    record=record,
+                    events=events.as_dicts(),
+                )
+        if record.quality_authority.decisions:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                "this identity question has already been answered",
+            )
+
+        authority = HumanAuthorityDecision(
+            authority_decision_id=f"HAD-{uuid.uuid4().hex[:12]}",
+            decision_record_id=record_id,
+            lot_id=record.identity.lot_id,
+            source_run=record.run_count,
+            evidence_snapshot_id=record.snapshot.snapshot_id,
+            claim_set_hash=record.snapshot.claim_set_hash,
+            lot_state_version=self.corpus.version_of("lot", record.identity.lot_id),
+            question_id=question.question_id,
+            question_type=question.question_type,
+            supplier_batch=question.supplier_batch,
+            bound_lot_id=question.internal_lot_id,
+            artifact_id=question.artifact_id,
+            content_hash=question.content_hash,
+            binding_ref=binding_ref if decision == "CONFIRM_BINDING" else "",
+            decision=decision,
+            accountable_actor=accountable_actor,
+            authority_source=authority_source,
+        )
+        record.quality_authority.decisions.append(authority)
+        question.status = "RESOLVED" if decision == "CONFIRM_BINDING" else "HELD"
+        record.human.review_status = question.status
+        record.human.authority_source = authority_source
+
+        events.emit(
+            EventType.QUALITY_AUTHORITY_RECORDED, record_id,
+            authority_decision_id=authority.authority_decision_id,
+            question_id=question.question_id,
+            question_type="IDENTITY_BINDING",
+            decision=decision,
+            accountable_actor=accountable_actor,
+            authority_source=authority_source,
+            supplier_batch=question.supplier_batch,
+            internal_lot_id=question.internal_lot_id,
+            artifact_id=question.artifact_id,
+            content_hash=question.content_hash,
+        )
+
+        if decision == "KEEP_UNBOUND":
+            # Durably resolved as unbound. No second run, no agents, no
+            # determinism, no mutation — the evidence is retained and unused,
+            # and the lot stays exactly where it is.
+            self._persist(record, events)
+            return DecisionOutcome(
+                decision_record_id=record_id,
+                lot_id=record.identity.lot_id,
+                failure_category=record.failure_category,
+                quality_decision_required=False,
+                reason="quality authority elected to keep the evidence unbound",
+                record=record,
+                events=events.as_dicts(),
+            )
+
+        events.emit(
+            EventType.EVIDENCE_IDENTITY_ESTABLISHED, record_id,
+            authority_decision_id=authority.authority_decision_id,
+            supplier_batch=question.supplier_batch,
+            internal_lot_id=question.internal_lot_id,
+            artifact_id=question.artifact_id,
+            content_hash=question.content_hash,
+            binding_ref=binding_ref,
+            accountable_actor=accountable_actor,
+            authority_source=authority_source,
+            # Scope, stated in the record rather than assumed by the reader.
+            scope="THIS_DECISION_RECORD_AND_ARTIFACT_ONLY",
+        )
+
+        # The held claims become admissible — the SAME claims, from the SAME
+        # bytes, extracted before anyone was asked anything. Nothing is
+        # re-parsed and nothing is rewritten; what changed is that they now
+        # have an accountable owner.
+        released = self.held_claims.pop(record_id, [])
+        self.claims[record_id] = list(self.claims.get(record_id, [])) + released
+        record.evidence.held_claims = []
+        record.security.identity_unresolved_artifact_ids = []
+
+        # Same record, next run. The archive is what keeps run 1 intact.
+        record.rerun()
+        self._persist(record, events)
+        events.emit(
+            EventType.DECISION_RESUMED, record_id,
+            lot_id=record.identity.lot_id,
+            run_count=record.run_count,
+            resumed_run_ids=list(record.human.resumed_run_ids),
+            trigger="IDENTITY_BINDING",
+            authority_decision_id=authority.authority_decision_id,
+        )
+
+        outcome = self.evaluate_lot(
+            record.identity.lot_id,
+            decision_record_id=record_id,
+            events=events,
+        )
+        if outcome.disposition in ("RELEASE", "QUARANTINE"):
+            record.human.final_outcome = outcome.disposition
+        return outcome
+
     def submit_quality_authority(
         self,
         *,
@@ -1062,6 +1327,10 @@ class VouchV2:
         evidence_ref: str = "",
         claim_set_hash: str = "",
         question_id: str = "",
+        supplier_batch: str = "",
+        bound_lot_id: str = "",
+        artifact_id: str = "",
+        content_hash: str = "",
         events: EventLog | None = None,
     ) -> DecisionOutcome:
         """An accountable human settles the disputed applicability question.
@@ -1087,7 +1356,9 @@ class VouchV2:
         """
         events = self._event_log(events)
 
-        if decision not in ("ESTABLISH_EVIDENCE", "KEEP_HELD"):
+        if decision not in (
+            "ESTABLISH_EVIDENCE", "KEEP_HELD", "CONFIRM_BINDING", "KEEP_UNBOUND"
+        ):
             raise VouchFailure(
                 FailureCategory.POLICY_REFUSAL,
                 f"unknown quality authority decision {decision!r}",
@@ -1116,10 +1387,36 @@ class VouchV2:
                 FailureCategory.POLICY_REFUSAL,
                 f"question {question_id} is not the open question on this record",
             )
-        if record.failure_category != FailureCategory.MATERIAL_DISAGREEMENT.value:
+        # Each question type accepts only its own two answers, and only while
+        # the record is actually parked on it. Crossing them — answering an
+        # identity question with ESTABLISH_EVIDENCE, or a disagreement with
+        # CONFIRM_BINDING — is refused rather than coerced.
+        expected = {
+            "EVIDENCE_APPLICABILITY": (
+                FailureCategory.MATERIAL_DISAGREEMENT.value,
+                ("ESTABLISH_EVIDENCE", "KEEP_HELD"),
+            ),
+            "IDENTITY_BINDING": (
+                FailureCategory.EVIDENCE_IDENTITY_UNRESOLVED.value,
+                ("CONFIRM_BINDING", "KEEP_UNBOUND"),
+            ),
+        }.get(question.question_type)
+        if expected is None:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                f"unknown question type {question.question_type!r}",
+            )
+        required_category, allowed = expected
+        if record.failure_category != required_category:
             raise VouchFailure(
                 FailureCategory.POLICY_REFUSAL,
                 "this decision is not awaiting a quality authority decision",
+            )
+        if decision not in allowed:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                f"{decision} does not answer a {question.question_type} "
+                f"question; this question accepts {list(allowed)}",
             )
 
         # Snapshot binding. Authority granted against one frozen claim set must
@@ -1151,6 +1448,17 @@ class VouchV2:
             raise VouchFailure(
                 FailureCategory.POLICY_REFUSAL,
                 "this applicability question has already been answered",
+            )
+
+        # ---- IDENTITY_BINDING -----------------------------------------
+        if question.question_type == "IDENTITY_BINDING":
+            return self._submit_identity_binding(
+                record=record, question=question, decision=decision,
+                accountable_actor=accountable_actor,
+                authority_source=authority_source,
+                supplier_batch=supplier_batch, lot_id=bound_lot_id,
+                artifact_id=artifact_id, content_hash=content_hash,
+                events=events,
             )
 
         authorized: list[str] = []
@@ -1555,6 +1863,11 @@ class VouchV2:
         record.evidence.canonical_claims = [
             claim.model_dump(mode="json") for claim in self.claims.get(record.record_id, [])
         ]
+        held = self.held_claims.get(record.record_id, [])
+        if held:
+            record.evidence.held_claims = [
+                claim.model_dump(mode="json") for claim in held
+            ]
         try:
             record.storage.record_ref = self.record_store.save(record)
             # F8: append-only sequence allocation that CONTINUES after the
@@ -1717,6 +2030,61 @@ class VouchV2:
             )
             return
 
+    def _raise_identity_question(
+        self, record: DecisionRecord, events: EventLog, unresolved: dict
+    ) -> None:
+        """The one unresolved identity question, built deterministically.
+
+        Never phrased by a model and never invented by the frontend: every
+        value here is either the supplier's own printed identifier or an
+        authoritative corpus fact, so the wording an operator answers is
+        derived from the same values an auditor later reads.
+        """
+        batch = unresolved["supplier_batch"]
+        lot_id = unresolved["internal_lot_id"]
+        record.quality_authority.question = QualityQuestion(
+            question_id=f"QQ-{record.record_id}-IDENTITY",
+            question_type="IDENTITY_BINDING",
+            status="OPEN",
+            supplier_batch=batch,
+            internal_lot_id=lot_id,
+            artifact_id=unresolved["artifact_id"],
+            content_hash=unresolved["content_hash"],
+            supplier_id=unresolved["supplier_id"],
+            supplier_site=unresolved["supplier_site"],
+            material_id=unresolved["material_id"],
+            po_reference=unresolved["po_reference"],
+            # The two answers, in the operator's own terms. Neither is a
+            # disposition: one establishes a correspondence, the other declines
+            # to. What the evidence then MEANS is still computed afterwards.
+            options=[
+                {
+                    "decision": "CONFIRM_BINDING",
+                    "label": f"Confirm supplier batch {batch} is {lot_id}",
+                    "establishes": f"{batch} -> {lot_id}",
+                },
+                {
+                    "decision": "KEEP_UNBOUND",
+                    "label": "Keep the evidence unbound",
+                    "establishes": "",
+                },
+            ],
+        )
+        events.emit(
+            EventType.QUALITY_QUESTION_RAISED, record.record_id,
+            question_id=record.quality_authority.question.question_id,
+            question_type="IDENTITY_BINDING",
+            supplier_batch=batch,
+            internal_lot_id=lot_id,
+            artifact_id=unresolved["artifact_id"],
+            content_hash=unresolved["content_hash"],
+            # Positively stated, so the surface can prove this is NOT a parse
+            # failure without inferring it from the absence of an error.
+            document_parsed=True,
+            security_clean=True,
+            extracted_claim_count=unresolved["extracted_claim_count"],
+        )
+
     def _quality_decision(
         self,
         record: DecisionRecord,
@@ -1736,6 +2104,7 @@ class VouchV2:
             FailureCategory.MATERIAL_DISAGREEMENT: "DISAGREEMENT",
             FailureCategory.SECURITY_QUARANTINE: "INJECTION",
             FailureCategory.DOMAIN_INSUFFICIENT_EVIDENCE: "INSUFFICIENT",
+            FailureCategory.EVIDENCE_IDENTITY_UNRESOLVED: "IDENTITY_UNRESOLVED",
         }.get(category, "ABSTAIN")
 
         events.emit(
