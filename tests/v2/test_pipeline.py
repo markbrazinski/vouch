@@ -752,3 +752,100 @@ def test_the_redundant_missing_note_does_not_change_the_disposition():
     assert (
         build(False).material_fingerprint() == build(True).material_fingerprint()
     )
+
+
+def test_the_failing_comparison_is_emitted_as_data_not_only_as_prose():
+    """The UI must state "462 MPa, below the required 480 MPa" without parsing
+    `reason`.
+
+    Rule 1 of the frontend adapter: business state is read from event payload
+    fields, never regexed out of prose. That is only possible if the engine
+    publishes the comparison it made. This pins the field's presence AND its
+    values against the real LOT-1002 path.
+    """
+    from vouch.v2.contracts import CoverageItem, Disposition, RequiredTest
+    from vouch.v2.disposition import compute_disposition
+    from vouch.v2.lifecycle import EventLog, EventType
+    from vouch.v2.reconcile import run_basis_checks
+
+    corpus = build_corpus()
+    vouch = VouchV2(corpus)
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    claims = {c.claim_id: c for c in vouch.claims[outcome.decision_record_id]}
+    by_test = {c.characteristic: c.claim_id for c in claims.values()}
+
+    brief = EvidenceApplicabilityBrief(
+        governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
+        required_tests=[
+            RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
+        ],
+        coverage=[
+            CoverageItem(test=name, evidence_ref=by_test[name], method_match=True)
+            for name in ("tensile_strength", "hardness")
+        ],
+        sufficiency=Sufficiency.SUFFICIENT,
+    )
+    checks = run_basis_checks(brief, corpus, lot_id="LOT-1002", claims_by_id=claims)
+
+    events = EventLog()
+    result = compute_disposition(
+        brief, checks.resolved_requirements, claims, corpus,
+        lot_id="LOT-1002", events=events, decision_record_id="DR-TEST",
+    )
+    assert result.disposition is Disposition.QUARANTINE
+
+    emitted = [
+        e for e in events.events if e.event_type is EventType.DISPOSITION_COMPUTED
+    ]
+    assert len(emitted) == 1
+    failures = emitted[0].payload["failures"]
+
+    # Only the FAILING requirement. hardness (30.0, within [28, 36]) passed, and
+    # a passing test is not why the lot was quarantined.
+    assert [f["characteristic"] for f in failures] == ["tensile_strength"]
+    assert failures[0]["value"] == 462.0
+    assert failures[0]["min_value"] == 480.0
+    assert failures[0]["max_value"] is None
+    assert failures[0]["units"] == "MPa"
+
+    # The prose keeps saying the same thing; the field is an addition, not a
+    # replacement, so an older consumer is unaffected.
+    assert "462.0MPa outside >= 480.0 MPa" in result.reason
+
+
+def test_a_clean_lot_emits_no_failing_comparison():
+    """`failures` is empty on a release — there is no failing comparison to
+    report, and an empty list is what lets the UI fall back rather than render
+    an accusation it cannot support."""
+    from vouch.v2.contracts import CoverageItem, Disposition, RequiredTest
+    from vouch.v2.disposition import compute_disposition
+    from vouch.v2.lifecycle import EventLog, EventType
+    from vouch.v2.reconcile import run_basis_checks
+
+    corpus = build_corpus()
+    vouch = VouchV2(corpus)
+    outcome = vouch.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    claims = {c.claim_id: c for c in vouch.claims[outcome.decision_record_id]}
+    by_test = {c.characteristic: c.claim_id for c in claims.values()}
+
+    brief = EvidenceApplicabilityBrief(
+        governing_basis=GoverningBasis(spec_id="SPEC-A7", revision="C"),
+        required_tests=[
+            RequiredTest(name="tensile_strength"), RequiredTest(name="hardness")
+        ],
+        coverage=[
+            CoverageItem(test=name, evidence_ref=by_test[name], method_match=True)
+            for name in ("tensile_strength", "hardness")
+        ],
+        sufficiency=Sufficiency.SUFFICIENT,
+    )
+    checks = run_basis_checks(brief, corpus, lot_id="LOT-1001", claims_by_id=claims)
+
+    events = EventLog()
+    result = compute_disposition(
+        brief, checks.resolved_requirements, claims, corpus,
+        lot_id="LOT-1001", events=events, decision_record_id="DR-TEST",
+    )
+    assert result.disposition is Disposition.RELEASE
+    emitted = [e for e in events.events if e.event_type is EventType.DISPOSITION_COMPUTED]
+    assert emitted[0].payload["failures"] == []

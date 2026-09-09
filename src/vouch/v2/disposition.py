@@ -64,6 +64,9 @@ def compute_disposition(
     missing: list[str] = []
     failing: list[str] = []
     reasons: list[str] = []
+    #: The failing comparisons as data. Parallel to `failing`, which carries
+    #: only characteristic names.
+    failures: list[dict] = []
 
     for requirement in requirements:
         item = coverage_by_test.get(requirement.characteristic)
@@ -127,6 +130,21 @@ def compute_disposition(
             f"{requirement.characteristic}: {claim.value}{claim.units} outside "
             f"{requirement.threshold_text()} with no covering deviation"
         )
+        # The same comparison as STRUCTURE, for consumers that must not parse
+        # the prose above. The UI states "462 MPa, below the required 480 MPa"
+        # to an operator; deriving that by regexing `reason` would make the
+        # wording load-bearing and assert business truth the UI did not
+        # compute. Emitted here because this is where the comparison is made.
+        failures.append(
+            {
+                "characteristic": requirement.characteristic,
+                "value": float(claim.value),
+                "units": claim.units or requirement.units,
+                "min_value": requirement.min_value,
+                "max_value": requirement.max_value,
+                "threshold_text": requirement.threshold_text(),
+            }
+        )
 
     # -- the rules (D10), in order ---------------------------------------
     # A failed requirement is a demonstrated non-conformance and outranks
@@ -160,6 +178,7 @@ def compute_disposition(
             basis=f"{brief.governing_basis.spec_id}:{brief.governing_basis.revision}",
             failing_test_count=len(result.failing_tests),
             missing_test_count=len(result.missing_tests),
+            failures=failures,
         )
     return result
 

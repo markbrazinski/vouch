@@ -10,7 +10,14 @@
 
 import { describe, expect, it } from 'vitest';
 import capture from './hero-a-capture.json';
-import { project, toActivity, activeStageFrom, recoveryDetail, slotTime } from '../adapter';
+import {
+  project,
+  toActivity,
+  activeStageFrom,
+  recoveryDetail,
+  slotTime,
+  failureProse,
+} from '../adapter';
 import type { EvaluateDTO, LifecycleEventDTO } from '../dto';
 
 const dto = capture as unknown as EvaluateDTO;
@@ -23,6 +30,39 @@ const vm = () =>
     material: 'MAT-ALLOY-7',
     receiptMeta: 'SUP-EAST · site SITE-E1 · 400 kg',
     events,
+    result: dto,
+    running: false,
+  });
+
+/**
+ * The same capture, plus the `failures` payload field DISPOSITION_COMPUTED
+ * carries today. This capture was taken before that field existed, so injecting
+ * it is what keeps the reason tests honest about the current contract while
+ * every value stays the one the deployed runtime actually computed.
+ */
+const withFailures = () =>
+  project({
+    decisionRecordId: dto.decision_record_id,
+    lotId: dto.lot_id!,
+    material: 'MAT-ALLOY-7',
+    receiptMeta: '',
+    events: events.map((e) =>
+      e.event === 'DISPOSITION_COMPUTED'
+        ? {
+            ...e,
+            failures: [
+              {
+                characteristic: 'tensile_strength',
+                value: 462,
+                units: 'MPa',
+                min_value: 480,
+                max_value: null,
+                threshold_text: '>= 480.0 MPa',
+              },
+            ],
+          }
+        : e,
+    ),
     result: dto,
     running: false,
   });
@@ -249,5 +289,178 @@ describe('event labels read business fields, not prose', () => {
     ]);
     expect(rows[0].shortLabel).toBe('Structured table extracted');
     expect(rows[0].resultSummary).toBe('3 claims · confidence gate passed');
+  });
+});
+
+/**
+ * The terminal frame must answer three questions: what happened and why, what
+ * changed for production, and what the operator does next.
+ *
+ * Every assertion below runs against the SAME real Hero A capture as the rest
+ * of this file — a verbatim LOT-1002 response from the deployed runtime. None
+ * of these numbers is written into the adapter; they are parsed back out of
+ * what the deterministic engine actually emitted.
+ */
+describe('terminal summary answers the three questions', () => {
+  it('states the deterministic reason, not a vague summary', () => {
+    // The engine's own failing comparison, as a payload field. Only `failures`
+    // is injected here — this capture predates the field; every number below is
+    // the one the deployed runtime computed for this lot.
+    const outcome = withFailures().outcome;
+    expect(outcome.lines[0]).toBe(
+      'SPEC-A7 Revision C governs. Tensile Strength was 462 MPa, below the required 480 MPa.',
+    );
+    expect(outcome.lines[0]).not.toMatch(/could not defend/);
+  });
+
+  it('omits the passing requirement from the reason', () => {
+    // hardness passed, so the engine never put it in `failures`. Listing it
+    // would dilute the answer to "why was this quarantined".
+    expect(withFailures().outcome.lines[0]).not.toMatch(/hardness|Hardness/i);
+  });
+
+  it('falls back to the backend reason when no structured failure exists', () => {
+    // An older record with no `failures` field must still say something true.
+    expect(vm().outcome.lines[0]).toBe(dto.reason);
+  });
+
+  it('explains the superseded revision as subordinate context', () => {
+    const outcome = vm().outcome;
+    expect(outcome.context).toBe(
+      'SPEC-A7 Revision B was also on file; SPEC-A7 Revision C is the governing basis.',
+    );
+    // Context must never displace the reason.
+    expect(outcome.lines[0]).not.toContain('Revision B');
+  });
+
+  it('names the selected recovery, from the engine and not from ELIGIBLE', () => {
+    const candidates = vm().consequence!.candidates;
+    const selected = candidates.filter((c) => c.selected);
+    expect(selected).toHaveLength(1);
+    expect(selected[0].candidateId).toBe('C-418');
+    // The refusal is the point of the stage and must stay unselected.
+    expect(candidates.find((c) => c.candidateId === 'MAT-SUB-9')!.selected).toBe(false);
+  });
+
+  it('does not render the resequenced order as blocked', () => {
+    const consequence = vm().consequence!;
+    // C-418 was recalculated BEFORE recovery ran, then resequenced by it. The
+    // stale readiness row would contradict the executed recovery card.
+    expect(consequence.readinessChanges.map((c) => c.orderId)).not.toContain('C-418');
+    expect(consequence.metrics.map((m) => m.label)).not.toContain('C-418');
+    expect(consequence.executed!.tag).toBe('C-418');
+  });
+
+  it('finds the consequence on a STORED decision, not only a live run', () => {
+    // `get_decision` nests the same object under `record`, and settle() hands
+    // the whole response through as `result`. Reading only the top level made
+    // the four recovery candidates vanish on every settled decision — the
+    // refused substitute among them. Events alone cannot rebuild them.
+    const storedShape = {
+      ok: true,
+      record: { consequences: dto.consequences },
+    } as unknown as EvaluateDTO;
+    const vmStored = project({
+      decisionRecordId: dto.decision_record_id,
+      lotId: dto.lot_id!,
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events,
+      result: storedShape,
+      running: false,
+    });
+    expect(vmStored.consequence!.candidates.map((c) => c.candidateId)).toEqual([
+      'MAT-ALLOY-7',
+      'MAT-SUB-9',
+      'C-418',
+      'C-419',
+    ]);
+    expect(vmStored.consequence!.candidates.filter((c) => c.selected)).toHaveLength(1);
+  });
+
+  it('tells the operator what is still open', () => {
+    // This capture predates the composition fields on CONSEQUENCE_RECALCULATED,
+    // so it exercises the DEGRADED path: no material_id, no uncovered. The
+    // right behaviour is to name the blocked order and stop — not to guess a
+    // quantity. That an older payload still produces a truthful sentence is
+    // worth pinning on its own.
+    expect(vm().outcome.nextAction).toBe(
+      'C-417 stays blocked until compliant material is available.',
+    );
+  });
+
+  it('reports one row per order when a decision ran more than one pass', () => {
+    // The live LOT-1002 record carries 96 events across TWO consequence passes
+    // (a resumed run re-runs it), so C-417 is recalculated twice. Rendering
+    // both duplicated the card and made NEXT ACTION repeat its own sentence.
+    // Only the LAST pass describes current state.
+    const recalc = events.find((e) => e.event === 'CONSEQUENCE_RECALCULATED')!;
+    const twoPasses = project({
+      decisionRecordId: dto.decision_record_id,
+      lotId: dto.lot_id!,
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events: [...events, { ...recalc, sequence: 99 }],
+      result: dto,
+      running: false,
+    });
+    expect(twoPasses.consequence!.metrics.filter((m) => m.label === 'C-417')).toHaveLength(1);
+    expect(twoPasses.outcome.nextAction).toBe(
+      'C-417 stays blocked until compliant material is available.',
+    );
+  });
+
+  it('names the material and the gap once the backend emits them', () => {
+    // The enriched path, as CONSEQUENCE_RECALCULATED emits it today.
+    const enriched = project({
+      decisionRecordId: dto.decision_record_id,
+      lotId: dto.lot_id!,
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events: events.map((e) =>
+        e.event === 'CONSEQUENCE_RECALCULATED'
+          ? { ...e, material_id: 'MAT-ALLOY-7', required: 900, available: 500, uncovered: 400 }
+          : e,
+      ),
+      result: dto,
+      running: false,
+    });
+    expect(enriched.outcome.nextAction).toBe(
+      "Resolve C-417's remaining 400 MAT-ALLOY-7 gap. C-417 stays blocked until " +
+        'compliant material is available.',
+    );
+  });
+});
+
+describe('failureProse reads payload fields, never the reason prose', () => {
+  it('returns null when the engine emitted no structured failure', () => {
+    expect(failureProse(undefined, 'SPEC-A7:C')).toBeNull();
+    expect(failureProse([], 'SPEC-A7:C')).toBeNull();
+  });
+
+  it('keeps the engine threshold verbatim for a two-sided limit', () => {
+    const prose = failureProse(
+      [
+        {
+          characteristic: 'hardness',
+          value: 41,
+          units: 'HRC',
+          min_value: 28,
+          max_value: 36,
+          threshold_text: '[28.0, 36.0] HRC',
+        },
+      ],
+      'SPEC-A7:C',
+    );
+    expect(prose).toBe(
+      'SPEC-A7 Revision C governs. Hardness was 41 HRC, outside the required [28.0, 36.0] HRC.',
+    );
+  });
+
+  it('renders without a basis when none was resolved', () => {
+    const prose = failureProse([
+      { characteristic: 'tensile_strength', value: 462, units: 'MPa', min_value: 480, max_value: null },
+    ]);
+    expect(prose).toBe('Tensile Strength was 462 MPa, below the required 480 MPa.');
   });
 });

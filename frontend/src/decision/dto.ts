@@ -63,6 +63,8 @@ export interface ConsequencesDTO {
   recovery?: {
     executed: boolean;
     candidates?: RecoveryCandidateDTO[];
+    /** The candidate the engine chose. Null when no lawful option existed. */
+    selected?: RecoveryCandidateDTO | null;
     [key: string]: unknown;
   };
   [key: string]: unknown;

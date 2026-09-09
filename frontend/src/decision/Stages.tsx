@@ -510,6 +510,7 @@ export function ConsequenceStage({
     <div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         {vm.readinessChanges.map((c, i) => (
+
           <div
             key={c.orderId}
             style={{
@@ -583,6 +584,7 @@ export function ConsequenceStage({
               <div
                 key={c.candidateId}
                 data-testid={`recovery-${c.candidateId}`}
+                data-selected={c.selected ? 'true' : undefined}
                 style={{
                   // Each candidate appears in the order it was evaluated. The
                   // REFUSED one additionally gets the approved single-shot
@@ -598,19 +600,48 @@ export function ConsequenceStage({
                       : c.verdict === 'REFUSED'
                         ? '#EFE7E4'
                         : '#FBF3F1',
-                  border: `1px solid ${
-                    c.verdict === 'ELIGIBLE'
-                      ? 'rgba(62,107,84,.26)'
-                      : c.verdict === 'REFUSED'
-                        ? 'rgba(74,32,24,.2)'
-                        : 'rgba(142,43,36,.22)'
-                  }`,
+                  // The selected candidate is the one that MOVED the factory.
+                  // It gets a heavier border and a lift; the rejected ones stay
+                  // flat, so "which one won" survives a glance at 5 metres.
+                  border: c.selected
+                    ? '2px solid #3E6B54'
+                    : `1px solid ${
+                        c.verdict === 'ELIGIBLE'
+                          ? 'rgba(62,107,84,.26)'
+                          : c.verdict === 'REFUSED'
+                            ? 'rgba(74,32,24,.2)'
+                            : 'rgba(142,43,36,.22)'
+                      }`,
+                  boxShadow: c.selected ? '0 3px 12px rgba(62,107,84,.22)' : undefined,
                   borderRadius: 10,
-                  padding: '13px 15px',
+                  padding: c.selected ? '12px 14px' : '13px 15px',
+                  opacity: c.selected || c.verdict === 'REFUSED' ? 1 : 0.72,
                 }}
               >
-                <div style={{ font: `400 10px ${MONO}`, color: INK.label }}>
+                <div
+                  style={{
+                    font: `400 10px ${MONO}`,
+                    color: INK.label,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
                   {c.kind.toUpperCase()}
+                  {c.selected && (
+                    <span
+                      style={{
+                        font: `700 8.5px ${MONO}`,
+                        letterSpacing: '.07em',
+                        color: '#FFF',
+                        background: '#3E6B54',
+                        borderRadius: 4,
+                        padding: '2px 6px',
+                      }}
+                    >
+                      SELECTED
+                    </span>
+                  )}
                 </div>
                 <div style={{ font: `600 13px ${SANS}`, color: INK.primary, marginTop: 3 }}>
                   {c.title}

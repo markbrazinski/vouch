@@ -88,12 +88,64 @@ function OutcomeSummary({ vm }: { vm: DecisionWorkspaceVM['outcome'] }) {
             {line}
           </div>
         ))}
+        {/* Secondary, and it must LOOK secondary: the deterministic reason
+            above is the answer to "why", this only explains why a document
+            that reads as acceptable still failed. */}
+        {vm.context && (
+          <div
+            data-testid="outcome-context"
+            style={{ font: `400 11.5px ${SANS}`, color: INK.label, marginTop: 2 }}
+          >
+            {vm.context}
+          </div>
+        )}
       </div>
       {vm.chip && (
         <Pill tone={vm.chip.tone} big style={{ flex: 'none' }}>
           {vm.chip.label}
         </Pill>
       )}
+    </div>
+  );
+}
+
+/**
+ * The third question the terminal frame must answer: what does the operator do
+ * now?
+ *
+ * Deliberately text-only. There is no backend action that closes a material
+ * gap — the material either exists or it does not — so a button here would be
+ * an affordance leading nowhere. It renders only when `nextAction` is set,
+ * which happens only when an order is genuinely still blocked.
+ */
+function NextAction({ text }: { text: string }) {
+  return (
+    <div
+      data-testid="next-action"
+      style={{
+        animation: 'vFade .4s ease-out both',
+        marginTop: 10,
+        background: N.card,
+        border: `1px solid ${HAIR}`,
+        borderLeft: '5px solid #8A8478',
+        borderRadius: 13,
+        padding: '12px 22px',
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: 16,
+      }}
+    >
+      <div
+        style={{
+          font: `600 9px ${MONO}`,
+          letterSpacing: '.1em',
+          color: INK.label,
+          flex: 'none',
+        }}
+      >
+        NEXT ACTION
+      </div>
+      <div style={{ font: `500 13px ${SANS}`, color: INK.dense }}>{text}</div>
     </div>
   );
 }
@@ -282,7 +334,12 @@ export function DecisionWorkspace({ vm }: { vm: DecisionWorkspaceVM }) {
           {vm.failure && vm.failure.suppressesDisposition ? (
             <FailureNotice vm={vm.failure} />
           ) : (
-            <OutcomeSummary vm={vm.outcome} />
+            <>
+              <OutcomeSummary vm={vm.outcome} />
+              {vm.outcome.visible && vm.outcome.nextAction && (
+                <NextAction text={vm.outcome.nextAction} />
+              )}
+            </>
           )}
 
           {vm.fullBleed ? (

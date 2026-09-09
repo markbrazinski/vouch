@@ -376,6 +376,53 @@ export function recoveryDetail(c: RecoveryCandidateDTO): string {
   }
 }
 
+/** One failing comparison, exactly as the disposition engine computed it. */
+export interface DispositionFailure {
+  characteristic?: string;
+  value?: number;
+  units?: string;
+  min_value?: number | null;
+  max_value?: number | null;
+  threshold_text?: string;
+}
+
+/**
+ * The deterministic disposition reason, said the way a person says it.
+ *
+ * Built from the `failures` PAYLOAD FIELD on DISPOSITION_COMPUTED — the same
+ * comparison the engine made, as data. Per rule 1 at the top of this file, the
+ * prose `reason` is never parsed: regexing it would make the backend's wording
+ * load-bearing and have the UI assert business truth it did not compute.
+ *
+ * Only FAILING requirements appear. A passing one is not why the lot was
+ * quarantined, and listing it dilutes the answer to "why".
+ *
+ * Returns null when the engine emitted no structured failures — an older
+ * record, or a disposition that did not fail on a value — and the caller falls
+ * back to the reason string the backend did provide.
+ */
+export function failureProse(
+  failures: DispositionFailure[] | undefined,
+  basis?: string,
+): string | null {
+  if (!failures?.length) return null;
+
+  const sentences = failures.map((f) => {
+    const name = titleCase(str(f.characteristic));
+    const units = f.units ? ` ${f.units}` : '';
+    // A one-sided minimum reads as "below the required X"; anything else keeps
+    // the engine's own threshold wording rather than inventing a comparator.
+    const limit =
+      typeof f.min_value === 'number' && (f.max_value === null || f.max_value === undefined)
+        ? `below the required ${f.min_value}${units}`
+        : `outside the required ${str(f.threshold_text)}`;
+    return `${name} was ${f.value}${units}, ${limit}.`;
+  });
+
+  const governs = basis ? `${basis.replace(':', ' Revision ')} governs. ` : '';
+  return governs + sentences.join(' ');
+}
+
 const localeNum = (v: unknown): string =>
   typeof v === 'number' ? String(v) : str(v);
 
@@ -733,6 +780,26 @@ function dispositionFrom(
   };
 }
 
+/**
+ * The authoritative consequence, wherever this response happens to carry it.
+ *
+ * A LIVE evaluate response carries `consequences` at the top level. A STORED
+ * decision read back through `get_decision` carries the same object one level
+ * down, on `record` — and `settle()` hands the whole response through as
+ * `result`. Reading only the top level meant a settled decision rendered its
+ * readiness change and its executed resequence (both reconstructible from
+ * events) while the four recovery CANDIDATES silently vanished — the refused
+ * substitute among them, which is the part that shows Vouch weighed options
+ * and rejected them before moving the plan.
+ */
+function consequencesOf(result: EvaluateDTO | null): EvaluateDTO['consequences'] {
+  if (result?.consequences) return result.consequences;
+  const record = (result as Record<string, unknown> | null)?.record as
+    | Record<string, unknown>
+    | undefined;
+  return (record?.consequences as EvaluateDTO['consequences']) ?? undefined;
+}
+
 function consequenceFrom(
   events: LifecycleEventDTO[],
   result: EvaluateDTO | null,
@@ -743,7 +810,28 @@ function consequenceFrom(
   const transitions = allOf(events, 'READINESS_TRANSITIONED');
   if (!recalcs.length && !evaluated && !executed && !transitions.length) return null;
 
-  const metrics: ConsequenceVM['metrics'] = recalcs.map((e) => {
+  // Same staleness as `readinessChanges` below: the recalculation ran before
+  // recovery, so the resequenced order's row no longer describes it. Dropping
+  // it here also keeps NEXT ACTION honest — an order that was successfully
+  // moved is not an open gap for the operator to close.
+  const recovered = str(executed?.order_id);
+  const consequences = consequencesOf(result);
+
+  // One row per ORDER, not one per emitted event.
+  //
+  // A resumed or retried decision runs the consequence pass again, so a real
+  // record carries two CONSEQUENCE_RECALCULATED events for the same order —
+  // the live LOT-1002 record has 96 events across two passes. Rendering both
+  // duplicated the C-417 card and made NEXT ACTION repeat its own sentence.
+  // The LAST recalculation for an order is the current one; earlier passes are
+  // superseded history, not additional orders.
+  const latestPerOrder = [
+    ...new Map(recalcs.map((e) => [str(e.order_id), e])).values(),
+  ];
+
+  const metrics: ConsequenceVM['metrics'] = latestPerOrder
+    .filter((e) => !(recovered && str(e.order_id) === recovered))
+    .map((e) => {
     // `coverage_delta` is the LOT's inventory delta — the same figure for every
     // order in the batch — so it rendered as "coverage 0" beside an order that
     // was fully covered. The order's own composition is what belongs here.
@@ -763,6 +851,8 @@ function consequenceFrom(
     label: str(e.order_id),
     value: str(e.order_readiness),
     note,
+    materialId: str(e.material_id) || undefined,
+    uncovered,
     severity:
       str(e.order_readiness) === 'BLOCKED'
         ? 'blocked'
@@ -772,16 +862,35 @@ function consequenceFrom(
     };
   });
 
+  // The order recovery actually moved. Its readiness was computed BEFORE
+  // recovery ran, so a transition recorded for it is superseded by the
+  // resequence that followed in the same decision — rendering both showed
+  // "C-418 READY → BLOCKED" beside a card announcing C-418 as the executed
+  // recovery. Only the later fact is still true, so the stale card is dropped
+  // rather than left to contradict it.
   const readinessChanges = (
-    result?.consequences?.readiness_changes ??
-    transitions.map((e) => ({
-      order_id: str(e.order_id),
-      from: str(e.from),
-      to: str(e.to),
-    }))
-  ).map((c) => ({ orderId: c.order_id, from: c.from, to: c.to }));
+    consequences?.readiness_changes ??
+    // Same de-duplication as `metrics`: a retried pass re-emits the transition
+    // for an order it already reported.
+    [
+      ...new Map(
+        transitions.map((e) => [
+          str(e.order_id),
+          { order_id: str(e.order_id), from: str(e.from), to: str(e.to) },
+        ]),
+      ).values(),
+    ]
+  )
+    .filter((c) => !(recovered && c.order_id === recovered))
+    .map((c) => ({ orderId: c.order_id, from: c.from, to: c.to }));
 
-  const candidates = (result?.consequences?.recovery?.candidates ?? []).map((c) => ({
+  // WHICH candidate the engine chose, from the engine's own `selected` — not
+  // inferred from ELIGIBLE. Several candidates can be eligible; only the
+  // selected one moved the factory.
+  const selectedId = str(consequences?.recovery?.selected?.candidate_id);
+
+  const candidates = (consequences?.recovery?.candidates ?? []).map((c) => ({
+    selected: Boolean(selectedId) && c.candidate_id === selectedId,
     candidateId: c.candidate_id,
     kind: str(c.kind, 'candidate'),
     title: c.candidate_id,
@@ -878,7 +987,15 @@ function outcomeFrom(
     };
   }
 
-  const lines = [result?.reason || 'The evidence could not defend a release.'];
+  // The deterministic reason, in words. `failureProse` returns null when the
+  // engine's clauses do not parse, and the raw reason stands rather than a
+  // fabricated summary.
+  const basis = str(computed?.basis) || undefined;
+  const prose = failureProse(
+    Array.isArray(computed?.failures) ? (computed.failures as DispositionFailure[]) : undefined,
+    basis,
+  );
+  const lines = [prose || result?.reason || 'The evidence could not defend a release.'];
   for (const change of blocked) lines.push(`${change.orderId} moved ${change.from} → ${change.to}.`);
   if (consequence?.executed) lines.push(`${consequence.executed.tag}: ${consequence.executed.line}`);
 
@@ -888,8 +1005,66 @@ function outcomeFrom(
     headline: 'Quarantined — production impact recalculated',
     tone: 'quarantine',
     lines,
+    context: supersededContext(events, basis),
+    nextAction: nextActionFrom(consequence),
     chip: { label: 'QUARANTINED', tone: 'quarantine' },
   };
+}
+
+/**
+ * Why a document that looks acceptable on its face still failed.
+ *
+ * Sourced from what the investigator actually did: `list_candidate_specs`
+ * returned more than one revision of the governing spec and the brief resolved
+ * a different one than the certificate cites. Both halves are in the event
+ * stream, so this states a fact the record can back.
+ *
+ * The certificate's own declared revision is NOT available here — the BFF
+ * surfaces `claim_count` but never the claims — so this deliberately says
+ * "considered and not selected" rather than putting a CONFORMS claim in the
+ * supplier's mouth that the payload cannot evidence.
+ */
+function supersededContext(
+  events: LifecycleEventDTO[],
+  basis: string | undefined,
+): string | undefined {
+  if (!basis) return undefined;
+  const candidates = allOf(events, 'TOOL_RESULT_BOUND')
+    .filter((e) => str(e.tool) === 'list_candidate_specs')
+    .flatMap((e) => (Array.isArray(e.object_refs) ? (e.object_refs as string[]) : []));
+  const others = [...new Set(candidates)].filter((r) => r && r !== basis);
+  if (!others.length) return undefined;
+
+  const label = (ref: string) => ref.replace(':', ' Revision ');
+  return (
+    `${others.map(label).join(' and ')} ${others.length > 1 ? 'were' : 'was'} ` +
+    `also on file; ${label(basis)} is the governing basis.`
+  );
+}
+
+/**
+ * What the operator does next, stated only when a gap actually remains.
+ *
+ * Derived from the readiness the recalculation produced, never from a fixture:
+ * an order still BLOCKED after recovery ran is an open gap. If recovery closed
+ * everything, there is nothing to tell the operator and this returns undefined
+ * rather than manufacturing a task.
+ */
+function nextActionFrom(consequence: ConsequenceVM | null): string | undefined {
+  if (!consequence) return undefined;
+  const stillBlocked = consequence.metrics.filter((m) => m.value === 'BLOCKED');
+  if (!stillBlocked.length) return undefined;
+
+  return stillBlocked
+    .map((m) => {
+      // Both numbers are the backend's own — `uncovered` and the material it
+      // belongs to arrive on CONSEQUENCE_RECALCULATED. Nothing is re-derived.
+      const gap = m.uncovered && m.materialId ? `${m.uncovered} ${m.materialId}` : '';
+      return gap
+        ? `Resolve ${m.label}'s remaining ${gap} gap. ${m.label} stays blocked until compliant material is available.`
+        : `${m.label} stays blocked until compliant material is available.`;
+    })
+    .join(' ');
 }
 
 function truthFrom(

@@ -221,6 +221,7 @@ def recalculate_consequences(
             EventType.CONSEQUENCE_RECALCULATED, decision_record_id,
             order_id=order.order_id, order_readiness=result.readiness.value,
             coverage_delta=inventory_delta,
+            material_id=first.material_id if first else "",
             required=first.required if first else 0.0,
             available=first.available if first else 0.0,
             planned=first.planned if first else 0.0,

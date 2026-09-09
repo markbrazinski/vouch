@@ -203,6 +203,10 @@ export interface ConsequenceMetricVM {
   value: string;
   note?: string;
   severity?: SemanticTone;
+  /** The order's short material, and by how much. Both from the backend's own
+   *  arithmetic — used to name the gap without re-deriving it. */
+  materialId?: string;
+  uncovered?: number;
 }
 
 export interface RecoveryCandidateVM {
@@ -212,6 +216,15 @@ export interface RecoveryCandidateVM {
   detail: string;
   verdict: 'ELIGIBLE' | 'REFUSED' | 'NOT_FEASIBLE';
   tone: SemanticTone;
+  /**
+   * This candidate is the one the engine actually selected and acted on.
+   *
+   * Distinct from `verdict === 'ELIGIBLE'`: eligibility is a property of the
+   * candidate, selection is the engine's choice among the eligible. Two
+   * candidates could both be feasible; only one moves the factory, and the
+   * operator must be able to see which at a glance.
+   */
+  selected: boolean;
 }
 
 export interface ConsequenceVM {
@@ -234,6 +247,22 @@ export interface OutcomeSummaryVM {
   tone: SemanticTone;
   lines: string[];
   chip?: { label: string; tone: SemanticTone };
+  /**
+   * The secondary line: true but subordinate context, shown smaller.
+   *
+   * Kept out of `lines` so the deterministic reason stays the thing the eye
+   * lands on. "The supplier declared CONFORMS against Revision B" explains how
+   * a plausible-looking document still failed; it is not itself the reason.
+   */
+  context?: string;
+  /**
+   * What the operator does next, when the decision leaves something undone.
+   *
+   * Text only. There is deliberately no action id here — no backend action
+   * exists to close this gap, and an affordance that leads nowhere is worse
+   * than a sentence that tells the truth.
+   */
+  nextAction?: string;
 }
 
 /** D7. One row in the far-right chronology. */
