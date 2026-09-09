@@ -594,9 +594,33 @@ def _today_causality() -> list[dict]:
         # precisely the case: an old run's links would otherwise survive it.
         return False
 
+    # One record per lot: the CURRENT one.
+    #
+    # A lot accumulates a record per run, and several can pass the state check
+    # above — LOT-1001 released once under the old readiness semantics and again
+    # under the new one, so its stale record kept narrating a resequence that the
+    # quarantine now performs. Whichever record was saved last is the one that
+    # explains the lot's present state; the rest are history, and Records is
+    # where history belongs.
+    current: dict[str, tuple[str, str]] = {}
+    for record_id in store.list_ids():
+        document = store.load(record_id) or {}
+        lot_id = (document.get("identity") or {}).get("lot_id", "")
+        if not lot_id:
+            continue
+        stamp = document.get("saved_at") or document.get("created_at") or ""
+        held = current.get(lot_id)
+        # No timestamp is not a reason to lose: an unstamped record still beats
+        # nothing, and later ids win ties so the newest run survives either way.
+        if held is None or (stamp, record_id) >= held:
+            current[lot_id] = (stamp, record_id)
+    keep = {record_id for _stamp, record_id in current.values()}
+
     history: list[dict] = []
     seen: set[tuple] = set()
     for record_id in store.list_ids():
+        if record_id not in keep:
+            continue
         document = store.load(record_id) or {}
         consequences = document.get("consequences") or {}
         lot_id = (document.get("identity") or {}).get("lot_id", "")
