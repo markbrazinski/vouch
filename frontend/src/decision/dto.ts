@@ -192,6 +192,31 @@ export interface SourcesDTO extends EnvelopeDTO {
 export interface TodayDTO extends EnvelopeDTO {
   readiness_counts?: Record<string, number>;
   lines?: TodayLineDTO[];
+  /** What the recorded decisions did to this plan. Replayed, not derived. */
+  causal_history?: CausalEventDTO[];
+}
+
+/**
+ * One `caused_by` link the consequence engine wrote when a mutation happened.
+ *
+ * `decision_record_id` is the record that caused it, so the UI can link to the
+ * real document rather than searching for a plausible one.
+ */
+export interface CausalEventDTO {
+  kind: string;
+  lot_id?: string;
+  disposition?: string;
+  order_id?: string;
+  from?: string;
+  to?: string;
+  material_id?: string;
+  inventory_delta?: number;
+  from_slot?: string;
+  to_slot?: string;
+  blocked_order_id?: string;
+  decision_record_id?: string;
+  ledger_sequence?: number;
+  candidates?: RecoveryCandidateDTO[];
 }
 
 export interface TodayLineDTO {

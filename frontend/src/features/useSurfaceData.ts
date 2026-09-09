@@ -44,6 +44,26 @@ let instances = 0;
  */
 const lastGood = new Map<string, VouchEnvelope>();
 
+/**
+ * Drop retained responses so the next read is authoritative.
+ *
+ * Retain-and-revalidate is right for navigation and wrong immediately after a
+ * WRITE: evaluating a lot changes lot status, usable inventory, order readiness
+ * and the schedule, so a retained `today` or `decisions` response is not merely
+ * stale, it contradicts the decision the operator just watched execute. Today
+ * showed the pre-release plan until a manual refresh.
+ *
+ * Clearing rather than refetching keeps this a cache concern: the surfaces
+ * re-read on their own terms, and nothing here needs to know which of them are
+ * mounted.
+ */
+export function invalidateSurfaces(keys: string[] = ['today', 'decisions']): void {
+  for (const key of keys) {
+    lastGood.delete(key);
+    shared.delete(key);
+  }
+}
+
 /** Read failures that mean "this deployment cannot answer", not "it broke". */
 const CAPABILITY_GAPS = new Set(['PERSISTENCE_FAILURE']);
 

@@ -354,6 +354,17 @@ def test_recovery_priority_is_explicit_not_alphabetical(vouch):
     # and needed sooner — the correct answer under business policy. It is added
     # BEFORE the pipeline runs, because recovery now actually executes (P1-7)
     # and enumerating afterwards would be scoring an already-recovered plan.
+    # C-418 and C-999 both require MAT-ALLOY-7, so a release is what makes them
+    # materially ready — an unreleased candidate is NOT_FEASIBLE and would make
+    # this test pass for the wrong reason. The inventory is flipped directly
+    # rather than by running the pipeline, because a real evaluation also
+    # EXECUTES recovery, and scoring an already-recovered plan proves nothing.
+    inventory = corpus.get("inventory", "LOT-1001")
+    corpus.put(
+        "inventory", "LOT-1001",
+        replace(inventory, usable=True),
+    )
+
     c418 = corpus.order("C-418")
     corpus.put(
         "production_order", "C-999",
@@ -503,8 +514,13 @@ def test_recovery_is_returned_to_the_caller_not_only_stored_on_the_record():
     consequences, so every API consumer — the AgentCore runtime included — saw
     a blocked order with no candidates, no refusals and no executed resequence.
     """
+    # The recovery beat belongs to LOT-1001's RELEASE, not to LOT-1002's
+    # quarantine. Releasing 500 kg covers C-418 outright and simultaneously
+    # exposes that C-417 needs 900, so C-417 blocks and a materially-ready
+    # alternative exists in the same instant. A quarantine cannot produce this:
+    # a quarantined lot was never usable, so it changes no arithmetic.
     corpus = build_corpus()
-    outcome = VouchV2(corpus).evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    outcome = VouchV2(corpus).evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
 
     recovery = outcome.consequences.get("recovery")
     assert recovery, "recovery must reach the caller"

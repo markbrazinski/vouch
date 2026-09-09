@@ -410,8 +410,30 @@ def _incoming_row(summary: dict) -> dict:
     material = _CORPUS.material(lot.material_id) if lot else None
     supplier = _CORPUS.get("supplier", lot.supplier_id) if lot else None
 
+    # The LOT's current status wins over the record's disposition.
+    #
+    # A DecisionRecord is a historical account of one execution; the lot row is
+    # what is true now. Deriving the state only from the record meant a reseeded
+    # lot still displayed RELEASED from a previous run's record, and Incoming —
+    # the surface whose entire job is "what needs disposition today" — showed a
+    # decided lot that is once again awaiting one.
+    #
+    # A security hold is decided by the record, not the lot: the artifact was
+    # refused before any lot state could change, so the lot legitimately reads
+    # RECEIVED and only the record knows why.
+    lot_status = lot.status if lot else ""
     if failure == "SECURITY_QUARANTINE":
         row_state = "SECURITY_HOLD"
+    elif lot_status == "RELEASED":
+        row_state = "RELEASED"
+    elif lot_status == "QUARANTINED":
+        row_state = "QUARANTINED"
+    elif lot_status == "PENDING_QA":
+        row_state = "QUALITY_DECISION_REQUIRED"
+    elif lot_status == "RECEIVED":
+        # Undecided now, whatever a past record concluded. A failure category
+        # still means this run needs a human.
+        row_state = "QUALITY_DECISION_REQUIRED" if failure else "EVIDENCE_RECEIVED"
     elif disposition == "RELEASE":
         row_state = "RELEASED"
     elif disposition == "QUARANTINE":
@@ -484,7 +506,71 @@ def _today_plan() -> dict:
             {"line_id": resource, "orders": orders}
             for resource, orders in sorted(lines.items())
         ],
+        "causal_history": _today_causality(),
     }
+
+
+def _today_causality() -> list[dict]:
+    """Why the plan looks like this — read back from the stored decisions.
+
+    Today used to show a causal banner only while the stored status and the
+    computed readiness DISAGREED, so the explanation vanished at the moment the
+    plan caught up. The final frame was then the least explanatory one: an order
+    blocked, another order moved, and nothing on screen said what did either.
+
+    These links are not derived here. Each one was written by the consequence
+    engine as `caused_by` when the mutation happened, and is replayed verbatim
+    with the `decision_record_id` that produced it, so "Why did this change?"
+    reaches the actual record rather than a reconstruction.
+    """
+    store = _VOUCH.record_store
+    if not hasattr(store, "list_ids"):
+        return []
+
+    history: list[dict] = []
+    for record_id in store.list_ids():
+        document = store.load(record_id) or {}
+        consequences = document.get("consequences") or {}
+        lot_id = (document.get("identity") or {}).get("lot_id", "")
+        disposition = (document.get("disposition") or {}).get("disposition", "")
+
+        for link in consequences.get("caused_by") or []:
+            history.append(
+                {
+                    "kind": "readiness",
+                    "lot_id": link.get("lot_id", lot_id),
+                    "disposition": disposition,
+                    "order_id": link.get("order_id", ""),
+                    "from": link.get("from", ""),
+                    "to": link.get("to", ""),
+                    "material_id": link.get("material_id", ""),
+                    "inventory_delta": link.get("inventory_delta", 0),
+                    "decision_record_id": link.get("decision_record_id", record_id),
+                    "ledger_sequence": link.get("ledger_sequence", 0),
+                }
+            )
+
+        recovery = consequences.get("recovery") or {}
+        moved = recovery.get("caused_by") or {}
+        if moved and recovery.get("executed"):
+            history.append(
+                {
+                    "kind": "resequence",
+                    "lot_id": lot_id,
+                    "disposition": disposition,
+                    "order_id": moved.get("order_id", ""),
+                    "blocked_order_id": moved.get("blocked_order_id", ""),
+                    "from_slot": moved.get("from_slot", ""),
+                    "to_slot": moved.get("to_slot", ""),
+                    "decision_record_id": moved.get("decision_record_id", record_id),
+                    "ledger_sequence": moved.get("ledger_sequence", 0),
+                    "candidates": recovery.get("candidates") or [],
+                }
+            )
+
+    # Ledger order is the order things actually happened in.
+    history.sort(key=lambda row: row.get("ledger_sequence") or 0)
+    return history
 
 
 def invoke(payload: dict, context=None) -> dict:

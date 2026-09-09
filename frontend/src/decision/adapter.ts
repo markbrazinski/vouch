@@ -578,10 +578,16 @@ function agentFrom(
     state: done ? 'complete' : 'active',
     modelId: str(started.model_id),
     recordsConsulted: records,
+    // Sufficiency is a COVERAGE question, never a conformance one: SUFFICIENT
+    // means every required test has applicable evidence, INCLUDING when a
+    // measured value falls outside its limit. "Evidence is applicable" was read
+    // as "the lot is fine" on a lot that was about to be quarantined, so the
+    // copy now names coverage explicitly and leaves the verdict to the
+    // disposition, which is where it is actually decided.
     resultTitle: done
       ? sufficient
-        ? 'Evidence is applicable'
-        : 'Evidence does not establish the requirement'
+        ? 'Every required test has applicable evidence'
+        : 'Some required tests have no applicable evidence'
       : 'Working',
     resultBody: done
       ? `Governing basis ${str(done.basis, 'unresolved')} · ${num(done.required_test_count) ?? 0} required test(s)`

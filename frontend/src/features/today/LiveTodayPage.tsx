@@ -203,7 +203,7 @@ export function LiveTodayPage({
   onOpenDecision?: (orderId: string) => void;
 }) {
   return (
-    <div style={{ padding: '20px 30px 50px', maxWidth: 1240, margin: '0 auto' }}>
+    <div style={{ padding: '20px 34px 50px', maxWidth: 1560, margin: '0 auto' }}>
       <div
         style={{
           display: 'flex',
@@ -244,7 +244,128 @@ export function LiveTodayPage({
         </div>
       </div>
 
-      {/* What a disposition did to the plan, stated before the full grid. */}
+      {/* What the recorded decisions DID — and it stays after the plan catches
+          up, because the final frame is where an operator most needs to know
+          which event moved which order. */}
+      {vm.causalHistory.length > 0 && (
+        <div
+          data-testid="today-causal-history"
+          style={{
+            marginTop: 16,
+            background: T.panel,
+            border: `1px solid ${T.hairline}`,
+            borderRadius: 11,
+            padding: '13px 16px',
+          }}
+        >
+          <div
+            style={{
+              font: "600 10px 'IBM Plex Mono'",
+              letterSpacing: '.1em',
+              color: T.faint,
+            }}
+          >
+            WHAT CHANGED TODAY
+          </div>
+          <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 11 }}>
+            {vm.causalHistory.map((event) => (
+              <div key={`${event.decisionRecordId}:${event.kind}:${event.orderId}`}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    gap: 8,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span
+                    style={{
+                      font: "600 10px 'IBM Plex Mono'",
+                      letterSpacing: '.06em',
+                      color: event.disposition === 'RELEASE' ? '#3E6B54' : '#8E2B24',
+                    }}
+                  >
+                    {event.lotId} · {event.disposition || 'ASSESSED'}
+                  </span>
+                  <span style={{ font: "400 12.5px/1.6 'Public Sans'", color: T.ink70 }}>
+                    {event.sentence}
+                  </span>
+                  {onOpenDecision && event.decisionRecordId && (
+                    <button
+                      data-testid={`why-${event.orderId}`}
+                      onClick={() => onOpenDecision(event.decisionRecordId)}
+                      style={{
+                        padding: '2px 8px',
+                        background: 'transparent',
+                        border: '1px solid rgba(0,0,0,.16)',
+                        borderRadius: 6,
+                        font: "600 10.5px 'Public Sans'",
+                        color: T.ink70,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Why did this change? →
+                    </button>
+                  )}
+                </div>
+
+                {/* The candidates Vouch weighed, on the main canvas rather than
+                    behind a panel: a refusal is as much of the answer as the
+                    move, and "stock exists but authority does not" is the whole
+                    safety story. */}
+                {event.candidates.length > 0 && (
+                  <ul
+                    data-testid={`candidates-${event.orderId}`}
+                    style={{
+                      margin: '7px 0 0',
+                      padding: 0,
+                      listStyle: 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 3,
+                    }}
+                  >
+                    {event.candidates.map((candidate) => (
+                      <li
+                        key={`${candidate.kind}:${candidate.candidateId}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          gap: 8,
+                          font: "400 11.5px 'Public Sans'",
+                          color: T.muted,
+                        }}
+                      >
+                        <span
+                          style={{
+                            font: "600 9.5px 'IBM Plex Mono'",
+                            letterSpacing: '.05em',
+                            color:
+                              candidate.verdict === 'ELIGIBLE'
+                                ? '#3E6B54'
+                                : candidate.verdict === 'REFUSED'
+                                  ? '#8E2B24'
+                                  : T.faint,
+                            minWidth: 92,
+                          }}
+                        >
+                          {candidate.verdict}
+                        </span>
+                        <span style={{ color: T.ink70, minWidth: 96 }}>
+                          {candidate.candidateId}
+                        </span>
+                        <span>{candidate.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Divergence is a DIFFERENT statement: the plan has not caught up yet. */}
       {vm.divergent.length > 0 && (
         <div
           data-testid="today-divergence"

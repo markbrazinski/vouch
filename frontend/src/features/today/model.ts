@@ -12,7 +12,13 @@
  * erase the fact that a disposition has outrun the plan.
  */
 
-import type { CoverageDTO, TodayDTO, TodayOrderDTO } from '../../decision/dto';
+import type {
+  CausalEventDTO,
+  CoverageDTO,
+  RecoveryCandidateDTO,
+  TodayDTO,
+  TodayOrderDTO,
+} from '../../decision/dto';
 import type { ProductionReadiness, SemanticTone } from '../../view-models/types';
 import { readinessTone } from '../../components/tokens';
 
@@ -65,11 +71,48 @@ export interface ReadinessCountVM {
   label: string;
 }
 
+export interface RecoveryCandidateVM {
+  kind: string;
+  candidateId: string;
+  verdict: 'ELIGIBLE' | 'REFUSED' | 'NOT_FEASIBLE';
+  reasonCode: string;
+  /** The backend's own facts for this candidate, pre-formatted. */
+  detail: string;
+}
+
+/**
+ * One thing a decision did to the plan, replayed from the stored record.
+ *
+ * These persist after the plan and the evidence converge. The banner used to
+ * be keyed on divergence, so the explanation disappeared exactly when the
+ * operator most needed it — at the end, looking at a moved order and a blocked
+ * one with nothing saying why.
+ */
+export interface CausalEventVM {
+  kind: 'readiness' | 'resequence';
+  lotId: string;
+  disposition: string;
+  orderId: string;
+  /** Present for a readiness change. */
+  from: string;
+  to: string;
+  /** Present for a resequence. */
+  fromSlot: string;
+  toSlot: string;
+  blockedOrderId: string;
+  decisionRecordId: string;
+  /** One truthful sentence. Attribution matters: see `toCausalHistory`. */
+  sentence: string;
+  candidates: RecoveryCandidateVM[];
+}
+
 export interface TodayVM {
   counts: ReadinessCountVM[];
   lines: TodayLineVM[];
   /** Orders whose computed readiness has outrun their stored status. */
   divergent: TodayOrderVM[];
+  /** What the recorded decisions did to this plan, oldest first. */
+  causalHistory: CausalEventVM[];
   /** Totals straight from the payload — the count of what was returned. */
   orderCount: number;
   lineCount: number;
@@ -131,6 +174,82 @@ export function toOrder(dto: TodayOrderDTO): TodayOrderVM {
   };
 }
 
+const REFUSAL_WORDING: Record<string, string> = {
+  INSUFFICIENT_QUANTITY: 'not enough released material',
+  NOT_APPROVED: 'stock exists, but it is not approved for this product',
+  RESOURCE_INCOMPATIBLE: 'scheduled on a different line',
+  SLOT_OCCUPIED: 'the target slot is taken',
+  MATERIALS_NOT_RELEASED: 'its own material is not released yet',
+  FEASIBLE: 'material fully released, same line, slot free',
+};
+
+function candidateDetail(candidate: RecoveryCandidateDTO): string {
+  const facts = candidate.facts ?? {};
+  const code = candidate.reason_code ?? '';
+  const wording = REFUSAL_WORDING[code] ?? code;
+  if (code === 'INSUFFICIENT_QUANTITY') {
+    return `${wording} — ${qty(facts.available as number)} of ${qty(facts.required as number)} required`;
+  }
+  if (code === 'NOT_APPROVED') {
+    return `${wording} (${qty(facts.available as number)} on hand)`;
+  }
+  return wording;
+}
+
+/**
+ * Turn recorded causal links into sentences Today can show.
+ *
+ * The attribution rule, and it is the whole reason this function exists rather
+ * than a template at the call site: a RELEASE adds usable material, so it is
+ * what can make another order executable and what can expose a shortfall a
+ * plan had not yet faced. A QUARANTINE removes nothing — the lot was never
+ * usable inventory — so it must never be described as having taken material
+ * away, or as the reason another order moved.
+ */
+export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEventVM[] {
+  return (rows ?? []).map((row) => {
+    const lot = row.lot_id ?? '';
+    const order = row.order_id ?? '';
+    let sentence: string;
+
+    if (row.kind === 'resequence') {
+      sentence =
+        `${order} moved into ${slotClock(row.to_slot ?? '')} because its material ` +
+        `requirements were already fully satisfied by released inventory. ` +
+        `${row.blocked_order_id ?? ''} could not run in that slot.`;
+    } else if ((row.inventory_delta ?? 0) > 0) {
+      // A release. It added material AND revealed what is still uncovered.
+      sentence =
+        `${lot} released ${qty(row.inventory_delta)} ${row.material_id ?? ''}, ` +
+        `which moved ${order} from ${row.from} to ${row.to}.`;
+    } else {
+      // Not a release. Say what changed without claiming stock was removed.
+      sentence = `${order} moved from ${row.from} to ${row.to} after ${lot} was assessed.`;
+    }
+
+    return {
+      kind: (row.kind === 'resequence' ? 'resequence' : 'readiness') as CausalEventVM['kind'],
+      lotId: lot,
+      disposition: row.disposition ?? '',
+      orderId: order,
+      from: row.from ?? '',
+      to: row.to ?? '',
+      fromSlot: row.from_slot ?? '',
+      toSlot: row.to_slot ?? '',
+      blockedOrderId: row.blocked_order_id ?? '',
+      decisionRecordId: row.decision_record_id ?? '',
+      sentence,
+      candidates: (row.candidates ?? []).map((c) => ({
+        kind: c.kind ?? '',
+        candidateId: c.candidate_id,
+        verdict: c.verdict,
+        reasonCode: c.reason_code ?? '',
+        detail: candidateDetail(c),
+      })),
+    };
+  });
+}
+
 export function toToday(dto: TodayDTO): TodayVM {
   const lines: TodayLineVM[] = (dto.lines ?? []).map((line) => {
     const orders = (line.orders ?? []).map(toOrder);
@@ -152,6 +271,7 @@ export function toToday(dto: TodayDTO): TodayVM {
     })),
     lines,
     divergent: lines.flatMap((l) => l.orders).filter((o) => o.divergent),
+    causalHistory: toCausalHistory(dto.causal_history),
     orderCount: lines.reduce((n, l) => n + l.orders.length, 0),
     lineCount: lines.length,
     durable: dto.backend?.durable === true,

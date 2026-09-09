@@ -26,6 +26,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { invalidateSurfaces } from '../features/useSurfaceData';
 import * as api from '../adapter/client';
 import { TransportError } from '../adapter/client';
 import type { EvaluateDTO, LifecycleEventDTO, SourceArtifactDTO } from './dto';
@@ -437,6 +439,11 @@ export function useDecisionRun(initialId?: string) {
       } catch (error) {
         setState((prev) => ({ ...prev, running: false, failure: classifyFailure(error) }));
       } finally {
+        // The run changed authoritative state — lot status, usable inventory,
+        // order readiness, the schedule. Any retained Today or Incoming
+        // response now contradicts what the operator just watched happen, so
+        // the next read of those surfaces must go to the backend.
+        invalidateSurfaces();
         liveRef.current = false;
       }
     },

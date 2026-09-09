@@ -296,8 +296,17 @@ def test_recovery_reverifies_the_slot_at_execution(vouch):
     """
     from vouch.v2.authority import Action, execute
 
+    from dataclasses import replace
+
     corpus, v = vouch
     events = EventLog()
+    # C-418 requires MAT-ALLOY-7, so it is only a lawful candidate once that
+    # material is released. Flipped directly: a pipeline run would execute the
+    # recovery this test is trying to intercept mid-flight.
+    corpus.put(
+        "inventory", "LOT-1001",
+        replace(corpus.get("inventory", "LOT-1001"), usable=True),
+    )
     corpus.bump("production_order", "C-417", status="BLOCKED")
     target_slot = corpus.order("C-417").planned_slot
 

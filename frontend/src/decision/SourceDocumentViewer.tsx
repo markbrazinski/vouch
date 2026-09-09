@@ -220,7 +220,12 @@ export function SourceDocumentViewer({
               data-testid="source-document-frame"
               style={{
                 marginBottom: 16,
-                height: 460,
+                // Tall enough to read a certificate without leaving the panel.
+                // Deliberately NOT an "open in new tab" affordance: the bytes
+                // are reachable only through a presigned URL, and handing that
+                // to a new tab would put a credential in browser history. The
+                // security boundary is worth more than the convenience.
+                height: 620,
                 background: '#fff',
                 border: '1px solid rgba(0,0,0,.14)',
                 borderRadius: 4,

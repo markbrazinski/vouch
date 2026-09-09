@@ -16,7 +16,15 @@ import { T } from '../../components/tokens';
 import { StatusPill } from '../../components/StatusPill';
 import { SurfaceState } from '../../components/SurfaceState';
 
-const GRID = '128px 1.25fr 1.35fr 110px 150px 96px';
+/**
+ * Incoming's column track.
+ *
+ * Sized for the 1600x900 the demo is filmed at, where the previous 1220px cap
+ * left ~380px of empty gutter and squeezed supplier and material names into
+ * two-line wraps. Material and supplier take the extra room because they are
+ * the columns that actually carry long real-world values.
+ */
+const GRID = '132px 1.4fr 1.5fr 118px 168px 104px';
 
 function HeaderRow() {
   return (
@@ -64,8 +72,8 @@ function Row({
       style={{
         display: 'grid',
         gridTemplateColumns: GRID,
-        gap: 14,
-        padding: '13px 18px',
+        gap: 16,
+        padding: '16px 20px',
         borderBottom: `1px solid rgba(0,0,0,.06)`,
         alignItems: 'center',
         background: row.attentionRequired ? '#FCF7F2' : 'transparent',
@@ -194,8 +202,8 @@ function LedgerRow({
       style={{
         display: 'grid',
         gridTemplateColumns: LEDGER_GRID,
-        gap: 14,
-        padding: '13px 18px',
+        gap: 16,
+        padding: '16px 20px',
         borderBottom: `1px solid rgba(0,0,0,.06)`,
         alignItems: 'center',
       }}
@@ -255,7 +263,7 @@ export function LedgerPage({
 }) {
   const rows = [...vm.rows].sort((a, b) => b.decidedAt.localeCompare(a.decidedAt));
   return (
-    <div data-testid="records-page" style={{ padding: '20px 30px 60px', maxWidth: 1220, margin: '0 auto' }}>
+    <div data-testid="records-page" style={{ padding: '20px 34px 60px', maxWidth: 1560, margin: '0 auto' }}>
       <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
         RECORDS
       </div>
@@ -310,7 +318,7 @@ export function LiveIncomingPage({
 }) {
   const attention = vm.needsAttention.length;
   return (
-    <div data-testid="incoming-page" style={{ padding: '20px 30px 60px', maxWidth: 1220, margin: '0 auto' }}>
+    <div data-testid="incoming-page" style={{ padding: '20px 34px 60px', maxWidth: 1560, margin: '0 auto' }}>
       <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
         {eyebrow}
       </div>
@@ -388,7 +396,7 @@ export function LiveIncomingPage({
  */
 export function IncomingUnavailable({ detail }: { detail?: string }) {
   return (
-    <div data-testid="incoming-blocked" style={{ padding: '20px 30px', maxWidth: 1220, margin: '0 auto' }}>
+    <div data-testid="incoming-blocked" style={{ padding: '20px 34px', maxWidth: 1560, margin: '0 auto' }}>
       <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
         INCOMING
       </div>

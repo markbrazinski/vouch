@@ -266,7 +266,21 @@ def build_corpus() -> Corpus:
     corpus.put(
         "production_order", "C-418",
         ProductionOrder(
-            "C-418", "P-418", 80.0, (MaterialRequirementLine("MAT-RESIN-3", 400.0),),
+            # MAT-ALLOY-7 500.0 — exactly LOT-1001's quantity, and the reason
+            # this is a SAFE recovery rather than a convenient one. When
+            # LOT-1001 releases, C-418's requirement is covered outright by
+            # authoritative released inventory, so pulling it into the vacated
+            # slot risks nothing. Recovery selects it on `materials_ready`,
+            # never on order id.
+            #
+            # The same release exposes C-417's real shortfall (500 of 900), so
+            # C-417's persisted plan status catches up to the readiness Vouch
+            # was already reporting. That is one event with two consequences,
+            # and the demo says so: the clean lot creates the alternative AND
+            # reveals the gap. LOT-1002's later quarantine changes no
+            # arithmetic — a quarantined lot was never usable — it confirms
+            # that the gap cannot be closed from this incoming material.
+            "C-418", "P-418", 80.0, (MaterialRequirementLine("MAT-ALLOY-7", 500.0),),
             "LINE-1", "2026-08-15T14:00", "READY",
             customer_id="CUST-2", customer_committed=False, need_by="2026-08-25",
         ),
