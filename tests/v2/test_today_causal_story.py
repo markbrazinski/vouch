@@ -169,6 +169,27 @@ def test_frame_c_recovery_selects_c418_because_its_material_is_released(world):
     assert selected["facts"]["slot_free"] is True
 
 
+def test_frame_c_c418_is_not_feasible_until_lot_1001_releases(world):
+    """The negative half of the recovery story, and the one that bit us.
+
+    Evaluating LOT-1002 against a freshly seeded corpus — LOT-1001 still
+    RECEIVED — makes C-418 truthfully NOT_FEASIBLE: its 500 kg requirement is
+    covered by exactly that lot, and nothing has released it yet. The UI
+    rendering "C-418 MATERIALS NOT RELEASED" was therefore reporting the
+    backend correctly; the demo path was skipping the release.
+
+    Pinned so nobody "fixes" the symptom by seeding LOT-1001 as RELEASED and
+    quietly deleting the S1 beat that earns the recovery.
+    """
+    _corpus, vouch = world
+    outcome = vouch.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
+    recovery = outcome.consequences["recovery"]
+
+    assert _verdicts(recovery)["C-418"] == ("NOT_FEASIBLE", "MATERIALS_NOT_RELEASED")
+    assert recovery["selected"] is None
+    assert recovery["executed"] is not True
+
+
 def test_frame_c_c418_actually_moves_into_the_vacated_slot(world):
     corpus, vouch = world
     assert corpus.order("C-418").planned_slot == "2026-08-15T14:00"

@@ -132,7 +132,12 @@ describe('the outcome summary is structured, not parsed', () => {
     const outcome = vm().outcome;
     expect(outcome.visible).toBe(true);
     expect(outcome.kind).toBe('quarantined_with_consequence');
-    expect(outcome.lines.some((l) => l.includes('C-417') && l.includes('BLOCKED'))).toBe(true);
+    // The reason line answers WHY and nothing else. The order transitions
+    // moved to the compact impact strip so the frame stopped restating
+    // C-417/C-418 in three places.
+    expect(outcome.lines).toHaveLength(1);
+    expect(outcome.lines[0]).not.toMatch(/C-417/);
+    expect(outcome.impact).toContain('C-417 blocked');
   });
 });
 
@@ -308,7 +313,8 @@ describe('terminal summary answers the three questions', () => {
     // the one the deployed runtime computed for this lot.
     const outcome = withFailures().outcome;
     expect(outcome.lines[0]).toBe(
-      'SPEC-A7 Revision C governs. Tensile Strength was 462 MPa, below the required 480 MPa.',
+      'Deterministic rule failed — tensile strength was 462 MPa; ' +
+        'SPEC-A7 Rev C requires at least 480 MPa.',
     );
     expect(outcome.lines[0]).not.toMatch(/could not defend/);
   });
@@ -326,9 +332,10 @@ describe('terminal summary answers the three questions', () => {
 
   it('explains the superseded revision as subordinate context', () => {
     const outcome = vm().outcome;
-    expect(outcome.context).toBe(
-      'SPEC-A7 Revision B was also on file; SPEC-A7 Revision C is the governing basis.',
-    );
+    // One short line. The losing revisions are no longer enumerated here —
+    // that comparison belongs to the completed Investigator detail, and
+    // repeating it made the terminal frame tell the Rev B/C story twice.
+    expect(outcome.context).toBe('SPEC-A7 Rev C is the governing requirement.');
     // Context must never displace the reason.
     expect(outcome.lines[0]).not.toContain('Revision B');
   });
@@ -384,9 +391,12 @@ describe('terminal summary answers the three questions', () => {
     // right behaviour is to name the blocked order and stop — not to guess a
     // quantity. That an older payload still produces a truthful sentence is
     // worth pinning on its own.
-    expect(vm().outcome.nextAction).toBe(
-      'C-417 stays blocked until compliant material is available.',
-    );
+    // Degraded payload: no material_id and no uncovered quantity. The
+    // sentence stays truthful by naming the blocked order and the recovery
+    // the engine selected, and never guessing the missing quantity.
+    expect(vm().outcome.nextAction).toBe('Block C-417. Begin C-418.');
+    // No invented quantity or material: the degraded payload carried neither.
+    expect(vm().outcome.nextAction).not.toMatch(/MAT-|kg/);
   });
 
   it('reports one row per order when a decision ran more than one pass', () => {
@@ -405,9 +415,9 @@ describe('terminal summary answers the three questions', () => {
       running: false,
     });
     expect(twoPasses.consequence!.metrics.filter((m) => m.label === 'C-417')).toHaveLength(1);
-    expect(twoPasses.outcome.nextAction).toBe(
-      'C-417 stays blocked until compliant material is available.',
-    );
+    // The point of the test: one pass, one sentence. A duplicated recalc must
+    // not make NEXT ACTION say "Block C-417." twice.
+    expect(twoPasses.outcome.nextAction).toBe('Block C-417. Begin C-418.');
   });
 
   it('names the material and the gap once the backend emits them', () => {
@@ -425,9 +435,10 @@ describe('terminal summary answers the three questions', () => {
       result: dto,
       running: false,
     });
-    expect(enriched.outcome.nextAction).toBe(
-      "Resolve C-417's remaining 400 MAT-ALLOY-7 gap. C-417 stays blocked until " +
-        'compliant material is available.',
+    // Two imperatives: what stops, and the recovery the engine authorized.
+    expect(enriched.outcome.nextAction).toBe('Block C-417. Begin C-418.');
+    expect(enriched.outcome.impact).toBe(
+      'C-417 blocked · C-418 moved into the available production slot.',
     );
   });
 });
@@ -453,7 +464,8 @@ describe('failureProse reads payload fields, never the reason prose', () => {
       'SPEC-A7:C',
     );
     expect(prose).toBe(
-      'SPEC-A7 Revision C governs. Hardness was 41 HRC, outside the required [28.0, 36.0] HRC.',
+      'Deterministic rule failed — hardness was 41 HRC; ' +
+        'SPEC-A7 Rev C requires [28.0, 36.0] HRC.',
     );
   });
 
@@ -461,6 +473,8 @@ describe('failureProse reads payload fields, never the reason prose', () => {
     const prose = failureProse([
       { characteristic: 'tensile_strength', value: 462, units: 'MPa', min_value: 480, max_value: null },
     ]);
-    expect(prose).toBe('Tensile Strength was 462 MPa, below the required 480 MPa.');
+    expect(prose).toBe(
+      'Deterministic rule failed — tensile strength was 462 MPa; Requirement: at least 480 MPa.',
+    );
   });
 });

@@ -354,6 +354,57 @@ def test_list_decisions_returns_rows_with_a_server_computed_state(hero):
     assert row["supplier_id"] == "SUP-EAST"
 
 
+def test_incoming_lists_arrivals_that_have_no_decision_yet(runtime):
+    """A lot that has arrived and never been evaluated must still appear.
+
+    Incoming is built from the decision ledger, so before this a lot with no
+    DecisionRecord could not be listed at all — a freshly seeded plant showed
+    an empty "material awaiting disposition" while its receiving dock was full,
+    and there was no way to start the very first decision for a lot.
+    """
+    response = runtime.invoke({"action": "list_decisions"})
+    assert response["ok"]
+
+    by_lot = {row["lot_id"]: row for row in response["rows"]}
+    for lot_id in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004", "LOT-1005", "LOT-1006"):
+        assert lot_id in by_lot, f"{lot_id} has arrived and must be listed"
+
+    arrival = by_lot["LOT-1006"]
+    # No decision exists, so no record is claimed — but every fact about the
+    # lot is real and comes from the authoritative corpus.
+    assert arrival["decision_record_id"] == ""
+    assert arrival["row_state"] == "EVIDENCE_RECEIVED"
+    assert arrival["attention_required"] is False
+    assert arrival["material_id"] == "MAT-RESIN-3"
+    assert arrival["supplier_id"] == "SUP-WEST"
+    assert arrival["quantity"] == 200.0
+    assert arrival["units"] == "kg"
+
+
+def test_a_decided_lot_is_not_duplicated_by_its_arrival(runtime):
+    """The record wins. An arrival row must never mask a real decision."""
+    import base64
+    from pathlib import Path
+
+    pdf = Path(__file__).resolve().parents[2] / "demo" / "evidence" / (
+        "western-polymers-coa-lot-1006.pdf"
+    )
+    outcome = runtime.invoke({
+        "action": "evaluate_lot", "lot_id": "LOT-1006",
+        "document_b64": base64.b64encode(pdf.read_bytes()).decode(),
+        "content_type": "application/pdf",
+    })
+    assert outcome["failure_category"] == "MATERIAL_DISAGREEMENT"
+
+    rows = runtime.invoke({"action": "list_decisions"})["rows"]
+    mine = [r for r in rows if r["lot_id"] == "LOT-1006"]
+
+    assert len(mine) == 1, "the arrival must not duplicate the decided lot"
+    assert mine[0]["decision_record_id"] == outcome["decision_record_id"]
+    assert mine[0]["row_state"] == "QUALITY_DECISION_REQUIRED"
+    assert mine[0]["attention_required"] is True
+
+
 def test_list_decisions_invents_no_unsupported_counts(hero):
     """`in_progress` and `completed_by_vouch` have no authoritative meaning.
 

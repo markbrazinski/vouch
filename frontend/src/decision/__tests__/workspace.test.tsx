@@ -42,11 +42,20 @@ describe('the terminal Hero A workspace', () => {
     expect(screen.getAllByText('QUARANTINE').length).toBeGreaterThan(0);
   });
 
-  it('shows the outcome with its production consequence', () => {
+  it('keeps the outcome to WHY and puts the plan change in the impact strip', () => {
     render(<DecisionWorkspace vm={terminal()} />);
+    // OUTCOME answers "what happened" and "why". The order transitions are no
+    // longer restated here — that duplication is what made the terminal frame
+    // unreadable at a glance.
     const outcome = screen.getByTestId('outcome-summary');
-    expect(outcome.textContent).toContain('C-417');
-    expect(outcome.textContent).toContain('BLOCKED');
+    expect(outcome.textContent).toContain('Quarantined');
+    expect(outcome.textContent).not.toContain('C-417');
+
+    // "What happens next", once, as two imperatives plus one consequence line.
+    expect(screen.getByTestId('next-action').textContent).toContain('Block C-417. Begin C-418.');
+    expect(screen.getByTestId('production-impact').textContent).toBe(
+      'C-417 blocked · C-418 moved into the available production slot.',
+    );
   });
 
   it('renders the spine with the independence seal', () => {
@@ -66,8 +75,15 @@ describe('the terminal Hero A workspace', () => {
     expect(first).toBeGreaterThan(last);
   });
 
-  it('shows recovery verdicts including the refusal', () => {
+  it('keeps the recovery grid out of the primary frame but reachable', () => {
     render(<DecisionWorkspace vm={terminal()} />);
+    // Not in the 3-second read: the grid competes with OUTCOME / WHY / NEXT
+    // ACTION and the judge does not need it to understand the result.
+    expect(screen.queryByTestId('recovery-MAT-SUB-9')).toBeNull();
+
+    // Still one click away, with every verdict intact — the refusal is the
+    // safety story and must never become unreachable.
+    fireEvent.click(screen.getByTestId('completed-consequence'));
     expect(screen.getByTestId('recovery-MAT-SUB-9').textContent).toContain('REFUSED');
     expect(screen.getByTestId('recovery-C-418').textContent).toContain('ELIGIBLE');
   });

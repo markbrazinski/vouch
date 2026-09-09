@@ -434,20 +434,28 @@ export function failureProse(
 ): string | null {
   if (!failures?.length) return null;
 
+  // "SPEC-A7:C" -> "SPEC-A7 Rev C". Short form, because this now sits INSIDE
+  // the requirement clause rather than in a sentence of its own — the reader
+  // needs the governing basis attached to the number it governs, not
+  // announced separately and then repeated.
+  const spec = basis ? `${basis.replace(':', ' Rev ')} requires` : 'Requirement:';
+
   const sentences = failures.map((f) => {
-    const name = titleCase(str(f.characteristic));
+    const name = str(f.characteristic).replace(/_/g, ' ').toLowerCase();
     const units = f.units ? ` ${f.units}` : '';
-    // A one-sided minimum reads as "below the required X"; anything else keeps
-    // the engine's own threshold wording rather than inventing a comparator.
+    // A one-sided minimum reads as "at least X"; anything else keeps the
+    // engine's own threshold wording rather than inventing a comparator.
     const limit =
       typeof f.min_value === 'number' && (f.max_value === null || f.max_value === undefined)
-        ? `below the required ${f.min_value}${units}`
-        : `outside the required ${str(f.threshold_text)}`;
-    return `${name} was ${f.value}${units}, ${limit}.`;
+        ? `at least ${f.min_value}${units}`
+        : str(f.threshold_text);
+    return `${name} was ${f.value}${units}; ${spec} ${limit}`;
   });
 
-  const governs = basis ? `${basis.replace(':', ' Revision ')} governs. ` : '';
-  return governs + sentences.join(' ');
+  // One sentence, and it leads with WHY this was not a judgement call. The
+  // deterministic engine failed a rule — that is the whole answer to "why",
+  // and the revision story is secondary context rendered elsewhere.
+  return `Deterministic rule failed — ${sentences.join('. ')}.`;
 }
 
 const localeNum = (v: unknown): string =>
@@ -1022,18 +1030,22 @@ function outcomeFrom(
     Array.isArray(computed?.failures) ? (computed.failures as DispositionFailure[]) : undefined,
     basis,
   );
+  // ONE line. The readiness transitions and the executed recovery used to be
+  // appended here as extra sentences, which is what made the frame restate
+  // C-417/C-418 three times over. They are one compact strip now (`impact`),
+  // and the full per-candidate detail stays in the completed Consequence
+  // stage where an operator can open it deliberately.
   const lines = [prose || result?.reason || 'The evidence could not defend a release.'];
-  for (const change of blocked) lines.push(`${change.orderId} moved ${change.from} → ${change.to}.`);
-  if (consequence?.executed) lines.push(`${consequence.executed.tag}: ${consequence.executed.line}`);
 
   return {
     visible: true,
     kind: blocked.length ? 'quarantined_with_consequence' : 'released',
-    headline: 'Quarantined — production impact recalculated',
+    headline: 'Quarantined',
     tone: 'quarantine',
     lines,
     context: supersededContext(events, basis),
     nextAction: nextActionFrom(consequence),
+    impact: impactFrom(consequence),
     chip: { label: 'QUARANTINED', tone: 'quarantine' },
   };
 }
@@ -1062,11 +1074,12 @@ function supersededContext(
   const others = [...new Set(candidates)].filter((r) => r && r !== basis);
   if (!others.length) return undefined;
 
-  const label = (ref: string) => ref.replace(':', ' Revision ');
-  return (
-    `${others.map(label).join(' and ')} ${others.length > 1 ? 'were' : 'was'} ` +
-    `also on file; ${label(basis)} is the governing basis.`
-  );
+  // One short line, not a retelling. The failure sentence above already names
+  // the governing revision inside the requirement clause, so repeating which
+  // revisions lost is noise — this only has to establish that the governing
+  // one WAS chosen from several, and the full comparison lives in the
+  // completed Investigator/Reconciliation detail.
+  return `${basis.replace(':', ' Rev ')} is the governing requirement.`;
 }
 
 /**
@@ -1082,16 +1095,33 @@ function nextActionFrom(consequence: ConsequenceVM | null): string | undefined {
   const stillBlocked = consequence.metrics.filter((m) => m.value === 'BLOCKED');
   if (!stillBlocked.length) return undefined;
 
-  return stillBlocked
-    .map((m) => {
-      // Both numbers are the backend's own — `uncovered` and the material it
-      // belongs to arrive on CONSEQUENCE_RECALCULATED. Nothing is re-derived.
-      const gap = m.uncovered && m.materialId ? `${m.uncovered} ${m.materialId}` : '';
-      return gap
-        ? `Resolve ${m.label}'s remaining ${gap} gap. ${m.label} stays blocked until compliant material is available.`
-        : `${m.label} stays blocked until compliant material is available.`;
-    })
-    .join(' ');
+  // Two imperatives, because the operator has two things to do and the second
+  // one is the recovery the engine already authorized. The selected candidate
+  // is the engine's own choice — read, never inferred from order id — so this
+  // stays silent about "begin" when recovery found nothing to move.
+  const selected = consequence.candidates.find((c) => c.selected);
+  const stop = stillBlocked.map((m) => `Block ${m.label}.`).join(' ');
+  return selected ? `${stop} Begin ${selected.candidateId}.` : stop;
+}
+
+/**
+ * The compact production-impact strip: what the schedule now looks like.
+ *
+ * Separate from `nextAction` deliberately. The action is what a human does;
+ * this is what already happened to the plan, and collapsing them produced the
+ * duplicated C-417/C-418 explanations this frame used to carry.
+ */
+function impactFrom(consequence: ConsequenceVM | null): string | undefined {
+  if (!consequence) return undefined;
+  const blocked = consequence.readinessChanges
+    .filter((c) => c.to === 'BLOCKED')
+    .map((c) => `${c.orderId} blocked`);
+  const selected = consequence.candidates.find((c) => c.selected);
+  const moved = selected && consequence.executed
+    ? [`${selected.candidateId} moved into the available production slot`]
+    : [];
+  const parts = [...blocked, ...moved];
+  return parts.length ? `${parts.join(' · ')}.` : undefined;
 }
 
 function truthFrom(
@@ -1270,7 +1300,19 @@ function completedFrom(
     verifier: AgentStageVM | null;
     reconciliation: ReconciliationVM | null;
     disposition: DispositionVM | null;
+    consequence: ConsequenceVM | null;
   },
+  /**
+   * The run has reached its authoritative end.
+   *
+   * Consequence is the LAST stage, so `index < activeIndex` can never collapse
+   * it and the terminal frame kept it expanded — the full-bleed recovery grid,
+   * the per-order readiness cards and the substitute reasoning, all competing
+   * with the three questions the frame actually owes the operator. Once the
+   * decision is final there is no live stage to watch, so it folds into the
+   * reopenable stack with everything else.
+   */
+  terminal = false,
 ): CompletedStageVM[] {
   if (!active) return [];
   const activeIndex = STAGE_ORDER.indexOf(active);
@@ -1284,9 +1326,9 @@ function completedFrom(
     pill: { label: string; tone: SemanticTone },
     runNumber?: number,
   ) => {
-    if (STAGE_ORDER.indexOf(stageKey) < activeIndex) {
-      out.push({ stageKey, title, oneLine, pill, runNumber });
-    }
+    const collapsed =
+      STAGE_ORDER.indexOf(stageKey) < activeIndex || (terminal && stageKey === active);
+    if (collapsed) out.push({ stageKey, title, oneLine, pill, runNumber });
   };
 
   add(
@@ -1321,6 +1363,21 @@ function completedFrom(
       label: parts.disposition.disposition || 'PENDING',
       tone: parts.disposition.tone,
     });
+  if (parts.consequence) {
+    const blocked = parts.consequence.readinessChanges.filter((c) => c.to === 'BLOCKED').length;
+    const moved = parts.consequence.executed ? 1 : 0;
+    add(
+      'consequence',
+      'Consequence',
+      // The one-line summary of what the grid contains, so reopening it is a
+      // deliberate act rather than the default state.
+      `${parts.consequence.candidates.length} recovery options evaluated`,
+      {
+        label: moved ? 'RECOVERED' : blocked ? 'BLOCKED' : 'EVALUATED',
+        tone: moved ? 'released' : blocked ? 'refused' : 'progress',
+      },
+    );
+  }
 
   return out;
 }
@@ -1512,6 +1569,19 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
   const disp = disposition?.qualityDecisionRequired
     ? 'QUALITY DECISION'
     : (disposition?.disposition ?? result?.disposition ?? '');
+  /**
+   * The decision is finished and nothing is still being watched.
+   *
+   * `consequence` is the last stage, so reaching it with an authoritative
+   * result and no run in flight IS the terminal frame. A quality decision
+   * still awaiting a human is deliberately excluded — that frame has an open
+   * question and must keep its stage visible.
+   */
+  const terminal =
+    active === 'consequence' &&
+    Boolean(result) &&
+    !input.running &&
+    !disposition?.qualityDecisionRequired;
   // Claims live on the durable record, not on `get_source`. Joining here keeps
   // the itemization in one place rather than in each component that shows one.
   const joinedClaims = claimsByArtifact(input.record);
@@ -1530,14 +1600,18 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     durable: input.durable ?? true,
     spine: spineFrom(events, active, reconciliation, input.record),
     outcome: outcomeFrom(events, result, failure),
-    activeStage: active,
+    activeStage: terminal ? null : active,
+    // Still full-bleed at the terminal frame. The stage collapsed, but the
+    // case-context column has nothing left to add once the decision is final,
+    // and remounting it duplicated the lot identity the header already
+    // carries. The frame keeps the full inner width.
     fullBleed: active ? FULL_BLEED.includes(active) : false,
-    completed: completedFrom(events, active, {
-      investigator,
-      verifier,
-      reconciliation,
-      disposition,
-    }),
+    completed: completedFrom(
+      events,
+      active,
+      { investigator, verifier, reconciliation, disposition, consequence },
+      terminal,
+    ),
     sources: (input.sources ?? []).map((a) => toSource(a, joinedClaims.get(str(a.artifact_id)))),
     /**
      * Whether an artifact is KNOWN to exist but has not been fetched yet.

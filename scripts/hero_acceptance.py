@@ -27,7 +27,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from vouch.config import load  # noqa: E402
-from vouch.v2.fixtures import COA_AMBIGUOUS, COA_HERO, QA_RETEST  # noqa: E402
+from vouch.v2.fixtures import (  # noqa: E402
+    COA_AMBIGUOUS,
+    COA_CLEAN,
+    COA_HERO,
+    QA_RETEST,
+)
 
 #: The account id is account-specific targeting information: it lives in the
 #: gitignored provisioning manifest (contract §13), never in a tracked file.
@@ -76,8 +81,21 @@ def seed() -> None:
 
 
 def hero_a() -> dict:
-    """quarantine -> consequence -> recovery."""
+    """quarantine -> consequence -> recovery.
+
+    LOT-1001 is evaluated FIRST, and not for scene-setting. C-418's 500 kg
+    requirement is covered by exactly that lot, so until it is released
+    C-418 is `MATERIALS_NOT_RELEASED` and the recovery is truthfully NOT
+    feasible. Releasing it is what creates the lawful alternative and, in the
+    same event, exposes C-417's real shortfall (500 released against 900
+    required). Skipping this step does not make the demo shorter; it makes the
+    recovery beat unreachable.
+    """
     seed()
+    invoke({
+        "action": "evaluate_lot", "lot_id": "LOT-1001",
+        "document": COA_CLEAN.decode(),
+    })
     result = invoke({
         "action": "evaluate_lot", "lot_id": "LOT-1002",
         "document": COA_HERO.decode(),

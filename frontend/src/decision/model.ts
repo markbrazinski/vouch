@@ -263,6 +263,14 @@ export interface OutcomeSummaryVM {
    * than a sentence that tells the truth.
    */
   nextAction?: string;
+  /**
+   * The compact production-impact strip: what already happened to the plan.
+   *
+   * Distinct from `nextAction`, which is what a HUMAN still has to do. Keeping
+   * the two apart is what let the terminal frame drop its duplicated
+   * per-order readiness cards.
+   */
+  impact?: string;
 }
 
 /**

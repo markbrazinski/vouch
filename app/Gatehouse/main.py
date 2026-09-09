@@ -414,6 +414,48 @@ def _decision_summaries(limit: int, cursor: dict | None) -> tuple[list[dict], di
 _STALE_ON_RESET = frozenset({"POLICY_REFUSAL", "STATE_VERSION_CONFLICT"})
 
 
+#: Lot statuses that mean "this arrival still needs a disposition".
+#:
+#: A lot the corpus holds at RECEIVED has physically arrived and nobody has
+#: decided it. PENDING_QA has been decided far enough to know a human is owed
+#: an answer. Both belong on a surface called "material awaiting disposition".
+_AWAITING = frozenset({"RECEIVED", "PENDING_QA"})
+
+
+def _undecided_arrivals(seen: set[str]) -> list[dict]:
+    """Arrivals the corpus knows about that have no DecisionRecord yet.
+
+    Incoming is built from the decision ledger, which answers "lots Vouch has
+    already looked at". That is not the same set as "lots awaiting a
+    disposition": a lot that has arrived and never been evaluated has no
+    record, so it could not appear at all — and a freshly seeded plant showed
+    an empty Incoming while its receiving dock was full.
+
+    These rows carry no `record_id` because no decision exists yet. Opening one
+    starts a fresh evaluation, which is exactly what opening any Incoming row
+    already does, so the interaction is unchanged. Nothing is invented: every
+    field comes from the authoritative lot, and a lot that HAS a record keeps
+    that record's row rather than being duplicated by this.
+    """
+    rows: list[dict] = []
+    for lot in _CORPUS.all("lot"):
+        if lot.lot_id in seen or lot.status not in _AWAITING:
+            continue
+        rows.append(
+            {
+                "record_id": "",
+                "lot_id": lot.lot_id,
+                "disposition": "",
+                "failure_category": "",
+                # No decision has been saved, so there is no decision time. The
+                # receipt date is when this arrival became the plant's problem,
+                # which is what an operator is ordering by.
+                "saved_at": lot.received_at or "",
+            }
+        )
+    return rows
+
+
 def _incoming_row(summary: dict) -> dict:
     """One Incoming row, from the indexed columns plus the lot it names.
 
@@ -937,6 +979,10 @@ def invoke(payload: dict, context=None) -> dict:
         if action == "list_decisions":
             limit = int(payload.get("limit") or 50)
             rows, cursor = _decision_summaries(limit, payload.get("cursor"))
+            # Arrivals with no decision yet are appended, never substituted: a
+            # lot that HAS a record keeps it, so nothing here can mask the
+            # authoritative account of a decision that actually ran.
+            rows = rows + _undecided_arrivals({r.get("lot_id", "") for r in rows})
             return {
                 "ok": True,
                 "action": action,

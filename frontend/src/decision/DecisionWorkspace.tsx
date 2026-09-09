@@ -120,7 +120,7 @@ function OutcomeSummary({ vm }: { vm: DecisionWorkspaceVM['outcome'] }) {
  * an affordance leading nowhere. It renders only when `nextAction` is set,
  * which happens only when an order is genuinely still blocked.
  */
-function NextAction({ text }: { text: string }) {
+function NextAction({ text, impact }: { text: string; impact?: string }) {
   return (
     <div
       data-testid="next-action"
@@ -147,7 +147,21 @@ function NextAction({ text }: { text: string }) {
       >
         NEXT ACTION
       </div>
-      <div style={{ font: `500 13px ${SANS}`, color: INK.dense }}>{text}</div>
+      <div style={{ minWidth: 0 }}>
+        {/* The instruction reads first and heaviest. It is two short
+            imperatives, so it survives a 3-second glance. */}
+        <div style={{ font: `600 14px ${SANS}`, color: INK.dense }}>{text}</div>
+        {/* The consequence strip: what the engine ALREADY did to the plan,
+            stated once, small, on one line. */}
+        {impact && (
+          <div
+            data-testid="production-impact"
+            style={{ font: `400 11.5px ${SANS}`, color: INK.label, marginTop: 3 }}
+          >
+            {impact}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -350,7 +364,7 @@ export function DecisionWorkspace({
             <>
               <OutcomeSummary vm={vm.outcome} />
               {vm.outcome.visible && vm.outcome.nextAction && (
-                <NextAction text={vm.outcome.nextAction} />
+                <NextAction text={vm.outcome.nextAction} impact={vm.outcome.impact} />
               )}
             </>
           )}
