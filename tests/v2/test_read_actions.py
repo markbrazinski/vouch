@@ -381,6 +381,40 @@ def test_incoming_lists_arrivals_that_have_no_decision_yet(runtime):
     assert arrival["units"] == "kg"
 
 
+def test_incoming_survives_a_malformed_lot_and_hides_test_debris(runtime):
+    """One bad row must not take down the whole surface.
+
+    Two real defects, both found against the deployed table. The live AWS
+    integration tests write `PYTEST-<hex>` lots into the shared dev state store
+    and never remove them — 184 of them, most with an empty material_id. The
+    decision ledger never surfaced these, so reading arrivals from the corpus
+    exposed them: the empty material id was passed straight to the store as a
+    key, which DynamoDB rejects outright, and `list_decisions` returned a
+    PERSISTENCE_FAILURE instead of any arrivals at all.
+    """
+    from vouch.v2.corpus import Lot
+
+    corpus = runtime._CORPUS
+    corpus.put(
+        "lot", "PYTEST-deadbeef01",
+        Lot("PYTEST-deadbeef01", "", "", "", 0.0, status="RECEIVED"),
+    )
+    corpus.put(
+        "lot", "LOT-MALFORMED",
+        Lot("LOT-MALFORMED", "", "", "PO-X", 10.0, status="RECEIVED"),
+    )
+
+    response = runtime.invoke({"action": "list_decisions"})
+    assert response["ok"], response
+
+    listed = {row["lot_id"] for row in response["rows"]}
+    assert "LOT-1006" in listed, "the real arrivals must still be listed"
+    # Test litter is filtered by name; a genuinely malformed real lot is
+    # skipped rather than crashing the surface.
+    assert "PYTEST-deadbeef01" not in listed
+    assert "LOT-MALFORMED" not in listed
+
+
 def test_a_decided_lot_is_not_duplicated_by_its_arrival(runtime):
     """The record wins. An arrival row must never mask a real decision."""
     import base64

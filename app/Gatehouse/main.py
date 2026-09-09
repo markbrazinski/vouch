@@ -422,6 +422,22 @@ _STALE_ON_RESET = frozenset({"POLICY_REFUSAL", "STATE_VERSION_CONFLICT"})
 _AWAITING = frozenset({"RECEIVED", "PENDING_QA"})
 
 
+def _is_test_artifact(lot_id: str) -> bool:
+    """Debris written by the live AWS integration tests.
+
+    `test_aws_adapters.py` writes `PYTEST-<hex>` lots straight into the shared
+    dev table and does not remove them, so the state store holds hundreds of
+    them. The decision ledger never surfaced these, which is why they were
+    invisible until Incoming started reading arrivals from the corpus — 184 of
+    them would have buried the six real lots.
+
+    Filtered by NAME rather than by shape: a lot with missing fields is a data
+    problem worth seeing, and silently hiding every malformed row would hide
+    real corruption along with the test litter.
+    """
+    return lot_id.startswith("PYTEST-")
+
+
 def _undecided_arrivals(seen: set[str]) -> list[dict]:
     """Arrivals the corpus knows about that have no DecisionRecord yet.
 
@@ -440,6 +456,13 @@ def _undecided_arrivals(seen: set[str]) -> list[dict]:
     rows: list[dict] = []
     for lot in _CORPUS.all("lot"):
         if lot.lot_id in seen or lot.status not in _AWAITING:
+            continue
+        if _is_test_artifact(lot.lot_id):
+            continue
+        # A lot with no material cannot be joined to one, and asking the store
+        # for an empty key is a hard error rather than a miss. Skipping it here
+        # keeps one malformed row from failing the whole surface.
+        if not lot.material_id:
             continue
         rows.append(
             {
@@ -471,8 +494,14 @@ def _incoming_row(summary: dict) -> dict:
     # alternative — shipping ids and letting the browser resolve them — would
     # mean every client reimplementing the same lookup, and a client that got
     # it wrong would render a name the plant does not use.
-    material = _CORPUS.material(lot.material_id) if lot else None
-    supplier = _CORPUS.get("supplier", lot.supplier_id) if lot else None
+    # Guarded on the id being non-empty, not just on the lot existing. A lot
+    # with a blank material_id asks the store for an empty key, which DynamoDB
+    # rejects outright — one malformed row would take down the whole surface
+    # rather than rendering without a display name.
+    material = _CORPUS.material(lot.material_id) if lot and lot.material_id else None
+    supplier = (
+        _CORPUS.get("supplier", lot.supplier_id) if lot and lot.supplier_id else None
+    )
 
     # The LOT's current status wins over the record's disposition.
     #
