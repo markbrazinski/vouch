@@ -10,6 +10,7 @@ import COA_1001 from './evidence/northern-alloys-coa-lot-1001.pdf?url';
 import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
 import MTR_1003 from './evidence/northern-alloys-mtr-lot-1003.pdf?url';
 import COA_1004 from './evidence/central-forgeworks-coa-lot-1004.pdf?url';
+import COA_1006 from './evidence/western-polymers-coa-lot-1006.pdf?url';
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -86,6 +87,14 @@ const ARRIVALS: ArrivalDocuments = {
     contentType: 'application/pdf',
     documentUrl: COA_1004,
     documentName: 'central-forgeworks-coa-lot-1004.pdf',
+  },
+  'LOT-1006': {
+    lotId: 'LOT-1006',
+    material: 'MAT-RESIN-3',
+    receiptMeta: 'SUP-WEST · site SITE-W1 · 200 kg',
+    contentType: 'application/pdf',
+    documentUrl: COA_1006,
+    documentName: 'western-polymers-coa-lot-1006.pdf',
   },
 };
 

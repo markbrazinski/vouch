@@ -1,6 +1,6 @@
 # Canonical Supplier Evidence — Manifest
 
-The four synthetic supplier documents the Vouch demo runs on. They are the
+The five synthetic supplier documents the Vouch demo runs on. They are the
 **exact bytes** that were qualified: each one was run through the real evidence
 pipeline (real `pypdf` extraction, real deterministic parser, real security
 inspection, real binding) before being tracked here.
@@ -11,12 +11,14 @@ Content is frozen by
 every run, so a re-export that changes a measurement, an identifier or the
 hostile payload fails the build rather than silently reaching a demo.
 
-**All four are wholly synthetic.** No real company, plant, person or
+**All five are wholly synthetic.** No real company, plant, person or
 certificate is represented, and each document says so on its face.
 
-The four form a deliberate increasing-complexity ladder: a normal release, a
-release that cannot be defended, evidence that cannot be safely attached to a
-lot at all, and evidence that attacks the reader.
+The first four form a deliberate increasing-complexity ladder: a normal
+release, a release that cannot be defended, evidence that cannot be safely
+attached to a lot at all, and evidence that attacks the reader. The fifth is a
+different axis entirely — evidence that is entirely legitimate and still cannot
+be acted on autonomously, because it supports two defensible readings.
 
 ---
 
@@ -97,3 +99,40 @@ receipt is what changes the answer.
 The 402 MPa value would fail Revision C anyway. That is deliberate: the security
 control fires **before** the quality question is reached, so the demonstrated
 outcome can never be mistaken for a quality verdict.
+
+## western-polymers-coa-lot-1006.pdf
+
+| | |
+|---|---|
+| Supplier | Western Polymers (`SUP-WEST`), site `SITE-W1` |
+| Lot | `LOT-1006` · `MAT-RESIN-3` · PO-86 · 200 kg |
+| Document type | Certificate of Analysis |
+| Cites | `SPEC-R3` **Revision A** (the governing revision) |
+| Measurements | viscosity 285 cP (ASTM-D2196, 25C) · viscosity 312 cP (ASTM-D445, 25C) |
+| SHA-256 | `3af08aa3c1cea16ad07908d357361f2bc1fd383029d5f3455cde3b6169c5866a` |
+| Intended path | **ordinary extraction** — Textract NOT required |
+| Qualified outcome | 2 claims @ confidence 1.0 → `BOUND` → agents select DIFFERENT evidence → `MATERIAL_DISAGREEMENT` → quality question → human authorizes applicability → **same record, run 2** → agents converge → `RELEASE` → `release_lot` → 200 kg usable → C-419 `AT_RISK → READY` |
+
+Two viscosity results for the same governed characteristic, both real and both
+applicable: one by `ASTM-D2196` at 25C, the method `SPEC-R3:A` names outright,
+and one by `ASTM-D445` at 25C, which `EQV-1` genuinely covers for this
+material, characteristic and condition. Nothing in the corpus ranks a
+direct-method result against an equivalence-covered one, so which of the two
+establishes the requirement is a real authority question with two defensible
+answers.
+
+Both values fall inside the `[200, 400] cP` limit. That is deliberate: the
+dispute is about **applicability only** and can never be mistaken for a quality
+verdict, which keeps the human question narrow — the operator authorizes an
+evidence path, never a disposition.
+
+> **The document must not resolve what it creates.** It names no equivalence
+> record, states no precedence between the two methods, and contains no
+> instruction about what to conclude. `EQV-1` is an internal authoritative
+> object; a supplier document naming it would be asserting its own
+> applicability, which is exactly the question a human is asked to settle.
+> `test_pdf4_states_both_viscosity_paths_and_neither_precedence` pins this.
+
+> Note `EQV-1` is the **same** record that does NOT cover `LOT-1005`'s 40C
+> result. One equivalence, two lots, opposite outcomes, decided entirely by
+> condition scope — the scoping field doing real work in both directions.

@@ -1,4 +1,4 @@
-"""The three canonical supplier PDFs, checked against frozen truth.
+"""The canonical supplier PDFs, checked against frozen truth.
 
 These are the documents the demo runs on, and they are the one class of asset
 a designer can silently change: a re-export that "just fixes the spacing" can
@@ -37,6 +37,7 @@ PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
 PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1003.pdf"
 PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
+PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
 
 #: The exact bytes that were qualified. A changed hash means a new document,
 #: and a new document has not been through the pipeline.
@@ -45,6 +46,7 @@ SHA256 = {
     PDF1: "bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be",
     PDF2: "3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a",
     PDF3: "5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947",
+    PDF4: "3af08aa3c1cea16ad07908d357361f2bc1fd383029d5f3455cde3b6169c5866a",
 }
 
 #: Substrings of the approved hostile payload. Only PDF 3 may contain these.
@@ -104,7 +106,10 @@ def test_the_manifest_records_every_asset_and_hash() -> None:
 
 @pytest.mark.parametrize(
     "path,lot_id",
-    [(PDF0, "LOT-1001"), (PDF1, "LOT-1002"), (PDF2, "LOT-1003"), (PDF3, "LOT-1004")],
+    [
+        (PDF0, "LOT-1001"), (PDF1, "LOT-1002"), (PDF2, "LOT-1003"),
+        (PDF3, "LOT-1004"), (PDF4, "LOT-1006"),
+    ],
 )
 def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus) -> None:
     """Identifiers, quantity and dates must match the authoritative lot."""
@@ -128,6 +133,7 @@ def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus)
         (PDF1, "LOT-1002", "MAT-ALLOY-7", "SUP-EAST", "SITE-E1"),
         (PDF2, "LOT-1003", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
         (PDF3, "LOT-1004", "MAT-ALLOY-7", "SUP-CENTRAL", "SITE-C1"),
+        (PDF4, "LOT-1006", "MAT-RESIN-3", "SUP-WEST", "SITE-W1"),
     ],
 )
 def test_every_document_binds_to_its_lot(
@@ -178,6 +184,53 @@ def test_pdf3_states_its_measurement_and_specification() -> None:
     assert "SUP-CENTRAL" in text and "SITE-C1" in text
 
 
+def test_pdf4_states_both_viscosity_paths_and_neither_precedence() -> None:
+    """The disagreement lives in these two lines, and nowhere else.
+
+    Both results must survive extraction in the parser's own
+    "characteristic: value units (method, condition)" shape, and the document
+    must NOT resolve the dispute it creates: no equivalence id, no instruction
+    about which method wins, nothing that tells an agent what to conclude.
+    """
+    text = _text(PDF4)
+
+    assert "SPEC-R3 Revision A" in text
+    assert "viscosity: 285 cP (ASTM-D2196, 25C)" in text
+    assert "viscosity: 312 cP (ASTM-D445, 25C)" in text
+
+    # The document states the requirement it was written against, and the
+    # supplier's own conclusion. Both are claims, neither is authority.
+    assert "REQ-R3-A-1" in text
+    assert "conform to SPEC-R3 Revision A" in text
+
+    # It must not carry the answer. EQV-1 is an internal authoritative object;
+    # a supplier document naming it would be asserting its own applicability,
+    # which is precisely the question a human is asked to settle.
+    assert "EQV-1" not in text
+    assert "EQV" not in text.upper().replace("EQUIVALENT", "")
+    for forbidden in ("authorize", "release", "quarantine", "override"):
+        assert forbidden not in text.lower(), f"PDF 4 must not say {forbidden!r}"
+
+
+def test_pdf4_yields_exactly_two_applicable_viscosity_claims() -> None:
+    """Ordinary extraction, no Textract, both claims distinct."""
+    claims, confidence = parse_deterministic(_text(PDF4))
+    assert confidence == 1.0
+
+    viscosity = [c for c in claims if c.characteristic == "viscosity"]
+    assert len(viscosity) == 2, "the two evidence paths must both survive"
+
+    by_method = {c.method: c for c in viscosity}
+    assert by_method["ASTM-D2196"].value == 285.0
+    assert by_method["ASTM-D2196"].condition == "25C"
+    assert by_method["ASTM-D445"].value == 312.0
+    assert by_method["ASTM-D445"].condition == "25C"
+    assert all(c.units == "cP" for c in viscosity)
+
+    needed, _ = structure_needed(_text(PDF4), confidence)
+    assert needed is False, "PDF 4 must read on the ordinary path"
+
+
 # ==========================================================================
 # extraction path — each document must still need what it is supposed to need
 # ==========================================================================
@@ -213,7 +266,9 @@ def test_pdf2_defeats_the_ordinary_parser_and_requires_structure() -> None:
 
 
 def test_only_pdf2_needs_structure_recovery() -> None:
-    for path, expected in ((PDF0, False), (PDF1, False), (PDF2, True), (PDF3, False)):
+    for path, expected in (
+        (PDF0, False), (PDF1, False), (PDF2, True), (PDF3, False), (PDF4, False),
+    ):
         text = _text(path)
         _claims, confidence = parse_deterministic(text)
         needed, _ = structure_needed(text, confidence)
@@ -225,7 +280,7 @@ def test_only_pdf2_needs_structure_recovery() -> None:
 # ==========================================================================
 
 
-@pytest.mark.parametrize("path", [PDF0, PDF1, PDF2])
+@pytest.mark.parametrize("path", [PDF0, PDF1, PDF2, PDF4])
 def test_the_benign_documents_carry_no_hostile_payload(path: Path) -> None:
     text = _text(path)
     detected, why = heuristic_detector(text)

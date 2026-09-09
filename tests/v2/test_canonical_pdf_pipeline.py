@@ -30,6 +30,7 @@ PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
 PDF2 = EVIDENCE / "northern-alloys-mtr-lot-1003.pdf"
 PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
+PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
 
 
 @pytest.fixture(scope="module")
@@ -236,3 +237,125 @@ def test_pdf2_is_not_expected_to_release() -> None:
     assert "identityTrusted = false" in manifest
     assert "EVIDENCE_UNBOUND" in manifest
     assert "NOT expected to reach RELEASE" in manifest
+
+
+# ==========================================================================
+# PDF 4 — a legitimate document that still cannot be acted on alone
+# ==========================================================================
+
+
+def test_pdf4_reaches_material_disagreement_from_real_pdf_bytes(runtime):
+    """The document is clean, bound and fully readable — and still stops.
+
+    Nothing is wrong with this evidence. It is exactly the case the authority
+    model exists for: two applicable readings, no rule ranking them, so the
+    autonomous path halts rather than picking one.
+    """
+    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    assert outcome["ok"]
+    assert outcome["failure_category"] == "MATERIAL_DISAGREEMENT"
+    assert outcome["disposition"] == ""
+    assert outcome["quality_decision_required"] is True
+
+    events = _events(outcome)
+    assert "INVESTIGATOR_STARTED" in events
+    assert "VERIFIER_STARTED" in events
+    assert "QUALITY_QUESTION_RAISED" in events
+    assert "QUALITY_DECISION_REQUIRED" in events
+    # The two that must NOT have happened.
+    assert "DISPOSITION_COMPUTED" not in events
+    assert "MUTATION_COMPLETED" not in events
+
+    record = runtime.invoke({
+        "action": "get_decision", "decision_record_id": outcome["decision_record_id"],
+    })["record"]
+    assert record["evidence"]["content_types"] == ["application/pdf"]
+    assert record["evidence"]["binding_statuses"] == ["BOUND"]
+    assert record["security"]["prompt_attack_detected"] is False
+    # Two claims, ordinary parser, real PDF.
+    assert len(record["extraction"]["per_claim"]) == 2
+
+    # `basis` is empty, and that is the point: the basis checks run AFTER
+    # reconciliation, so halting on the disagreement means the deterministic
+    # stages genuinely never executed. A populated basis here would mean the
+    # pipeline had gone further than it should have.
+    assert record["basis"]["spec_id"] == ""
+    assert record["disposition"]["disposition"] == ""
+    assert record["mutation"]["action"] == ""
+
+
+def test_pdf4_raises_one_answerable_question_about_the_equivalence(runtime):
+    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    record = runtime.invoke({
+        "action": "get_decision", "decision_record_id": outcome["decision_record_id"],
+    })["record"]
+    question = record["quality_authority"]["question"]
+
+    assert question["status"] == "OPEN"
+    assert question["question_type"] == "EVIDENCE_APPLICABILITY"
+    assert question["characteristic"] == "viscosity"
+    # The equivalence is resolved from the CORPUS, never read off the document.
+    assert question["equivalence_id"] == "EQV-1"
+    assert question["method_from"] == "ASTM-D445"
+    assert question["method_to"] == "ASTM-D2196"
+    assert question["condition"] == "25C"
+
+    values = {o["value"] for o in question["options"]}
+    assert values == {285.0, 312.0}
+    assert {o["selected_by"] for o in question["options"]} == {
+        "INVESTIGATOR", "VERIFIER"
+    }
+
+
+def test_pdf4_releases_and_recovers_c419_once_quality_answers(runtime):
+    """The whole vertical, from real PDF bytes to a factory consequence."""
+    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    record_id = outcome["decision_record_id"]
+
+    resumed = runtime.invoke({
+        "action": "submit_quality_authority",
+        "decision_record_id": record_id,
+        "decision": "AUTHORIZE_APPLICABILITY",
+        "accountable_actor": "QA-LEAD",
+        "authority_source": "Plant Quality Authority",
+    })
+
+    assert resumed["ok"]
+    assert resumed["decision_record_id"] == record_id, "the SAME record continues"
+    assert resumed["disposition"] == "RELEASE"
+
+    events = _events(resumed)
+    assert "QUALITY_AUTHORITY_RECORDED" in events
+    assert "DECISION_RESUMED" in events
+    # Only NOW may the deterministic engine speak.
+    assert "DISPOSITION_COMPUTED" in events
+    assert "MUTATION_COMPLETED" in events
+
+    record = runtime.invoke({
+        "action": "get_decision", "decision_record_id": record_id,
+    })["record"]
+    assert record["run_count"] == 2
+    assert record["reconciliation"]["outcome"] in ("MATCH", "NON_MATERIAL_DIFFERENCE")
+    assert record["mutation"]["action"] == "release_lot"
+    assert record["mutation"]["inventory_delta"] == 200.0
+
+    # Run 1 survives the continuation — the disagreement is why a human was
+    # asked, and it must stay readable afterwards.
+    archived = [r for r in record["archived_runs"] if r["run_number"] == 1]
+    assert len(archived) == 1
+    assert archived[0]["failure_category"] == "MATERIAL_DISAGREEMENT"
+    assert archived[0]["disposition"]["disposition"] == ""
+
+    # The factory consequence, on the run that caused it.
+    changes = (resumed.get("consequences") or {}).get("readiness_changes") or []
+    assert [(c["order_id"], c["from"], c["to"]) for c in changes] == [
+        ("C-419", "AT_RISK", "READY")
+    ]
+
+
+def test_pdf4_never_needs_a_structured_extractor(runtime):
+    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    extracted = next(
+        e for e in outcome["events"] if e["event"] == "EVIDENCE_EXTRACTED"
+    )
+    assert extracted.get("structured_extraction") is False
