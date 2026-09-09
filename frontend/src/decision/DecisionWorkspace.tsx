@@ -29,6 +29,8 @@ import {
   ConsequenceStage,
   DispositionStage,
   EvidenceStage,
+  QualityAuthorityPanel,
+  QualityAuthorityStage,
   ReconciliationStage,
   StageCard,
 } from './Stages';
@@ -191,7 +193,18 @@ function FailureNotice({ vm }: { vm: NonNullable<DecisionWorkspaceVM['failure']>
   );
 }
 
-export function DecisionWorkspace({ vm }: { vm: DecisionWorkspaceVM }) {
+export function DecisionWorkspace({
+  vm,
+  onQualityDecision,
+}: {
+  vm: DecisionWorkspaceVM;
+  /**
+   * Settle the open applicability question. Absent in read-only surfaces —
+   * the panel then renders the question and the two positions without
+   * offering controls, which is the honest state for a viewer who cannot act.
+   */
+  onQualityDecision?: (decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD') => void;
+}) {
   const [viewing, setViewing] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -341,6 +354,18 @@ export function DecisionWorkspace({ vm }: { vm: DecisionWorkspaceVM }) {
               )}
             </>
           )}
+
+          {/* One or the other, never both. The projection returns a panel only
+              while the question is unanswered and a record only once it is, so
+              the controls cannot outlive the decision they made. */}
+          {vm.qualityAuthorityPanel && (
+            <QualityAuthorityPanel
+              vm={vm.qualityAuthorityPanel}
+              onDecide={onQualityDecision}
+              submitting={vm.running}
+            />
+          )}
+          {vm.qualityAuthority && <QualityAuthorityStage vm={vm.qualityAuthority} />}
 
           {vm.fullBleed ? (
             <div style={{ marginTop: 14 }}>

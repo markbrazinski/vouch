@@ -594,6 +594,58 @@ export function useDecisionRun(initialId?: string) {
   );
 
   /**
+   * Settle a disputed applicability question, and follow the run it starts.
+   *
+   * The same record and the same polling path as `resume`. AUTHORIZE begins a
+   * full run 2 — both agents, basis checks, disposition, mutation — so it is
+   * started rather than awaited, exactly like the first run.
+   *
+   * The human is establishing a scoped authoritative FACT here, not choosing
+   * an outcome: nothing in this call names a disposition, and the release (or
+   * not) that follows is computed by the same deterministic engine from the
+   * same frozen claims.
+   */
+  const decide = useCallback(
+    async (input: {
+      decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD';
+      accountableActor: string;
+      authoritySource: string;
+      questionId?: string;
+      claimSetHash?: string;
+    }) => {
+      if (liveRef.current) return;
+      liveRef.current = true;
+      const recordId = decisionRecordId;
+
+      setState((prev) => ({ ...prev, running: true, failure: null }));
+      sinceCheckRef.current = 0;
+
+      try {
+        const started = (await api.submitQualityAuthority({
+          decisionRecordId: recordId,
+          decision: input.decision,
+          accountableActor: input.accountableActor,
+          authoritySource: input.authoritySource,
+          questionId: input.questionId,
+          claimSetHash: input.claimSetHash,
+        })) as { ok: boolean; error?: string };
+        if (!started.ok) {
+          setState((prev) => ({ ...prev, running: false, failure: classifyFailure(started) }));
+          liveRef.current = false;
+          return;
+        }
+      } catch (error) {
+        setState((prev) => ({ ...prev, running: false, failure: classifyFailure(error) }));
+        liveRef.current = false;
+        return;
+      }
+
+      watch(recordId);
+    },
+    [decisionRecordId, watch],
+  );
+
+  /**
    * Attach to a decision this client did not start, and follow it to its end.
    *
    * This is what makes the workspace addressable by URL. `start` submits work;
@@ -701,5 +753,14 @@ export function useDecisionRun(initialId?: string) {
     }
   }, []);
 
-  return { decisionRecordId, ...state, start, resume, observe, load, setDecisionRecordId: setId };
+  return {
+    decisionRecordId,
+    ...state,
+    start,
+    resume,
+    decide,
+    observe,
+    load,
+    setDecisionRecordId: setId,
+  };
 }

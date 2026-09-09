@@ -116,6 +116,8 @@ const ACTOR_BY_EVENT: Record<string, ActivityEventVM['actorType']> = {
   RECOVERY_EVALUATED: 'operations',
   RECOVERY_EXECUTED: 'operations',
   QUALITY_DECISION_REQUIRED: 'system',
+  QUALITY_QUESTION_RAISED: 'system',
+  QUALITY_AUTHORITY_RECORDED: 'human',
   HUMAN_EVIDENCE_RECEIVED: 'human',
   DECISION_RESUMED: 'system',
 };
@@ -245,6 +247,23 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
       return { short: 'Recovery executed', summary: str(e.order_id) };
     case 'QUALITY_DECISION_REQUIRED':
       return { short: 'Quality decision required', summary: str(e.reason) };
+    case 'QUALITY_QUESTION_RAISED':
+      return {
+        short: 'Applicability question raised',
+        summary: [str(e.equivalence_id), str(e.characteristic)].filter(Boolean).join(' · '),
+      };
+    case 'QUALITY_AUTHORITY_RECORDED':
+      return {
+        // The rail row the gate asks for: "QUALITY · Applicability authorized",
+        // then "EQV-1 · LOT-1006 · QA-LEAD" underneath it.
+        short:
+          str(e.decision) === 'AUTHORIZE_APPLICABILITY'
+            ? 'Applicability authorized'
+            : 'Kept held',
+        summary: [str(e.equivalence_id), str(e.accountable_actor)]
+          .filter(Boolean)
+          .join(' · '),
+      };
     case 'HUMAN_EVIDENCE_RECEIVED':
       return { short: 'Human evidence received', summary: str(e.authority_source) };
     case 'DECISION_RESUMED':
@@ -263,8 +282,11 @@ function statusFor(e: LifecycleEventDTO): ActivityEventVM['resultStatus'] {
     case 'DISPOSITION_COMPUTED':
       return str(e.disposition) === 'RELEASE' ? 'good' : 'caution';
     case 'QUALITY_DECISION_REQUIRED':
+    case 'QUALITY_QUESTION_RAISED':
     case 'BRIEF_VALIDATION_FAILED':
       return 'caution';
+    case 'QUALITY_AUTHORITY_RECORDED':
+      return str(e.decision) === 'AUTHORIZE_APPLICABILITY' ? 'good' : 'caution';
     case 'MUTATION_COMPLETED':
     case 'RECOVERY_EXECUTED':
       return 'good';

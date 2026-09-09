@@ -139,7 +139,21 @@ export function DecisionRoute({ entry }: { entry: HeroAEntry }) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <BackBar label="Back to Incoming" to="/incoming" />
-      <DecisionWorkspace vm={vm} />
+      <DecisionWorkspace
+        vm={vm}
+        onQualityDecision={(decision) =>
+          run.decide({
+            decision,
+            // Who is acting, and under what authority. Hard-coded here only
+            // because this build has no operator identity to read from; the
+            // backend requires both and refuses an empty either way, so the
+            // moment sign-in exists these become the signed-in operator.
+            accountableActor: 'QA-LEAD',
+            authoritySource: 'Plant Quality Authority',
+            questionId: vm.qualityAuthorityPanel?.questionId,
+          })
+        }
+      />
     </div>
   );
 }

@@ -200,7 +200,14 @@ def _validated(action: str, body: dict) -> dict:
 
 #: Actions whose runtime work outlives an API Gateway request. Started in the
 #: background; the browser polls the decision record it named.
-ASYNC_ACTIONS = frozenset({"evaluate_lot", "supply_evidence"})
+# `submit_quality_authority` belongs here for the same reason `supply_evidence`
+# does: authorizing applicability starts a full run 2 — both agents, basis
+# checks, disposition, mutation — so it outlives an API Gateway request just as
+# the first run did. KEEP_HELD is quick, but the action is one surface and
+# splitting it by outcome would make the browser guess which it was getting.
+ASYNC_ACTIONS = frozenset(
+    {"evaluate_lot", "supply_evidence", "submit_quality_authority"}
+)
 
 #: Marks an invocation that IS the background worker, so it runs the action
 #: instead of dispatching it again. Internal only — it is never read from an

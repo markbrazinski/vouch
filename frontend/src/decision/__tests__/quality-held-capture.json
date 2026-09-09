@@ -1,0 +1,87 @@
+{
+  "record": {
+    "record_id": "DR-54ea43275114",
+    "lot_id": "LOT-1006",
+    "run_count": 1,
+    "disposition": "",
+    "reconciliation": "MATERIAL_DISAGREEMENT",
+    "quality_authority": {
+      "question": {
+        "question_id": "QQ-DR-54ea43275114-viscosity",
+        "question_type": "EVIDENCE_APPLICABILITY",
+        "characteristic": "viscosity",
+        "options": [
+          {
+            "claim_id": "CLM-0a3dd64af5a9-00",
+            "value": 285.0,
+            "units": "cP",
+            "method": "ASTM-D2196",
+            "condition": "25C",
+            "equivalence_id": "",
+            "selected_by": "INVESTIGATOR"
+          },
+          {
+            "claim_id": "CLM-0a3dd64af5a9-01",
+            "value": 312.0,
+            "units": "cP",
+            "method": "ASTM-D445",
+            "condition": "25C",
+            "equivalence_id": "EQV-1",
+            "selected_by": "VERIFIER"
+          }
+        ],
+        "investigator_evidence_ref": "CLM-0a3dd64af5a9-00",
+        "verifier_evidence_ref": "CLM-0a3dd64af5a9-01",
+        "equivalence_id": "EQV-1",
+        "method_from": "ASTM-D445",
+        "method_to": "ASTM-D2196",
+        "condition": "25C",
+        "status": "HELD"
+      },
+      "decisions": [
+        {
+          "authority_decision_id": "HAD-0bab94704046",
+          "decision_record_id": "DR-54ea43275114",
+          "lot_id": "LOT-1006",
+          "source_run": 1,
+          "evidence_snapshot_id": "SNAP-88380fa74960",
+          "claim_set_hash": "c7ec8db854d020de4d8bb06b722425343605cdcafcff2fbd604a1056186762b6",
+          "lot_state_version": 1,
+          "question_id": "QQ-DR-54ea43275114-viscosity",
+          "question_type": "EVIDENCE_APPLICABILITY",
+          "characteristic": "viscosity",
+          "authorized_evidence_refs": [],
+          "disputed_evidence_refs": [
+            "CLM-0a3dd64af5a9-00",
+            "CLM-0a3dd64af5a9-01"
+          ],
+          "equivalence_id": "EQV-1",
+          "method_from": "ASTM-D445",
+          "method_to": "ASTM-D2196",
+          "condition": "25C",
+          "decision": "KEEP_HELD",
+          "accountable_actor": "QA-LEAD",
+          "authority_source": "Plant Quality Authority",
+          "created_at": "2026-09-09T18:26:04.808971+00:00"
+        }
+      ]
+    }
+  },
+  "events": [
+    {
+      "event": "QUALITY_AUTHORITY_RECORDED",
+      "decision_record_id": "DR-54ea43275114",
+      "at": "2026-09-09T18:26:04.808974+00:00",
+      "authority_decision_id": "HAD-0bab94704046",
+      "question_id": "QQ-DR-54ea43275114-viscosity",
+      "decision": "KEEP_HELD",
+      "accountable_actor": "QA-LEAD",
+      "authority_source": "Plant Quality Authority",
+      "characteristic": "viscosity",
+      "equivalence_id": "EQV-1",
+      "authorized_evidence_refs": [],
+      "evidence_snapshot_id": "SNAP-88380fa74960",
+      "claim_set_hash": "c7ec8db854d020de4d8bb06b722425343605cdcafcff2fbd604a1056186762b6"
+    }
+  ]
+}

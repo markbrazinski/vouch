@@ -126,6 +126,34 @@ export const supplyEvidence = (input: {
     }),
   });
 
+/**
+ * Settle a disputed applicability question.
+ *
+ * Establishes a scoped authoritative FACT, never a disposition: there is no
+ * field here that releases a lot, and the backend refuses any decision value
+ * other than the two below. What the authorized evidence then means is still
+ * computed deterministically after both agents re-derive their briefs.
+ */
+export const submitQualityAuthority = (input: {
+  decisionRecordId: string;
+  decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD';
+  accountableActor: string;
+  authoritySource: string;
+  claimSetHash?: string;
+  questionId?: string;
+}) =>
+  request('/quality-authority', {
+    method: 'POST',
+    body: JSON.stringify({
+      decision_record_id: input.decisionRecordId,
+      decision: input.decision,
+      accountable_actor: input.accountableActor,
+      authority_source: input.authoritySource,
+      claim_set_hash: input.claimSetHash,
+      question_id: input.questionId,
+    }),
+  });
+
 export const listDecisions = (limit?: number) => request(`/decisions${query({ limit })}`);
 
 export const getDecision = (decisionRecordId: string) =>
