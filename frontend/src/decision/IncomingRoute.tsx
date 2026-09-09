@@ -29,7 +29,12 @@ export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
   const navigate = useNavigate();
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto' }}>
+    // The same scroll wrapper Records uses. The extra `display: flex` this
+    // once had made the page div a flex ITEM, so it shrank to its content
+    // width (934px against Records' 1376px) and sat centred between two large
+    // gutters. Incoming and Records render the same table; they now measure
+    // the same too.
+    <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <IncomingSurface
         onEvaluate={(lotId) => {
           const recordId = newDecisionRecordId();

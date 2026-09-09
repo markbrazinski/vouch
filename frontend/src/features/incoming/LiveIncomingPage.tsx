@@ -24,7 +24,7 @@ import { SurfaceState } from '../../components/SurfaceState';
  * two-line wraps. Material and supplier take the extra room because they are
  * the columns that actually carry long real-world values.
  */
-const GRID = '132px 1.4fr 1.5fr 118px 168px 104px';
+const GRID = '150px 1.4fr 1.5fr 130px 190px 116px';
 
 function HeaderRow() {
   return (
@@ -33,9 +33,9 @@ function HeaderRow() {
         display: 'grid',
         gridTemplateColumns: GRID,
         gap: 14,
-        padding: '11px 18px',
+        padding: '13px 20px',
         borderBottom: `1px solid ${T.hairline}`,
-        font: "600 9.5px 'IBM Plex Mono'",
+        font: "600 11px 'IBM Plex Mono'",
         letterSpacing: '.09em',
         color: T.faint,
       }}
@@ -73,30 +73,30 @@ function Row({
         display: 'grid',
         gridTemplateColumns: GRID,
         gap: 16,
-        padding: '16px 20px',
+        padding: '18px 20px',
         borderBottom: `1px solid rgba(0,0,0,.06)`,
         alignItems: 'center',
         background: row.attentionRequired ? '#FCF7F2' : 'transparent',
       }}
     >
-      <div style={{ font: "700 12.5px 'IBM Plex Mono'", color: T.ink }}>{row.lotId}</div>
+      <div style={{ font: "700 14.5px 'IBM Plex Mono'", color: T.ink }}>{row.lotId}</div>
       <div>
-        <div style={{ font: "500 12.5px 'Public Sans'", color: T.ink70 }}>{row.materialName}</div>
-        <div style={{ font: "400 10px 'IBM Plex Mono'", color: T.faint }}>{row.materialId}</div>
+        <div style={{ font: "500 14.5px 'Public Sans'", color: T.ink70 }}>{row.materialName}</div>
+        <div style={{ font: "400 11.5px 'IBM Plex Mono'", color: T.faint }}>{row.materialId}</div>
       </div>
       <div>
-        <div style={{ font: "500 12.5px 'Public Sans'", color: T.ink70 }}>{row.supplierName}</div>
+        <div style={{ font: "500 14.5px 'Public Sans'", color: T.ink70 }}>{row.supplierName}</div>
         {row.supplierSite && (
-          <div style={{ font: "400 10px 'IBM Plex Mono'", color: T.faint }}>
+          <div style={{ font: "400 11.5px 'IBM Plex Mono'", color: T.faint }}>
             site {row.supplierSite}
           </div>
         )}
       </div>
-      <div style={{ textAlign: 'right', font: "400 11.5px 'IBM Plex Mono'", color: T.muted }}>
+      <div style={{ textAlign: 'right', font: "400 13.5px 'IBM Plex Mono'", color: T.muted }}>
         {row.quantity}
       </div>
       <div>
-        <StatusPill tone={row.tone} label={row.stateLabel} size="sm" />
+        <StatusPill tone={row.tone} label={row.stateLabel} />
       </div>
       <div style={{ textAlign: 'right' }}>
         {/* On Incoming this starts a decision, because the row is a lot that
@@ -108,11 +108,11 @@ function Row({
             data-evaluate-lot={row.lotId}
             onClick={() => onEvaluate!(row.lotId)}
             style={{
-              padding: '5px 10px',
+              padding: '7px 13px',
               background: 'transparent',
               border: '1px solid rgba(0,0,0,.18)',
               borderRadius: 7,
-              font: "600 11px 'Public Sans'",
+              font: "600 12.5px 'Public Sans'",
               color: T.ink70,
               cursor: 'pointer',
             }}
@@ -124,11 +124,11 @@ function Row({
             <button
               onClick={() => onOpen(row.decisionRecordId)}
               style={{
-                padding: '5px 10px',
+                padding: '7px 13px',
                 background: 'transparent',
                 border: '1px solid rgba(0,0,0,.18)',
                 borderRadius: 7,
-                font: "600 11px 'Public Sans'",
+                font: "600 12.5px 'Public Sans'",
                 color: T.ink70,
                 cursor: 'pointer',
               }}
@@ -155,7 +155,7 @@ function Row({
  * ledger already carries and the table never surfaced: POLICY_REFUSAL,
  * MATERIAL_DISAGREEMENT and SECURITY_QUARANTINE are different kinds of "no".
  */
-const LEDGER_GRID = '150px 132px 1.1fr 1.25fr 150px 96px';
+const LEDGER_GRID = '168px 150px 1.1fr 1.25fr 172px 108px';
 
 function LedgerHeaderRow() {
   return (
@@ -164,9 +164,9 @@ function LedgerHeaderRow() {
         display: 'grid',
         gridTemplateColumns: LEDGER_GRID,
         gap: 14,
-        padding: '11px 18px',
+        padding: '13px 20px',
         borderBottom: `1px solid ${T.hairline}`,
-        font: "600 9.5px 'IBM Plex Mono'",
+        font: "600 11px 'IBM Plex Mono'",
         letterSpacing: '.09em',
         color: T.faint,
       }}
@@ -203,44 +203,44 @@ function LedgerRow({
         display: 'grid',
         gridTemplateColumns: LEDGER_GRID,
         gap: 16,
-        padding: '16px 20px',
+        padding: '18px 20px',
         borderBottom: `1px solid rgba(0,0,0,.06)`,
         alignItems: 'center',
       }}
     >
-      <div style={{ font: "700 12px 'IBM Plex Mono'", color: T.ink }}>{row.decisionRecordId}</div>
-      <div style={{ font: "400 10.5px 'IBM Plex Mono'", color: T.muted }}>
+      <div style={{ font: "700 14px 'IBM Plex Mono'", color: T.ink }}>{row.decisionRecordId}</div>
+      <div style={{ font: "400 12.5px 'IBM Plex Mono'", color: T.muted }}>
         {decidedAtLabel(row.decidedAt)}
       </div>
       <div>
-        <div style={{ font: "600 12px 'Public Sans'", color: T.ink70 }}>
+        <div style={{ font: "600 14px 'Public Sans'", color: T.ink70 }}>
           {row.disposition || '—'}
         </div>
         {row.failureCategory && (
-          <div style={{ font: "400 9.5px 'IBM Plex Mono'", color: '#9A5A2A' }}>
+          <div style={{ font: "400 11px 'IBM Plex Mono'", color: '#9A5A2A' }}>
             {row.failureCategory}
           </div>
         )}
       </div>
       <div>
-        <div style={{ font: "500 12px 'IBM Plex Mono'", color: T.ink70 }}>{row.lotId}</div>
-        <div style={{ font: "400 10px 'Public Sans'", color: T.faint }}>
+        <div style={{ font: "500 14px 'IBM Plex Mono'", color: T.ink70 }}>{row.lotId}</div>
+        <div style={{ font: "400 11.5px 'Public Sans'", color: T.faint }}>
           {row.supplierName} · {row.materialId}
         </div>
       </div>
       <div>
-        <StatusPill tone={row.tone} label={row.stateLabel} size="sm" />
+        <StatusPill tone={row.tone} label={row.stateLabel} />
       </div>
       <div style={{ textAlign: 'right' }}>
         {onOpen && (
           <button
             onClick={() => onOpen(row.decisionRecordId)}
             style={{
-              padding: '5px 10px',
+              padding: '7px 13px',
               background: 'transparent',
               border: '1px solid rgba(0,0,0,.18)',
               borderRadius: 7,
-              font: "600 11px 'Public Sans'",
+              font: "600 12.5px 'Public Sans'",
               color: T.ink70,
               cursor: 'pointer',
             }}
@@ -264,20 +264,20 @@ export function LedgerPage({
   const rows = [...vm.rows].sort((a, b) => b.decidedAt.localeCompare(a.decidedAt));
   return (
     <div data-testid="records-page" style={{ padding: '20px 34px 60px', maxWidth: 1560, margin: '0 auto' }}>
-      <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
+      <div style={{ font: "400 12.5px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
         RECORDS
       </div>
       <h2
         style={{
           margin: '5px 0 0',
-          font: "800 24px 'Public Sans'",
+          font: "800 29px 'Public Sans'",
           letterSpacing: '-.02em',
           color: T.ink,
         }}
       >
         Decision audit trail
       </h2>
-      <div style={{ font: "400 12px 'Public Sans'", color: T.muted, marginTop: 6 }}>
+      <div style={{ font: "400 14px 'Public Sans'", color: T.muted, marginTop: 7 }}>
         {rows.length} {rows.length === 1 ? 'decision record' : 'decision records'} · newest first
       </div>
 
@@ -319,20 +319,20 @@ export function LiveIncomingPage({
   const attention = vm.needsAttention.length;
   return (
     <div data-testid="incoming-page" style={{ padding: '20px 34px 60px', maxWidth: 1560, margin: '0 auto' }}>
-      <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
+      <div style={{ font: "400 12.5px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
         {eyebrow}
       </div>
       <h2
         style={{
           margin: '5px 0 0',
-          font: "800 24px 'Public Sans'",
+          font: "800 29px 'Public Sans'",
           letterSpacing: '-.02em',
           color: T.ink,
         }}
       >
         {heading}
       </h2>
-      <div style={{ font: "400 12px 'Public Sans'", color: T.muted, marginTop: 6 }}>
+      <div style={{ font: "400 14px 'Public Sans'", color: T.muted, marginTop: 7 }}>
         {/* Counters with authoritative meaning only: what was returned, and how
             many the SERVER flagged for a person. No "in progress" — invocation
             is synchronous, so nothing is ever persisted mid-flight. */}
@@ -377,7 +377,7 @@ export function LiveIncomingPage({
       )}
 
       {vm.hasMore && (
-        <div style={{ font: "400 11px 'IBM Plex Mono'", color: T.faint, marginTop: 12 }}>
+        <div style={{ font: "400 12.5px 'IBM Plex Mono'", color: T.faint, marginTop: 12 }}>
           More decisions exist beyond this page.
         </div>
       )}
@@ -397,7 +397,7 @@ export function LiveIncomingPage({
 export function IncomingUnavailable({ detail }: { detail?: string }) {
   return (
     <div data-testid="incoming-blocked" style={{ padding: '20px 34px', maxWidth: 1560, margin: '0 auto' }}>
-      <div style={{ font: "400 11px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
+      <div style={{ font: "400 12.5px 'IBM Plex Mono'", letterSpacing: '.12em', color: T.faint }}>
         INCOMING
       </div>
       <SurfaceState
