@@ -284,3 +284,75 @@ def test_causal_history_sorts_when_the_store_returns_mixed_number_types():
     # Neither a missing nor an unparseable sequence raises.
     assert key({}) == 0.0
     assert key({"ledger_sequence": "not-a-number"}) == 0.0
+
+
+# ==========================================================================
+# Incoming after a reset
+# ==========================================================================
+
+
+def _row_state(lot_status: str, disposition: str = "", failure: str = "") -> str:
+    """`_incoming_row`'s state derivation, against a real runtime import."""
+    import importlib.util
+    import os
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    os.environ["VOUCH_MODE"] = "local"
+    spec = importlib.util.spec_from_file_location(
+        "vouch_incoming_row_entrypoint", root / "app" / "Gatehouse" / "main.py"
+    )
+    runtime = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runtime)
+
+    lot = runtime._CORPUS.lot("LOT-1001")
+    runtime._CORPUS.put(
+        "lot", "LOT-1001", type(lot)(**{**lot.__dict__, "status": lot_status})
+    )
+    row = runtime._incoming_row(
+        {
+            "record_id": "DR-x",
+            "lot_id": "LOT-1001",
+            "disposition": disposition,
+            "failure_category": failure,
+            "saved_at": "2026-09-09T00:00:00+00:00",
+        }
+    )
+    return row["row_state"]
+
+
+def test_a_reset_lot_is_awaiting_disposition_again():
+    """The demo reset has to LOOK like a reset.
+
+    Every lot returns to RECEIVED, so Incoming must show all of them awaiting
+    disposition whatever a previous run concluded about them.
+    """
+    assert _row_state("RECEIVED", disposition="RELEASE") == "EVIDENCE_RECEIVED"
+    assert _row_state("RECEIVED", disposition="QUARANTINE") == "EVIDENCE_RECEIVED"
+
+
+def test_a_stale_policy_refusal_does_not_survive_a_reset():
+    """`POLICY_REFUSAL` describes a past ATTEMPT, not the evidence.
+
+    The authority gate refusing to re-release an already-released lot is
+    correct, and it is recorded. But once the lot is back at RECEIVED that
+    refusal describes a world that no longer exists — it left a freshly
+    reseeded LOT-1001 asking for a quality decision nobody owed it, which is
+    exactly the row an operator would open first.
+    """
+    assert _row_state("RECEIVED", disposition="RELEASE", failure="POLICY_REFUSAL") == (
+        "EVIDENCE_RECEIVED"
+    )
+
+
+def test_an_evidence_level_failure_still_asks_for_a_human():
+    """The narrowing must not swallow failures that are still true.
+
+    A security quarantine is a fact about the ARTIFACT and survives any reset of
+    the lot, so it must keep its row state — otherwise this fix would hide the
+    hostile document.
+    """
+    assert _row_state("RECEIVED", failure="SECURITY_QUARANTINE") == "SECURITY_HOLD"
+    assert _row_state("RECEIVED", failure="EVIDENCE_UNBOUND") == (
+        "QUALITY_DECISION_REQUIRED"
+    )

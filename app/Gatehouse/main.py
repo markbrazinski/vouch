@@ -392,6 +392,17 @@ def _decision_summaries(limit: int, cursor: dict | None) -> tuple[list[dict], di
     return rows[:limit], None
 
 
+#: Failures that describe a past ATTEMPT rather than the evidence itself.
+#:
+#: These are refusals the authority model produced against state that a reseed
+#: has since rolled back — re-releasing an already-released lot, acting on a
+#: stale version. They are true of the run that recorded them and say nothing
+#: about whether the lot now needs a human, so Incoming ignores them once the
+#: lot is undecided again. An evidence-level failure (a security quarantine, an
+#: unreadable artifact) is NOT in here: those remain true across a reset.
+_STALE_ON_RESET = frozenset({"POLICY_REFUSAL", "STATE_VERSION_CONFLICT"})
+
+
 def _incoming_row(summary: dict) -> dict:
     """One Incoming row, from the indexed columns plus the lot it names.
 
@@ -431,9 +442,19 @@ def _incoming_row(summary: dict) -> dict:
     elif lot_status == "PENDING_QA":
         row_state = "QUALITY_DECISION_REQUIRED"
     elif lot_status == "RECEIVED":
-        # Undecided now, whatever a past record concluded. A failure category
-        # still means this run needs a human.
-        row_state = "QUALITY_DECISION_REQUIRED" if failure else "EVIDENCE_RECEIVED"
+        # Undecided now, whatever a past record concluded.
+        #
+        # A failure still means a human is needed — but only one that is ABOUT
+        # THE EVIDENCE. `POLICY_REFUSAL` is about a past ATTEMPT: the authority
+        # gate refusing to release a lot that was already released. Once the lot
+        # is back at RECEIVED that refusal describes a world that no longer
+        # exists, and letting it colour the row left a freshly reseeded lot
+        # asking for a quality decision nobody owes it.
+        row_state = (
+            "QUALITY_DECISION_REQUIRED"
+            if failure and failure not in _STALE_ON_RESET
+            else "EVIDENCE_RECEIVED"
+        )
     elif disposition == "RELEASE":
         row_state = "RELEASED"
     elif disposition == "QUARANTINE":
