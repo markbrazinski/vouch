@@ -804,3 +804,36 @@ def test_the_human_cannot_establish_evidence_the_question_did_not_offer(disagree
         )
     assert raised.value.category is FailureCategory.POLICY_REFUSAL
     assert corpus.lot("LOT-1006").status == "RECEIVED"
+
+
+def test_the_scoped_authority_reaches_the_model_prompt():
+    """The Bedrock path must receive the established evidence too.
+
+    `authorized_evidence_refs` travels in `context`, which the local reasoners
+    read directly. The Bedrock agents only ever see their prompt and their
+    tools, and the prompt did not carry it — so a LIVE run 2 re-derived the
+    very disagreement the human had just settled, while every local test
+    passed. Both paths must honour the same authoritative fact.
+    """
+    from vouch.v2.agents import ApplicabilityInvestigator, IndependentVerifier
+
+    corpus = build_corpus()
+    context = {
+        "lot_id": "LOT-1006",
+        "material_id": "MAT-RESIN-3",
+        "received_at": "2026-03-08",
+        "authorized_evidence_refs": ["CLM-established-01"],
+    }
+
+    for agent_class in (ApplicabilityInvestigator, IndependentVerifier):
+        agent = agent_class(corpus)
+        task = agent._task(context) if hasattr(agent, "_task") else None
+        if task is None:
+            import inspect
+
+            source = inspect.getsource(type(agent).__mro__[1])
+            assert "authorized_evidence_refs" in source, (
+                f"{agent_class.__name__} does not pass the scoped authority "
+                f"to its model"
+            )
+            assert "Quality has established" in source

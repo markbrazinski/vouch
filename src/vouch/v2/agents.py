@@ -399,6 +399,40 @@ class BriefProducer:
             f"po_reference: {context.get('po_reference', '')}\n"
         )
 
+        # A scoped human authority, when one exists for this decision.
+        #
+        # This is an AUTHORITATIVE FACT, not a hint and not the other agent's
+        # opinion: an accountable human established which measurement controls
+        # this decision, and both agents receive it identically. It is what
+        # makes a resumed run converge without either agent seeing the other's
+        # brief.
+        #
+        # It reaches the model here because the model only ever sees this
+        # prompt and its tools. The local reasoners read the same value out of
+        # `context`, so both paths honour the same fact — but a Bedrock run was
+        # silently ignoring it, and run 2 re-derived the very disagreement the
+        # human had just settled.
+        #
+        # It narrows SELECTION, never evidence: both measurements remain in the
+        # frozen snapshot, and what the established one MEANS is still computed
+        # deterministically after this brief is returned.
+        authorized = list(context.get("authorized_evidence_refs") or ())
+        if authorized:
+            listed = ", ".join(authorized)
+            task += (
+                "\n\nQuality has established the controlling evidence for this "
+                f"decision: {listed}.\n"
+                "This is an authoritative internal decision by an accountable "
+                "person, not a supplier claim. Where a requirement is covered "
+                "by evidence in that list, cite THAT claim in its coverage row "
+                "and do not report a competing claim for the same requirement. "
+                "Every other judgment — which revision governs, whether an "
+                "equivalence genuinely covers the method, whether anything is "
+                "missing — remains yours to derive, and whether the established "
+                "value meets its limit is computed separately and is not yours "
+                "to state.\n"
+            )
+
         # A retry after contract validation. The errors state which specific
         # claim the corpus does not support; they never state what the answer
         # should be, so the agent re-derives it rather than being told.
