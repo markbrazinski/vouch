@@ -545,10 +545,17 @@ class EvidenceApplicabilityBrief(BaseModel):
     coverage: list[CoverageItem] = Field(
         default_factory=list,
         description=(
-            "One row per required test, saying whether evidence in the frozen "
-            "snapshot applies to it. Every required test needs a row (its "
-            "evidence_ref may be null) or an entry in `missing`; silence about "
-            "a requirement is not an answer."
+            "EXACTLY ONE row per required test, saying whether evidence in "
+            "the frozen snapshot applies to it. Every required test needs a "
+            "row (its evidence_ref may be null) or an entry in `missing`; "
+            "silence about a requirement is not an answer, and neither is "
+            "answering it twice. Where SEVERAL claims could apply to the same "
+            "requirement — a result by the required method and another by a "
+            "method an equivalence covers — choose the one you are relying on "
+            "and give that requirement a single row. Do not list both. The "
+            "claims you do not cite remain in the snapshot; choosing between "
+            "them is the judgment you are being asked to make, and a brief "
+            "with two rows for one requirement is rejected."
         ),
     )
     deviations_applied: list[DeviationRef] = Field(
