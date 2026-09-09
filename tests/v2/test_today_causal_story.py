@@ -396,8 +396,21 @@ def test_causal_history_sorts_when_the_store_returns_mixed_number_types():
 # ==========================================================================
 
 
-def _row_state(lot_status: str, disposition: str = "", failure: str = "") -> str:
-    """`_incoming_row`'s state derivation, against a real runtime import."""
+def _row_state(
+    lot_status: str,
+    disposition: str = "",
+    failure: str = "",
+    *,
+    lot_version: int = 1,
+    observed_version: int | None = None,
+) -> str:
+    """`_incoming_row`'s state derivation, against a real runtime import.
+
+    `observed_version` is the lot version the RECORD froze against. Leaving it
+    equal to `lot_version` (the default) models a current record; making them
+    differ models a record a reset has since superseded, which is the only
+    thing that distinguishes a live finding from a rolled-back one.
+    """
     import importlib.util
     import os
     from pathlib import Path
@@ -412,7 +425,10 @@ def _row_state(lot_status: str, disposition: str = "", failure: str = "") -> str
 
     lot = runtime._CORPUS.lot("LOT-1001")
     runtime._CORPUS.put(
-        "lot", "LOT-1001", type(lot)(**{**lot.__dict__, "status": lot_status})
+        "lot", "LOT-1001",
+        type(lot)(**{
+            **lot.__dict__, "status": lot_status, "state_version": lot_version,
+        }),
     )
     row = runtime._incoming_row(
         {
@@ -420,6 +436,9 @@ def _row_state(lot_status: str, disposition: str = "", failure: str = "") -> str
             "lot_id": "LOT-1001",
             "disposition": disposition,
             "failure_category": failure,
+            "lot_state_version": (
+                lot_version if observed_version is None else observed_version
+            ),
             "saved_at": "2026-09-09T00:00:00+00:00",
         }
     )
@@ -431,9 +450,26 @@ def test_a_reset_lot_is_awaiting_disposition_again():
 
     Every lot returns to RECEIVED, so Incoming must show all of them awaiting
     disposition whatever a previous run concluded about them.
+
+    The reset is modelled the way both real reset paths mark it: the live lot
+    no longer carries the version the record froze against. A full reseed
+    returns the version to 1, and Shift+R advances it past whatever the store
+    held — opposite directions, same signal.
     """
-    assert _row_state("RECEIVED", disposition="RELEASE") == "EVIDENCE_RECEIVED"
-    assert _row_state("RECEIVED", disposition="QUARANTINE") == "EVIDENCE_RECEIVED"
+    # Both reset paths ADVANCE the version past what the store held, so the
+    # live lot is ahead of whatever the record observed.
+    reseeded = dict(lot_version=5, observed_version=4)
+    assert _row_state("RECEIVED", disposition="RELEASE", **reseeded) == (
+        "EVIDENCE_RECEIVED"
+    )
+    assert _row_state("RECEIVED", disposition="QUARANTINE", **reseeded) == (
+        "EVIDENCE_RECEIVED"
+    )
+    # Shift+R marks it the same way, one lot at a time.
+    advanced = dict(lot_version=7, observed_version=4)
+    assert _row_state("RECEIVED", failure="MATERIAL_DISAGREEMENT", **advanced) == (
+        "EVIDENCE_RECEIVED"
+    )
 
 
 def test_a_stale_policy_refusal_does_not_survive_a_reset():
@@ -445,9 +481,10 @@ def test_a_stale_policy_refusal_does_not_survive_a_reset():
     reseeded LOT-1001 asking for a quality decision nobody owed it, which is
     exactly the row an operator would open first.
     """
-    assert _row_state("RECEIVED", disposition="RELEASE", failure="POLICY_REFUSAL") == (
-        "EVIDENCE_RECEIVED"
-    )
+    assert _row_state(
+        "RECEIVED", disposition="RELEASE", failure="POLICY_REFUSAL",
+        lot_version=4, observed_version=3,
+    ) == "EVIDENCE_RECEIVED"
 
 
 def test_an_evidence_level_failure_still_asks_for_a_human():
@@ -457,10 +494,54 @@ def test_an_evidence_level_failure_still_asks_for_a_human():
     the lot, so it must keep its row state — otherwise this fix would hide the
     hostile document.
     """
+    # CURRENT records — the versions agree, so nothing has been rolled back.
     assert _row_state("RECEIVED", failure="SECURITY_QUARANTINE") == "SECURITY_HOLD"
     assert _row_state("RECEIVED", failure="EVIDENCE_UNBOUND") == (
         "QUALITY_DECISION_REQUIRED"
     )
+    # And the same findings AFTER a reset describe a world that no longer
+    # exists. This is the pre-renumber gate's defect: every evidence-level halt
+    # leaves the lot at RECEIVED, so lot status alone could never clear them.
+    assert _row_state(
+        "RECEIVED", failure="SECURITY_QUARANTINE", lot_version=3, observed_version=2
+    ) == "EVIDENCE_RECEIVED"
+    assert _row_state(
+        "RECEIVED", failure="EVIDENCE_UNBOUND", lot_version=3, observed_version=2
+    ) == "EVIDENCE_RECEIVED"
+
+
+def test_a_halt_before_the_snapshot_still_clears_on_reset():
+    """A security quarantine never observes a lot version.
+
+    The artifact is refused before extraction, so the decision halts ahead of
+    the snapshot freeze and records `lot_state_version` 0 permanently. Treating
+    0 as "unknown, keep the finding" pinned LOT-1004 to SECURITY_HOLD through
+    every reseed — the defect the pre-renumber gate found.
+
+    Version 0 means "this run stopped before it looked at the lot". Every
+    fixture lot starts at version 1, so a live lot ABOVE 1 has been written
+    since, which for a RECEIVED lot only a reset does.
+    """
+    # Pristine, never reset: the hostile document must still ask for attention.
+    assert _row_state(
+        "RECEIVED", failure="SECURITY_QUARANTINE", lot_version=1, observed_version=0
+    ) == "SECURITY_HOLD"
+    # After any reset the lot has been rewritten, so the finding is superseded.
+    assert _row_state(
+        "RECEIVED", failure="SECURITY_QUARANTINE", lot_version=2, observed_version=0
+    ) == "EVIDENCE_RECEIVED"
+
+
+def test_a_record_ahead_of_the_lot_is_not_treated_as_a_reset():
+    """Strictly BEHIND, not merely different.
+
+    A record observing a version AHEAD of the live lot is not a reset; it is a
+    store that has lost writes. Clearing a real finding there would hide a
+    genuine problem behind a routine-looking row.
+    """
+    assert _row_state(
+        "RECEIVED", failure="SECURITY_QUARANTINE", lot_version=2, observed_version=5
+    ) == "SECURITY_HOLD"
 
 
 # ==========================================================================

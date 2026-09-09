@@ -264,6 +264,13 @@ class DynamoRecordStore:
                 "lot_id": {"S": record.identity.lot_id or ""},
                 "disposition": {"S": record.disposition.disposition or ""},
                 "failure_category": {"S": record.failure_category or ""},
+                # The lot version this run FROZE its evidence against. Incoming
+                # compares it to the live lot to tell a current finding from one
+                # a reset has since rolled back; without it, every
+                # evidence-level halt (which never moves the lot off RECEIVED)
+                # is indistinguishable from a stale one. A non-key attribute on
+                # the existing item — no index change.
+                "lot_state_version": {"N": str(record.snapshot.lot_state_version or 0)},
                 "audit_hash": {"S": payload["audit_hash"]},
                 "saved_at": {"S": utcnow()},
                 # Constant partition key for the decision-enumeration index.
@@ -326,6 +333,9 @@ class DynamoRecordStore:
                 "lot_id": item.get("lot_id", {}).get("S", ""),
                 "disposition": item.get("disposition", {}).get("S", ""),
                 "failure_category": item.get("failure_category", {}).get("S", ""),
+                "lot_state_version": int(
+                    item.get("lot_state_version", {}).get("N", "0") or 0
+                ),
                 "saved_at": item.get("saved_at", {}).get("S", ""),
             }
             for item in response.get("Items", [])
@@ -600,7 +610,7 @@ def hydrate_record(document: dict) -> DecisionRecord:
     return record
 
 
-def hydrate_claims(document: dict) -> list:
+def hydrate_claims(document: dict, key: str = "canonical_claims") -> list:
     """Rebuild the canonical claims stored alongside a record (audit-2 F8).
 
     A claim that no longer validates is dropped rather than crashing the
@@ -610,7 +620,7 @@ def hydrate_claims(document: dict) -> list:
     from .contracts import CanonicalEvidenceClaim
 
     rebuilt = []
-    for payload in (document.get("evidence") or {}).get("canonical_claims", []):
+    for payload in (document.get("evidence") or {}).get(key, []):
         try:
             rebuilt.append(CanonicalEvidenceClaim(**payload))
         except Exception:  # noqa: BLE001

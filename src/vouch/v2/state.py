@@ -303,10 +303,32 @@ class DynamoCorpus(Corpus):
         Used once to populate authoritative state. Deliberately explicit and
         never called from the decision path, so production can never
         accidentally re-seed itself with fixtures.
+
+        Business state comes from the fixture verbatim; `state_version` does
+        NOT. It is advanced past whatever the table holds, for the same reason
+        `demo_reset.reset_lot` advances rather than rewinds:
+
+          * capabilities bind to an observed `state_version` and refuse when it
+            moves, so restoring version 1 would re-validate a capability issued
+            before the reseed — a replay the authority model exists to stop;
+          * a decision record freezes the lot version BEFORE it mutates
+            anything, so a first run observes version 1 too. Rewinding to 1
+            makes "never decided" and "decided, then reseeded" byte-identical,
+            and Incoming then cannot tell a live finding from a rolled-back one.
+
+        Advancing makes a reseed observable to anything comparing versions,
+        which is what lets Incoming return a reseeded arrival to its
+        pre-decision row while Records keeps the history.
         """
         written = 0
         for kind, rows in source._t.items():
             for key, value in rows.items():
+                if hasattr(value, "state_version"):
+                    current = getattr(self.get(kind, key), "state_version", 0) or 0
+                    value = replace(
+                        value,
+                        state_version=max(current + 1, value.state_version),
+                    )
                 self.put(kind, key, value)
                 written += 1
         return written

@@ -396,6 +396,12 @@ def _decision_summaries(limit: int, cursor: dict | None) -> tuple[list[dict], di
                 "lot_id": (document.get("identity") or {}).get("lot_id", ""),
                 "disposition": (document.get("disposition") or {}).get("disposition", ""),
                 "failure_category": document.get("failure_category", ""),
+                # Same column the indexed store projects, read from the stored
+                # document. Incoming compares it against the live lot to tell a
+                # current finding from one a reset rolled back.
+                "lot_state_version": (
+                    (document.get("snapshot") or {}).get("lot_state_version", 0)
+                ),
                 "saved_at": document.get("saved_at", ""),
             }
         )
@@ -408,9 +414,12 @@ def _decision_summaries(limit: int, cursor: dict | None) -> tuple[list[dict], di
 #: These are refusals the authority model produced against state that a reseed
 #: has since rolled back — re-releasing an already-released lot, acting on a
 #: stale version. They are true of the run that recorded them and say nothing
-#: about whether the lot now needs a human, so Incoming ignores them once the
-#: lot is undecided again. An evidence-level failure (a security quarantine, an
-#: unreadable artifact) is NOT in here: those remain true across a reset.
+#: about whether the lot now needs a human.
+#:
+#: Retained as documentation of that distinction, but no longer load-bearing
+#: for the RECEIVED branch: see `_incoming_row`. Every evidence-level halt
+#: leaves the lot at RECEIVED too, so an allowlist of "stale" categories could
+#: never clear them — which is the defect the pre-renumber gate found.
 _STALE_ON_RESET = frozenset({"POLICY_REFUSAL", "STATE_VERSION_CONFLICT"})
 
 
@@ -479,6 +488,66 @@ def _undecided_arrivals(seen: set[str]) -> list[dict]:
     return rows
 
 
+def _record_superseded_by_reset(summary: dict, lot) -> bool:
+    """True when a reset rolled the lot back past what this record observed.
+
+    Incoming answers "what is true of this arrival now"; Records keeps what
+    happened. This is the one comparison that separates them.
+
+    Both reset paths advance the lot's `state_version` past whatever the store
+    held — `demo_reset.reset_lot` for one lot, `DynamoCorpus.seed` for the
+    whole corpus. A record froze the version it evaluated against, so a record
+    whose observed version is BEHIND the live lot is describing a world that
+    has since been rolled back.
+
+    Why not compare the failure category instead: every evidence-level halt —
+    a security quarantine, an unbindable artifact, a material disagreement,
+    extraction below the confidence floor — leaves the lot at RECEIVED, because
+    none of them ever mutated it. Lot status therefore cannot separate "halted
+    just now" from "halted before a reset", and an allowlist of stale
+    categories silently pinned each new halt to a stale row until someone
+    extended it. A reset contract must not depend on an enumeration being
+    complete.
+
+    Why the reseed had to change too: `seed` used to write the fixture's
+    `state_version` verbatim, returning it to 1 — the same value a first run
+    observes, since the snapshot is frozen before any mutation. That made
+    "never decided" and "decided, then reseeded" indistinguishable. Advancing
+    on reseed is what makes this comparison answerable at all.
+
+    Strictly BEHIND, not merely different. A record observing a version AHEAD
+    of the live lot is not a reset; it is a store that has lost writes, and
+    quietly clearing a real finding there would hide a genuine problem.
+    """
+    if lot is None or getattr(lot, "status", "") != "RECEIVED":
+        # A lot that moved is answered by its own status further down.
+        return False
+    current = getattr(lot, "state_version", 0) or 0
+    if current <= 0:
+        # The live lot cannot say what version it is. Keep what the record
+        # concluded: showing a stale row is recoverable by re-running the lot,
+        # and hiding a live security hold is not.
+        return False
+
+    raw = summary.get("lot_state_version")
+    observed = raw if isinstance(raw, int) else 0
+    if observed <= 0:
+        # The run never froze a snapshot, so it never observed a version. A
+        # security quarantine is the case that matters: the artifact is refused
+        # before extraction, so the decision halts ahead of the freeze and
+        # records version 0 permanently.
+        #
+        # Version 0 is not "unknown" — it is "this run stopped before it looked
+        # at the lot". Every lot the fixture declares starts at version 1, so a
+        # live lot at version 1 is pristine-and-never-reset and the record is
+        # still current; anything above 1 means the lot has been written since,
+        # which for a RECEIVED lot only a reset does. Treating 0 as unknown
+        # left LOT-1004 pinned to SECURITY_HOLD through every reseed — the
+        # exact defect the pre-renumber gate found.
+        return current > 1
+    return observed < current
+
+
 def _incoming_row(summary: dict) -> dict:
     """One Incoming row, from the indexed columns plus the lot it names.
 
@@ -515,7 +584,27 @@ def _incoming_row(summary: dict) -> dict:
     # refused before any lot state could change, so the lot legitimately reads
     # RECEIVED and only the record knows why.
     lot_status = lot.status if lot else ""
-    if failure == "SECURITY_QUARANTINE":
+    superseded = _record_superseded_by_reset(summary, lot)
+    if superseded:
+        # A reset rolled this arrival back PAST the state this record observed,
+        # so everything the record concluded describes a world that no longer
+        # exists. Incoming answers "what is true of this lot now"; Records
+        # keeps the history, untouched.
+        #
+        # Version, not failure category, is what decides it. The older
+        # `_STALE_ON_RESET` allowlist could not: EVERY evidence-level halt —
+        # a security quarantine, an unbindable artifact, a material
+        # disagreement, extraction below the confidence floor — leaves the lot
+        # at RECEIVED, because none of them ever mutated it. Lot STATUS
+        # therefore cannot separate "halted just now" from "halted before a
+        # reset", and each new halt category silently pinned a reseeded row to
+        # a stale outcome until someone extended the list. A reset contract
+        # must not depend on an enumeration being complete.
+        row_state = "EVIDENCE_RECEIVED"
+    elif failure == "SECURITY_QUARANTINE":
+        # Not superseded: the artifact really is hostile and really was refused
+        # before the lot could move, so only the record knows why. This must
+        # keep asking for attention — hiding it would hide the hostile document.
         row_state = "SECURITY_HOLD"
     elif lot_status == "RELEASED":
         row_state = "RELEASED"
@@ -523,27 +612,6 @@ def _incoming_row(summary: dict) -> dict:
         row_state = "QUARANTINED"
     elif lot_status == "PENDING_QA":
         row_state = "QUALITY_DECISION_REQUIRED"
-    elif lot_status == "RECEIVED":
-        # Undecided now, whatever a past record concluded.
-        #
-        # A failure still means a human is needed — but only one that is ABOUT
-        # THE EVIDENCE. `POLICY_REFUSAL` is about a past ATTEMPT: the authority
-        # gate refusing to release a lot that was already released. Once the lot
-        # is back at RECEIVED that refusal describes a world that no longer
-        # exists, and letting it colour the row left a freshly reseeded lot
-        # asking for a quality decision nobody owes it.
-        # A record that reached a DISPOSITION has no open question, whatever
-        # failure an earlier run of it recorded. `failure_category` is the
-        # LAST failure this record saw; on a resumed case, run 1's
-        # MATERIAL_DISAGREEMENT stays on the document after run 2 released the
-        # lot. Reading it alone made a reseeded LOT-1006 ask for a quality
-        # decision that had already been answered and rolled back.
-        answered = bool(disposition)
-        row_state = (
-            "QUALITY_DECISION_REQUIRED"
-            if failure and failure not in _STALE_ON_RESET and not answered
-            else "EVIDENCE_RECEIVED"
-        )
     elif disposition == "RELEASE":
         row_state = "RELEASED"
     elif disposition == "QUARANTINE":
