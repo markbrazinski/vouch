@@ -49,13 +49,14 @@ const TERMINAL_CHECK_TICKS = 5;
 /**
  * Ticks between attempts to load the source artifacts.
  *
- * The first attempt legitimately fails: the artifact is recorded at RECEIVED
- * but the decision record it hangs off is not queryable until the run ends, so
- * `get_source` 400s until then. Retrying every tick is correct and noisy;
- * retrying on the terminal check's cadence gets the panel populated within a
- * beat of the record becoming readable without filling the console.
+ * `get_source` used to 400 for most of a run — it required the stored record,
+ * and a record is not persisted until the decision ends — so this backed off to
+ * the terminal cadence to keep the console clean. It now answers from the live
+ * event stream as soon as evidence is received, so the retry is tight again:
+ * the operator sees the certificate a beat after it is frozen, which is the
+ * moment it becomes relevant to them.
  */
-const SOURCE_RETRY_TICKS = 5;
+const SOURCE_RETRY_TICKS = 1;
 
 export interface DecisionRunState {
   decisionRecordId: string;

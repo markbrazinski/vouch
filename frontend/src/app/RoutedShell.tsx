@@ -31,7 +31,7 @@ import {
 } from 'react-router-dom';
 import { DecisionRoute } from '../decision/DecisionRoute';
 import { IncomingRoute } from '../decision/IncomingRoute';
-import type { HeroAEntry } from '../decision/entry';
+import type { ArrivalDocuments, HeroAEntry } from '../decision/entry';
 import { INK, MONO, N, SANS, HAIR } from '../decision/primitives';
 import { getToday, listDecisions } from '../adapter/client';
 import {
@@ -111,7 +111,14 @@ function Scroller({ children }: { children: React.ReactNode }) {
   return <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>{children}</div>;
 }
 
-export function RoutedShell({ entry }: { entry: HeroAEntry }) {
+export function RoutedShell({
+  entry,
+  arrivals = {},
+}: {
+  entry: HeroAEntry;
+  /** Every canonical arrival and its certificate, keyed by lot. */
+  arrivals?: ArrivalDocuments;
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const [title, sub] = titleFor(location.pathname);
@@ -274,7 +281,7 @@ export function RoutedShell({ entry }: { entry: HeroAEntry }) {
                 </Scroller>
               }
             />
-            <Route path="/incoming" element={<IncomingRoute entry={entry} />} />
+            <Route path="/incoming" element={<IncomingRoute arrivals={arrivals} />} />
             <Route path="/decisions/:recordId" element={<DecisionRoute entry={entry} />} />
             <Route
               path="/suppliers"

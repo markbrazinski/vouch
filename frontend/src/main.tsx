@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './app/global.css';
 import { RoutedShell } from './app/RoutedShell';
-import type { HeroAEntry } from './decision/entry';
+import type { ArrivalDocuments, HeroAEntry } from './decision/entry';
 // Vite emits this as a fingerprinted asset URL. The file is a symlink to the
 // canonical tracked evidence, so the build cannot ship different bytes.
+import COA_1001 from './evidence/northern-alloys-coa-lot-1001.pdf?url';
 import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
+import MTR_1003 from './evidence/northern-alloys-mtr-lot-1003.pdf?url';
+import COA_1004 from './evidence/central-forgeworks-coa-lot-1004.pdf?url';
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -44,6 +47,46 @@ const HERO_A: HeroAEntry = {
   contentType: 'application/pdf',
   documentUrl: HERO_A_COA,
   documentName: 'eastern-metals-coa-lot-1002.pdf',
+};
+
+/**
+ * Every canonical arrival and the certificate that came with it.
+ *
+ * One entry per lot Incoming lists. Each document is attached ONLY to the lot
+ * its supplier issued it for — sending Northern Alloys' report with LOT-1004
+ * would assert they certified Central Forgeworks' material — and a lot with no
+ * entry here simply starts from the evidence already on its record, which is
+ * what the backend does when no document is supplied.
+ *
+ * The outcomes these produce (release, quarantine, unbound, security halt) are
+ * the backend's to decide. Nothing here presumes any of them.
+ */
+const ARRIVALS: ArrivalDocuments = {
+  'LOT-1001': {
+    lotId: 'LOT-1001',
+    material: 'MAT-ALLOY-7',
+    receiptMeta: 'SUP-NORTH · site SITE-N1 · 500 kg',
+    contentType: 'application/pdf',
+    documentUrl: COA_1001,
+    documentName: 'northern-alloys-coa-lot-1001.pdf',
+  },
+  'LOT-1002': HERO_A,
+  'LOT-1003': {
+    lotId: 'LOT-1003',
+    material: 'MAT-ALLOY-7',
+    receiptMeta: 'SUP-NORTH · site SITE-N1 · 450 kg',
+    contentType: 'application/pdf',
+    documentUrl: MTR_1003,
+    documentName: 'northern-alloys-mtr-lot-1003.pdf',
+  },
+  'LOT-1004': {
+    lotId: 'LOT-1004',
+    material: 'MAT-ALLOY-7',
+    receiptMeta: 'SUP-CENTRAL · site SITE-C1 · 200 kg',
+    contentType: 'application/pdf',
+    documentUrl: COA_1004,
+    documentName: 'central-forgeworks-coa-lot-1004.pdf',
+  },
 };
 
 // The dev fixture harness is referenced only inside this `import.meta.env.DEV`
@@ -85,7 +128,7 @@ if (import.meta.env.DEV && window.location.pathname === '/dev/vouch-states') {
   root.render(
     <StrictMode>
       <BrowserRouter>
-        <RoutedShell entry={HERO_A} />
+        <RoutedShell entry={HERO_A} arrivals={ARRIVALS} />
       </BrowserRouter>
     </StrictMode>,
   );

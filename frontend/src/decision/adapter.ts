@@ -584,15 +584,22 @@ function agentFrom(
     // as "the lot is fine" on a lot that was about to be quarantined, so the
     // copy now names coverage explicitly and leaves the verdict to the
     // disposition, which is where it is actually decided.
+    // The Verifier's completion event carries ONLY a brief hash — no basis and
+    // no sufficiency — because the verifier is deliberately blind. Treating that
+    // silence as "not sufficient" printed a flat contradiction: its own lane
+    // read "Evidence covers the requirement" while this line said the opposite,
+    // on a lot that released. Unknown is stated as unknown.
     resultTitle: done
-      ? sufficient
-        ? 'Every required test has applicable evidence'
-        : 'Some required tests have no applicable evidence'
+      ? sufficiency === ''
+        ? 'Independent reconstruction complete'
+        : sufficient
+          ? 'Every required test has applicable evidence'
+          : 'Some required tests have no applicable evidence'
       : 'Working',
     resultBody: done
       ? `Governing basis ${str(done.basis, 'unresolved')} · ${num(done.required_test_count) ?? 0} required test(s)`
       : 'Consulting authoritative records.',
-    resultTone: done ? (sufficient ? 'released' : 'decision') : 'progress',
+    resultTone: done ? (sufficiency === '' ? 'progress' : sufficient ? 'released' : 'decision') : 'progress',
     isIndependent: role === 'verifier',
     basis: done ? str(done.basis) : undefined,
     sufficiency: sufficiency || undefined,

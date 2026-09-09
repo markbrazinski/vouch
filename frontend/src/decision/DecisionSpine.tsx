@@ -9,6 +9,7 @@
  * each other.
  */
 
+import { findingLabel, findingTone, SEM } from '../components/tokens';
 import { Pill, Eyebrow, INK, MONO, SANS, N, HAIR } from './primitives';
 import type { SpineNodeVM } from './model';
 import type { SemanticTone } from '../view-models/types';
@@ -61,12 +62,17 @@ function nodePill(node: SpineNodeVM): { label: string; tone: SemanticTone } {
 
 function Lane({ label, value }: { label: string; value: string | null | undefined }) {
   const empty = !value;
+  // The raw enum is the fallback, not the design: an unmapped value still
+  // renders rather than disappearing, which is how a new backend outcome
+  // announces itself instead of silently showing a blank lane.
+  const text = value ? (findingLabel[value] ?? value) : '';
+  const tone = value ? SEM[findingTone[value] ?? 'progress'] : null;
   return (
     <div
       style={{
         flex: 1,
-        background: N.nested,
-        border: `1px solid ${HAIR}`,
+        background: tone ? tone.bg : N.nested,
+        border: `1px solid ${tone ? tone.br : HAIR}`,
         borderRadius: 7,
         padding: '5px 8px',
         minWidth: 0,
@@ -75,18 +81,19 @@ function Lane({ label, value }: { label: string; value: string | null | undefine
       <div style={{ font: `600 8px ${MONO}`, color: INK.label }}>{label}</div>
       <div
         style={{
-          font: `700 10.5px ${MONO}`,
-          color: empty ? INK.placeholder : INK.dense,
+          // Wraps rather than truncates. This lane carried the single most
+          // important word on the screen and cut it to `INSUFFICIENT_EV…`.
+          font: `700 10px 'Public Sans'`,
+          color: empty ? INK.placeholder : (tone?.fg ?? INK.dense),
           marginTop: 2,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          lineHeight: 1.35,
+          overflowWrap: 'anywhere',
         }}
       >
         {/* An em-dash, not a spinner: the lane is genuinely unknown until the
             agent's own brief lands, and a placeholder that looked like data
             would be asserting something nothing has established. */}
-        {value || '—'}
+        {text || '—'}
       </div>
     </div>
   );

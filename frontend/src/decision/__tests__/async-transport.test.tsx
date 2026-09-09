@@ -216,7 +216,7 @@ describe('B2 — Incoming reads the real decision list', () => {
 
     render(
       <MemoryRouter initialEntries={['/incoming']}>
-        <IncomingRoute entry={ENTRY} />
+        <IncomingRoute arrivals={{ [ENTRY.lotId]: ENTRY }} />
       </MemoryRouter>,
     );
 
@@ -258,7 +258,7 @@ describe('B2 — Incoming reads the real decision list', () => {
 
     render(
       <MemoryRouter initialEntries={['/incoming']}>
-        <IncomingRoute entry={ENTRY} />
+        <IncomingRoute arrivals={{ [ENTRY.lotId]: ENTRY }} />
       </MemoryRouter>,
     );
 
@@ -275,7 +275,7 @@ describe('B2 — Incoming reads the real decision list', () => {
 
     render(
       <MemoryRouter initialEntries={['/incoming']}>
-        <IncomingRoute entry={ENTRY} />
+        <IncomingRoute arrivals={{ [ENTRY.lotId]: ENTRY }} />
       </MemoryRouter>,
     );
     expect(screen.getByTestId('incoming-row')).toBeTruthy();

@@ -83,15 +83,27 @@ describe('production build excludes the dev fixture harness', () => {
     // asset. So the input is proven by the asset's bytes (below), not by
     // finding its text in the bundle — a stronger check, because it pins the
     // exact qualified document rather than a transcription of it.
+    // Four canonical certificates, one per arrival Incoming lists. Vite
+    // fingerprints each, so they are matched by CONTENT rather than by name.
     const pdfs = readdirSync(join(DIST, 'assets')).filter((f) => f.endsWith('.pdf'));
-    expect(pdfs.length, 'the canonical COA must ship as an asset').toBe(1);
-    const shipped = createHash('sha256')
-      .update(readFileSync(join(DIST, 'assets', pdfs[0])))
-      .digest('hex');
+    expect(pdfs.length, 'every canonical certificate must ship as an asset').toBe(4);
+    const shipped = pdfs.map((f) =>
+      createHash('sha256').update(readFileSync(join(DIST, 'assets', f))).digest('hex'),
+    );
     // Frozen in demo/evidence/MANIFEST.md and re-checked by
     // tests/v2/test_canonical_pdf_assets.py. If this differs, the UI is
     // submitting bytes that were never qualified.
-    expect(shipped).toBe('bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be');
+    // Frozen in demo/evidence/MANIFEST.md and re-checked by
+    // tests/v2/test_canonical_pdf_assets.py. If any differs, the UI is
+    // submitting bytes that were never qualified.
+    expect(shipped.sort()).toEqual(
+      [
+        '765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181', // 1001
+        'bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be', // 1002
+        '3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a', // 1003
+        '5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947', // 1004
+      ].sort(),
+    );
 
     // The resolved basis (revision C) is the Investigator's finding and must
     // come from the backend, never the bundle.

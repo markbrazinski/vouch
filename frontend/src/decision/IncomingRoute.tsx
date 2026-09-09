@@ -23,9 +23,9 @@ import { useNavigate } from 'react-router-dom';
 import { fetchAssetAsBase64, newDecisionRecordId } from '../adapter/client';
 import { IncomingSurface } from '../features/Surfaces';
 import { pendingRun } from './pendingRun';
-import type { HeroAEntry } from './entry';
+import type { ArrivalDocuments } from './entry';
 
-export function IncomingRoute({ entry }: { entry: HeroAEntry }) {
+export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
   const navigate = useNavigate();
 
   return (
@@ -35,15 +35,15 @@ export function IncomingRoute({ entry }: { entry: HeroAEntry }) {
           const recordId = newDecisionRecordId();
 
           /**
-           * The canonical evidence, attached only to the lot it belongs to.
+           * The canonical evidence for THIS lot, and only this lot.
            *
-           * The bundled PDF is Eastern Metals' certificate for the entry lot.
-           * Sending it with a different lot would assert that they certified
-           * material they did not. Every other lot starts from the evidence
-           * already on its record, which is what the backend does when no
-           * document is supplied.
+           * Each certificate is attached to the lot its supplier issued it for.
+           * Sending one with a different lot would assert that supplier
+           * certified material they did not. A lot with no bundled document
+           * starts from the evidence already on its record, which is what the
+           * backend does when none is supplied.
            */
-          const canonical = lotId === entry.lotId;
+          const arrival = arrivals[lotId];
 
           /**
            * Hand the workspace the work, then route.
@@ -57,12 +57,11 @@ export function IncomingRoute({ entry }: { entry: HeroAEntry }) {
           pendingRun.set(recordId, {
             lotId,
             decisionRecordId: recordId,
-            document: canonical ? entry.document : undefined,
-            contentType: canonical ? entry.contentType : undefined,
-            loadDocumentB64:
-              canonical && entry.documentUrl
-                ? () => fetchAssetAsBase64(entry.documentUrl!)
-                : undefined,
+            document: arrival?.document,
+            contentType: arrival?.contentType,
+            loadDocumentB64: arrival?.documentUrl
+              ? () => fetchAssetAsBase64(arrival.documentUrl!)
+              : undefined,
           });
 
           navigate(`/decisions/${recordId}`);

@@ -22,7 +22,7 @@
  * and the backend run continues untouched. Nothing here cancels work.
  */
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { DecisionWorkspace } from './DecisionWorkspace';
 import { project } from './adapter';
@@ -46,11 +46,25 @@ export function DecisionRoute({ entry }: { entry: HeroAEntry }) {
    */
   const actedFor = useRef<string | null>(null);
 
+  /**
+   * The lot this route is about, known before the record exists.
+   *
+   * The workspace renders as soon as the run starts, and the stored record does
+   * not answer until the first poll returns — so for the opening seconds
+   * `run.record` is undefined. Falling back to the ENTRY lot there meant
+   * clicking LOT-1001 opened a workspace headed LOT-1002: the run underneath
+   * was correct, the header was not, which is worse than being blank.
+   *
+   * The click already knew the lot. This keeps it.
+   */
+  const [intendedLotId, setIntendedLotId] = useState<string>('');
+
   useEffect(() => {
     if (!recordId || actedFor.current === recordId) return;
     actedFor.current = recordId;
 
     const intent = pendingRun.take(recordId);
+    if (intent) setIntendedLotId(intent.lotId);
     if (!intent) {
       // Nobody parked work for this id: it is an existing decision.
       void run.observe(recordId);
@@ -75,13 +89,17 @@ export function DecisionRoute({ entry }: { entry: HeroAEntry }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordId]);
 
-  const isEntryLot = run.record?.lot_id === entry.lotId || !run.record;
+  // The lot, most authoritative source first: the stored record, then what the
+  // operator clicked, and only then the entry the app was opened with.
+  const lotId = (run.record?.lot_id as string) || intendedLotId || entry.lotId;
+  // Receipt identity from the entry applies only when this IS the entry lot.
+  const isEntryLot = lotId === entry.lotId;
 
   const vm = useMemo(
     () =>
       project({
         decisionRecordId: run.decisionRecordId,
-        lotId: (run.record?.lot_id as string) ?? entry.lotId,
+        lotId,
         // Receipt identity is the entry's only where the entry IS the lot.
         material: isEntryLot ? entry.material : undefined,
         receiptMeta: isEntryLot ? entry.receiptMeta : undefined,
@@ -104,6 +122,7 @@ export function DecisionRoute({ entry }: { entry: HeroAEntry }) {
       run.durable,
       entry,
       isEntryLot,
+      lotId,
     ],
   );
 

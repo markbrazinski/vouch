@@ -267,7 +267,11 @@ describe('the product surface carries no demo apparatus', () => {
     // tests/v2/test_canonical_pdf_assets.py, so the rule becomes the stricter
     // one it was always standing in for: the product may reference the
     // canonical assets and nothing else. An ad-hoc or generated PDF still fails.
-    const CANONICAL = /eastern-metals-coa-lot-1002\.pdf/;
+    // All four canonical arrivals, one per lot Incoming lists. Named
+    // exhaustively rather than pattern-matched on a directory, so adding a
+    // fifth document is a deliberate edit here and not an accident.
+    const CANONICAL =
+      /(northern-alloys-coa-lot-1001|eastern-metals-coa-lot-1002|northern-alloys-mtr-lot-1003|central-forgeworks-coa-lot-1004)\.pdf/;
     for (const f of productFiles) {
       const src = readFileSync(f, 'utf8');
       for (const match of src.match(/[\w./-]+\.pdf/g) ?? []) {

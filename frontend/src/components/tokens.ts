@@ -33,6 +33,40 @@ export const SEM: Record<SemanticTone, ToneSpec> = {
   refused: { fg: '#4A2018', bg: '#EDE2DE', br: 'rgba(74,32,24,.42)', glyph: '✕' },
 };
 
+/**
+ * Agent findings, as a person reads them.
+ *
+ * The spine was rendering the raw enum into a fixed-width lane, so the most
+ * important word in the demo arrived as `INSUFFICIENT_EV…`. These are the
+ * outcomes an agent lane can actually carry, each with a label that fits and a
+ * tone that matches the rest of the product:
+ *
+ *   SUFFICIENT             the evidence covers every required test  (green)
+ *   INSUFFICIENT_EVIDENCE  a required test has no applicable evidence (blue —
+ *                          a question for a human, NOT a defect finding)
+ *   VERIFIED / REJECTED    the verifier's independent conclusion
+ *
+ * Sufficiency is a COVERAGE question, never conformance, so "Evidence covers
+ * the requirement" must not be read as "the lot passes" — a lot can be
+ * quarantined on fully sufficient evidence. The label says covers, not passes,
+ * deliberately.
+ */
+export const findingLabel: Record<string, string> = {
+  SUFFICIENT: 'Evidence covers the requirement',
+  INSUFFICIENT_EVIDENCE: 'Required evidence missing',
+  VERIFIED: 'Independently verified',
+  REJECTED: 'Independently rejected',
+  NOT_INVOKED: 'Never invoked',
+};
+
+export const findingTone: Record<string, SemanticTone> = {
+  SUFFICIENT: 'released',
+  INSUFFICIENT_EVIDENCE: 'decision',
+  VERIFIED: 'released',
+  REJECTED: 'refused',
+  NOT_INVOKED: 'progress',
+};
+
 /** Readiness maps onto the tone set; the textual label always ships with it. */
 export const readinessTone: Record<ProductionReadiness, SemanticTone> = {
   READY: 'released',

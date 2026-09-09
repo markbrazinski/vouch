@@ -672,6 +672,24 @@ def invoke(payload: dict, context=None) -> dict:
     action = payload.get("action")
     log.info("vouch v2 action=%s", action)
 
+    # Start every invocation from the authoritative table, not from whatever
+    # the last one left in memory.
+    #
+    # `_CORPUS` is a module-level singleton and `DynamoCorpus` caches each
+    # partition it has read, so a warm container answered from state that could
+    # be arbitrarily old. Re-seeding the demo wrote RECEIVED to DynamoDB and the
+    # API kept reporting PENDING_QA — the reset genuinely worked and was
+    # invisible, which is the worst version of that bug. Two invocations of the
+    # same runtime could also disagree about a lot's status depending on which
+    # container answered.
+    #
+    # The cache is still worth having WITHIN one decision, where it stops `all()`
+    # re-scanning a partition per tool call. It is not worth having across
+    # decisions: authoritative state is the table's to define, and the read is
+    # cheap next to a model invocation.
+    if hasattr(_CORPUS, "refresh"):
+        _CORPUS.refresh()
+
     try:
         if action == "evaluate_lot":
             documents = _documents_from(payload)
@@ -845,8 +863,26 @@ def invoke(payload: dict, context=None) -> dict:
 
         if action == "get_source":
             record_id = payload.get("decision_record_id", "")
-            document = _stored_record(record_id)
-            events = _VOUCH.record_store.events_for(document.get("record_id", ""))
+            if not record_id:
+                raise VouchFailure(
+                    FailureCategory.PERSISTENCE_FAILURE,
+                    "decision_record_id is required",
+                )
+            # Answer from the live event stream while the run is still going.
+            #
+            # Artifact metadata comes entirely from events — `_artifacts_from_
+            # events` is the only place the id and its facts appear together —
+            # but this required the STORED record first, and a record is not
+            # persisted until the decision ends. So the source panel 400d for
+            # most of a 30-60s run and read "Receiving source evidence…" the
+            # whole time, on the one panel whose job is to be true while the
+            # stages move past it. The certificate is known at EVIDENCE_RECEIVED;
+            # there is no reason to withhold it until the verdict.
+            #
+            # The record still wins when it exists: it carries the exclusions
+            # and joined metadata that only a completed decision knows.
+            document = _VOUCH.record_store.load(record_id) or {}
+            events = _VOUCH.record_store.events_for(document.get("record_id", "") or record_id)
             artifacts = _artifacts_from_events(
                 [{**row["payload"], "event": row["event"], "at": row["at"]} for row in events]
             )
