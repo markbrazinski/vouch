@@ -167,7 +167,15 @@ describe('the product surface carries no demo apparatus', () => {
     for (const f of productFiles) {
       const src = readFileSync(f, 'utf8');
       expect(src, f).not.toMatch(/CloudWatch|X-Ray|OpenTelemetry|OTEL_|trace[_ ]?id/i);
-      expect(src, f).not.toMatch(/AgentCore|Bedrock|Textract|Amazon/i);
+      expect(src, f).not.toMatch(/AgentCore|Textract/i);
+      // Infrastructure stays out of the product UI, with ONE exception:
+      // "Amazon Bedrock Guardrails" names the authority that made the
+      // prompt-injection detection. That is not observability plumbing, it is
+      // attribution — the operator has to know the halt came from a security
+      // control and not from an agent's judgement. Any OTHER Bedrock or Amazon
+      // mention is still infrastructure and still banned.
+      expect(src, f).not.toMatch(/(?!Amazon Bedrock Guardrails)Bedrock(?! Guardrails)/);
+      expect(src.replace(/Amazon Bedrock Guardrails/g, ''), f).not.toMatch(/Amazon/i);
     }
   });
 

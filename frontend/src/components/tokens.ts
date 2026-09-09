@@ -56,7 +56,7 @@ export const findingLabel: Record<string, string> = {
   INSUFFICIENT_EVIDENCE: 'Required evidence missing',
   VERIFIED: 'Independently verified',
   REJECTED: 'Independently rejected',
-  NOT_INVOKED: 'Never invoked',
+  NOT_STARTED: 'Not started',
 };
 
 export const findingTone: Record<string, SemanticTone> = {
@@ -64,24 +64,30 @@ export const findingTone: Record<string, SemanticTone> = {
   INSUFFICIENT_EVIDENCE: 'decision',
   VERIFIED: 'released',
   REJECTED: 'refused',
-  NOT_INVOKED: 'progress',
+  NOT_STARTED: 'progress',
 };
 
 /** Readiness maps onto the tone set; the textual label always ships with it. */
 export const readinessTone: Record<ProductionReadiness, SemanticTone> = {
   READY: 'released',
+  // 'decision', not 'atrisk'. A pending decision is neutral-blue like every
+  // other open question on this product; amber would read as a warning about
+  // material nobody has looked at yet.
+  AWAITING_QUALITY: 'decision',
   AT_RISK: 'atrisk',
   BLOCKED: 'blocked',
 };
 
 export const readinessLabel: Record<ProductionReadiness, string> = {
   READY: 'READY',
+  AWAITING_QUALITY: 'AWAITING QUALITY',
   AT_RISK: 'AT RISK',
   BLOCKED: 'BLOCKED',
 };
 
 export const readinessDot: Record<ProductionReadiness, string> = {
   READY: '#3E6B54',
+  AWAITING_QUALITY: '#45508C',
   AT_RISK: '#B5852A',
   BLOCKED: '#8E2B24',
 };

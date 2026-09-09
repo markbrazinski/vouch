@@ -204,12 +204,126 @@ describe('the halted spine reads as stopped, not as still-coming', () => {
     expect(vm().spine.find((n) => n.key === 'disposition')?.state).toBe('halted');
   });
 
-  it('says the agents were never invoked', () => {
-    expect(vm().spine.find((n) => n.key === 'agents')?.headline).toBe('Never invoked');
+  it('says the agents never started', () => {
+    expect(vm().spine.find((n) => n.key === 'agents')?.headline).toBe('Not started');
   });
 
   it('seals reconciliation as halted, never as a match', () => {
     expect(vm().spine.find((n) => n.key === 'agents')?.reconciliationSeal).toBe('halted');
+  });
+
+  it('states NO MUTATION rather than leaving consequence pending', () => {
+    // A halted decision has nothing downstream still coming. "Pending" there
+    // forecasts a state change that will never arrive.
+    const consequence = vm().spine.find((n) => n.key === 'consequence');
+    expect(consequence?.state).toBe('halted');
+    expect(consequence?.headline).toBe('No mutation');
+  });
+
+  it('renders no PENDING node anywhere downstream of the halt', () => {
+    expect(vm().spine.map((n) => n.state)).not.toContain('pending');
+  });
+
+  it('names the evidence node for what was found in it', () => {
+    expect(vm().spine.find((n) => n.key === 'evidence')?.headline).toBe('Prompt injection');
+  });
+
+  it('says NONE for disposition, never a weak verdict', () => {
+    expect(vm().spine.find((n) => n.key === 'disposition')?.headline).toBe('None');
+  });
+
+  it('states NOT_STARTED in both agent lanes, not the unknown em-dash', () => {
+    // The em-dash means "not known yet". These agents are never going to run,
+    // which is a different fact and the one the operator has to read.
+    const agents = vm().spine.find((n) => n.key === 'agents');
+    expect(agents?.investigatorLane).toBe('NOT_STARTED');
+    expect(agents?.verifierLane).toBe('NOT_STARTED');
+  });
+
+  it('gives every halted node its own tone so it renders its own headline', () => {
+    // Without an explicit tone `nodePill` collapses all of them to "⊘ HALTED",
+    // which tells the operator nothing about which stage stopped.
+    for (const key of ['evidence', 'agents', 'disposition', 'consequence']) {
+      expect(vm().spine.find((n) => n.key === key)?.tone).toBe('quarantine');
+    }
+  });
+});
+
+describe('the detection is attributed to Amazon Bedrock Guardrails', () => {
+  const vm = () => vmOf(hostile, 'LOT-1004');
+  const rail = () =>
+    toActivity(((hostile as EvaluateDTO).events ?? []) as LifecycleEventDTO[]);
+
+  it('leads the terminal summary with the attack, not a generic hold', () => {
+    expect(vm().outcome.headline).toBe('Prompt injection detected');
+  });
+
+  it('names the AWS service that actually made the detection', () => {
+    expect(vm().outcome.lines[0]).toContain('Amazon Bedrock Guardrails');
+  });
+
+  it('states that neither agent saw the document', () => {
+    expect(vm().outcome.lines[0]).toContain('before it reached either decision agent');
+  });
+
+  it('states that nothing was decided and nothing changed', () => {
+    expect(vm().outcome.lines[1]).toBe('No disposition was made. No production state changed.');
+  });
+
+  it('chips it as a security quarantine', () => {
+    expect(vm().outcome.chip?.label).toBe('SECURITY QUARANTINE');
+  });
+
+  it('never credits the detection to an agent, a model, or Model Armor', () => {
+    // Model Armor is not the AWS service, and neither agent ran at all.
+    const text = [vm().outcome.headline, ...vm().outcome.lines, ...rail().flatMap((r) => [r.shortLabel, r.resultSummary ?? ''])].join(' ');
+    for (const wrong of ['Model Armor', 'Investigator', 'Verifier', 'Nova']) {
+      expect(text).not.toContain(wrong);
+    }
+  });
+
+  it('names Guardrails on the security row in the rail', () => {
+    const sec = rail().find((a) => a.eventType === 'EVIDENCE_SECURITY_COMPLETED');
+    expect(sec?.shortLabel).toBe('Prompt injection detected');
+    expect(sec?.resultSummary).toBe('Amazon Bedrock Guardrails');
+  });
+
+  it('never claims a Quality decision on a branch that has no Quality authority', () => {
+    // The backend routes every non-autonomous exit through the same
+    // QUALITY_DECISION_REQUIRED event, so the raw label asserted a Quality
+    // decision that does not exist on a security halt.
+    const qdr = rail().find((a) => a.eventType === 'QUALITY_DECISION_REQUIRED');
+    expect(qdr?.shortLabel).toBe('Decision halted before agent reasoning');
+    expect(qdr?.shortLabel).not.toContain('Quality');
+    expect(qdr?.resultStatus).toBe('bad');
+  });
+
+  it('attributes the halt to Vouch, never to Quality', () => {
+    const qdr = rail().find((a) => a.eventType === 'QUALITY_DECISION_REQUIRED');
+    expect(qdr?.actorDisplayName).toBe('Vouch');
+  });
+
+  it('does not narrate binding as if processing continued past the halt', () => {
+    const binding = rail().find((a) => a.eventType === 'EVIDENCE_BINDING_COMPLETED');
+    expect(binding?.shortLabel).toBe('Evidence quarantined');
+    expect(binding?.actorDisplayName).toBe('Vouch');
+  });
+
+  it('never echoes the hostile payload into the rail', () => {
+    // The artifact viewer is where hostile content is inspected deliberately.
+    // The rail is read over someone's shoulder.
+    const text = rail()
+      .flatMap((r) => [r.shortLabel, r.resultSummary ?? '', ...(r.detail ?? []).map((d) => d.value)])
+      .join(' ');
+    for (const fragment of ['IGNORE ALL PREVIOUS', 'release_lot', 'Revision B']) {
+      expect(text).not.toContain(fragment);
+    }
+  });
+
+  it('emits no Investigator or Verifier row after the halt', () => {
+    expect(rail().every((r) => r.actorType !== 'investigator' && r.actorType !== 'verifier')).toBe(
+      true,
+    );
   });
 });
 

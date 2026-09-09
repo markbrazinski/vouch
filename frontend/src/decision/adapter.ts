@@ -185,10 +185,14 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
       return { short: 'Evidence received', summary: str(e.content_type) };
     case 'EVIDENCE_SECURITY_COMPLETED': {
       const outcome = str(e.guardrail_outcome, 'NOT_RUN');
-      return {
-        short: 'Security inspection',
-        summary: outcome === 'DETECTED' ? 'prompt attack detected' : `guardrail ${outcome.toLowerCase()}`,
-      };
+      // The detecting control is named, because "security inspection" could
+      // describe anything and the authority here is a specific AWS service.
+      // Note what is NOT echoed: the payload text itself. The rail is read
+      // over someone's shoulder; the artifact viewer is where hostile content
+      // is inspected deliberately.
+      return outcome === 'DETECTED'
+        ? { short: 'Prompt injection detected', summary: 'Amazon Bedrock Guardrails' }
+        : { short: 'Security inspection', summary: `Amazon Bedrock Guardrails · ${outcome.toLowerCase()}` };
     }
     case 'EVIDENCE_EXTRACTED': {
       // Sponsor-depth micro-pass: meaning first, method as secondary metadata.
@@ -204,6 +208,13 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
       return { short: 'Evidence extracted', summary: `${claims} claim${claims === 1 ? '' : 's'}` };
     }
     case 'EVIDENCE_BINDING_COMPLETED':
+      // This event fires even after a quarantine, carrying the quarantine as
+      // its `result`. "Identity bound · BOUND" there read as normal processing
+      // continuing past the halt; what actually happened is the document was
+      // set aside intact.
+      if (str(e.result) === 'QUARANTINED_SECURITY') {
+        return { short: 'Evidence quarantined', summary: 'withheld from both agents' };
+      }
       return {
         short: 'Identity bound',
         summary: bool(e.bound) ? str(e.binding_status) : str(e.binding_status, 'not bound'),
@@ -246,7 +257,13 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
     case 'RECOVERY_EXECUTED':
       return { short: 'Recovery executed', summary: str(e.order_id) };
     case 'QUALITY_DECISION_REQUIRED':
-      return { short: 'Quality decision required', summary: str(e.reason) };
+      // The backend routes EVERY non-autonomous exit through this one event,
+      // including a security quarantine — so the raw label claimed a Quality
+      // authority decision on a branch that has none. On an injection the
+      // truthful statement is what Vouch did: it stopped.
+      return str(e.reason) === 'INJECTION'
+        ? { short: 'Decision halted before agent reasoning', summary: 'evidence quarantined' }
+        : { short: 'Quality decision required', summary: str(e.reason) };
     case 'QUALITY_QUESTION_RAISED':
       return {
         short: 'Applicability question raised',
@@ -282,6 +299,9 @@ function statusFor(e: LifecycleEventDTO): ActivityEventVM['resultStatus'] {
     case 'DISPOSITION_COMPUTED':
       return str(e.disposition) === 'RELEASE' ? 'good' : 'caution';
     case 'QUALITY_DECISION_REQUIRED':
+      // An injection halt is a security event, not an open question routed to
+      // a human, and the rail colours it accordingly.
+      return str(e.reason) === 'INJECTION' ? 'bad' : 'caution';
     case 'QUALITY_QUESTION_RAISED':
     case 'BRIEF_VALIDATION_FAILED':
       return 'caution';
@@ -333,7 +353,13 @@ export function toActivity(events: LifecycleEventDTO[]): ActivityEventVM[] {
   const runOf = runNumbers(events);
 
   return events.map((e, index) => {
-    const actorType = ACTOR_BY_EVENT[e.event] ?? 'system';
+    // The binding stage is normally an Evidence act, but the row it renders on
+    // a quarantined artifact states what VOUCH did with the document, so the
+    // attribution follows the sentence.
+    const actorType: ActivityEventVM['actorType'] =
+      e.event === 'EVIDENCE_BINDING_COMPLETED' && str(e.result) === 'QUARANTINED_SECURITY'
+        ? 'system'
+        : (ACTOR_BY_EVENT[e.event] ?? 'system');
     const { short, summary } = labelFor(e);
     const sequence = num(e.sequence) ?? index + 1;
     const detail: { label: string; value: string }[] = [];
@@ -979,16 +1005,20 @@ function outcomeFrom(
 
   const security = last(events, 'EVIDENCE_SECURITY_COMPLETED');
   if (security && str(security.result) === 'QUARANTINED_SECURITY') {
+    // The detection is Amazon Bedrock Guardrails' Prompt Attack filter, not an
+    // agent result. Naming the Investigator, the Verifier or the model here
+    // would credit reasoning that provably never ran — the whole point of this
+    // path is that the document was stopped BEFORE either agent started.
     return {
       visible: true,
       kind: 'evidence_quarantined',
-      headline: 'Evidence quarantined before any decision was made',
+      headline: 'Prompt injection detected',
       tone: 'quarantine',
       lines: [
-        'The document was withheld from the decision agents entirely.',
-        'The lot state was not changed.',
+        'Amazon Bedrock Guardrails quarantined this supplier evidence before it reached either decision agent.',
+        'No disposition was made. No production state changed.',
       ],
-      chip: { label: 'SECURITY HOLD', tone: 'quarantine' },
+      chip: { label: 'SECURITY QUARANTINE', tone: 'quarantine' },
     };
   }
 
@@ -1332,49 +1362,66 @@ function spineFrom(
           ? 'active'
           : 'pending';
 
-  const consequenceState: SpineNodeVM['state'] = consequence
-    ? 'completed'
-    : active === 'consequence'
-      ? 'active'
-      : 'pending';
+  // A halted decision has no pending consequence. Nothing downstream of a
+  // security quarantine is still coming, so rendering PENDING there would
+  // promise a state change that will never arrive.
+  const consequenceState: SpineNodeVM['state'] = halted
+    ? 'halted'
+    : consequence
+      ? 'completed'
+      : active === 'consequence'
+        ? 'active'
+        : 'pending';
 
   return [
     {
       key: 'evidence',
       label: 'Evidence',
       state: evidenceState,
-      headline: halted ? 'Quarantined' : snapshot ? 'Frozen' : 'Arriving',
+      headline: halted ? 'Prompt injection' : snapshot ? 'Frozen' : 'Arriving',
       note: halted
-        ? 'withheld from the agents'
+        ? 'quarantined by Amazon Bedrock Guardrails'
         : snapshot
           ? `${num(snapshot.claim_count) ?? 0} claims`
           : '',
+      // An explicit tone is what makes the node render its OWN headline
+      // rather than nodePill's generic "⊘ HALTED". Each halted node states
+      // the specific fact it knows; three identical HALTED pills would tell
+      // the operator nothing about which stage stopped or why.
+      tone: halted ? 'quarantine' : undefined,
     },
     {
       key: 'agents',
       label: 'Investigation & Verification',
       state: agentsState,
       headline: halted
-        ? 'Never invoked'
+        ? 'Not started'
         : reconciliation?.state === 'MATERIAL_DISAGREEMENT'
           ? 'Material disagreement'
           : verifier && investigator
             ? 'Independently reconciled'
             : 'Reasoning',
-      note: investigator ? str(investigator.basis) : '',
+      note: halted ? 'no agent reasoning ran' : investigator ? str(investigator.basis) : '',
       // Event payload first (it is live mid-run, before any record exists),
       // then the agent's own stored brief. Null until one of them answers —
       // the model documents these as null-until-known, never a placeholder.
       // On a disagreement the lane states what this agent SELECTED, because
       // that is what differs; otherwise it states sufficiency as before.
-      investigatorLane:
-        briefSelection(record, 'investigator', reconciliation) ||
-        (investigator ? str(investigator.sufficiency) : '') ||
-        briefSufficiency(record, 'investigator'),
-      verifierLane:
-        briefSelection(record, 'verifier', reconciliation) ||
-        (verifier ? str(verifier.sufficiency) : '') ||
-        briefSufficiency(record, 'verifier'),
+      //
+      // On a halt both lanes state NOT_STARTED rather than the em-dash the
+      // model uses for "not known yet". The two are different facts: one is
+      // still coming, the other never will.
+      investigatorLane: halted
+        ? 'NOT_STARTED'
+        : briefSelection(record, 'investigator', reconciliation) ||
+          (investigator ? str(investigator.sufficiency) : '') ||
+          briefSufficiency(record, 'investigator'),
+      verifierLane: halted
+        ? 'NOT_STARTED'
+        : briefSelection(record, 'verifier', reconciliation) ||
+          (verifier ? str(verifier.sufficiency) : '') ||
+          briefSufficiency(record, 'verifier'),
+      tone: halted ? 'quarantine' : undefined,
       reconciliationSeal: halted
         ? 'halted'
         : reconciliation
@@ -1388,11 +1435,12 @@ function spineFrom(
       label: 'Disposition',
       state: dispositionState,
       headline: halted
-        ? 'Withheld'
+        ? 'None'
         : qdr
           ? 'Quality decision'
           : str(computed?.disposition) || 'Pending',
-      note: computed ? str(computed.basis) : '',
+      note: halted ? 'no disposition was made' : computed ? str(computed.basis) : '',
+      tone: halted ? 'quarantine' : undefined,
     },
     consequenceNode(consequenceState, consequence, consequenceVM),
   ];
@@ -1413,6 +1461,19 @@ function consequenceNode(
 ): SpineNodeVM {
   const blocked = vm?.readinessChanges.filter((c) => c.to === 'BLOCKED') ?? [];
   const moved = vm?.candidates.find((c) => c.selected);
+
+  // A security halt produces no consequence because it produced no
+  // disposition. "NO MUTATION" is the fact; "Pending" would be a forecast.
+  if (state === 'halted') {
+    return {
+      key: 'consequence',
+      label: 'Consequence',
+      state,
+      headline: 'No mutation',
+      note: 'no production state changed',
+      tone: 'quarantine',
+    };
+  }
 
   if (blocked.length) {
     return {
