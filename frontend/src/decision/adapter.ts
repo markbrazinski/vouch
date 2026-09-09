@@ -30,6 +30,7 @@ import type {
   FailureVM,
   OutcomeSummaryVM,
   QualityAuthorityOptionVM,
+  IdentityBindingPanelVM,
   QualityAuthorityPanelVM,
   QualityAuthorityRecordVM,
   ReconciliationVM,
@@ -118,6 +119,7 @@ const ACTOR_BY_EVENT: Record<string, ActivityEventVM['actorType']> = {
   QUALITY_DECISION_REQUIRED: 'system',
   QUALITY_QUESTION_RAISED: 'system',
   QUALITY_AUTHORITY_RECORDED: 'human',
+  EVIDENCE_IDENTITY_ESTABLISHED: 'system',
   HUMAN_EVIDENCE_RECEIVED: 'human',
   DECISION_RESUMED: 'system',
 };
@@ -215,6 +217,15 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
       if (str(e.result) === 'QUARANTINED_SECURITY') {
         return { short: 'Evidence quarantined', summary: 'withheld from both agents' };
       }
+      if (str(e.binding_status) === 'UNRESOLVED_SUPPLIER_BATCH') {
+        // "Identity bound · UNRESOLVED_SUPPLIER_BATCH" would read as a
+        // contradiction. What happened is the opposite of a binding: the
+        // document named itself and Vouch could not resolve that name.
+        return {
+          short: 'Identity not established',
+          summary: 'supplier batch not linked to this lot',
+        };
+      }
       return {
         short: 'Identity bound',
         summary: bool(e.bound) ? str(e.binding_status) : str(e.binding_status, 'not bound'),
@@ -265,26 +276,62 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
         ? { short: 'Decision halted before agent reasoning', summary: 'evidence quarantined' }
         : { short: 'Quality decision required', summary: str(e.reason) };
     case 'QUALITY_QUESTION_RAISED':
+      if (str(e.question_type) === 'IDENTITY_BINDING') {
+        return {
+          short: 'Identity confirmation required',
+          summary: [str(e.supplier_batch), str(e.internal_lot_id)]
+            .filter(Boolean)
+            .join(' · not linked to '),
+        };
+      }
       return {
         short: 'Applicability question raised',
         summary: [str(e.equivalence_id), str(e.characteristic)].filter(Boolean).join(' · '),
       };
-    case 'QUALITY_AUTHORITY_RECORDED':
+    case 'QUALITY_AUTHORITY_RECORDED': {
+      const verb = str(e.decision);
+      if (verb === 'CONFIRM_BINDING' || verb === 'KEEP_UNBOUND') {
+        return {
+          short:
+            verb === 'CONFIRM_BINDING'
+              ? 'Batch-to-lot mapping confirmed'
+              : 'Evidence kept unbound',
+          summary: [
+            [str(e.supplier_batch), str(e.internal_lot_id)].filter(Boolean).join(' → '),
+            str(e.accountable_actor),
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        };
+      }
       return {
         // The rail row the gate asks for: "QUALITY · Applicability authorized",
         // then "EQV-1 · LOT-1006 · QA-LEAD" underneath it.
-        short:
-          str(e.decision) === 'ESTABLISH_EVIDENCE'
-            ? 'Controlling evidence established'
-            : 'Kept held',
+        short: verb === 'ESTABLISH_EVIDENCE'
+          ? 'Controlling evidence established'
+          : 'Kept held',
         summary: [str(e.equivalence_id), str(e.accountable_actor)]
           .filter(Boolean)
           .join(' · '),
       };
+    }
+    case 'EVIDENCE_IDENTITY_ESTABLISHED':
+      return {
+        short: 'Identity established',
+        summary: [str(e.supplier_batch), str(e.internal_lot_id)]
+          .filter(Boolean)
+          .join(' → '),
+      };
     case 'HUMAN_EVIDENCE_RECEIVED':
       return { short: 'Human evidence received', summary: str(e.authority_source) };
     case 'DECISION_RESUMED':
-      return { short: 'Decision resumed', summary: `run ${num(e.run_number) ?? 2}` };
+      return {
+        short:
+          str(e.trigger) === 'IDENTITY_BINDING'
+            ? 'Evidence binding resumed'
+            : 'Decision resumed',
+        summary: `run ${num(e.run_count) ?? num(e.run_number) ?? 2}`,
+      };
     default:
       return { short: titleCase(type) };
   }
@@ -306,7 +353,11 @@ function statusFor(e: LifecycleEventDTO): ActivityEventVM['resultStatus'] {
     case 'BRIEF_VALIDATION_FAILED':
       return 'caution';
     case 'QUALITY_AUTHORITY_RECORDED':
-      return str(e.decision) === 'ESTABLISH_EVIDENCE' ? 'good' : 'caution';
+      return ['ESTABLISH_EVIDENCE', 'CONFIRM_BINDING'].includes(str(e.decision))
+        ? 'good'
+        : 'caution';
+    case 'EVIDENCE_IDENTITY_ESTABLISHED':
+      return 'good';
     case 'MUTATION_COMPLETED':
     case 'RECOVERY_EXECUTED':
       return 'good';
@@ -336,7 +387,15 @@ export function runNumbers(events: LifecycleEventDTO[]): number[] {
   let derived = 1;
   let stepped = false;
   return events.map((e) => {
-    if (e.event === 'HUMAN_EVIDENCE_RECEIVED') {
+    // The human act that opens a run, whichever form it took: supplying
+    // evidence, or establishing an identity. A confirmation filed under run 1
+    // reads as something the first run did, when it is precisely the thing
+    // that ended it.
+    const humanAct =
+      e.event === 'HUMAN_EVIDENCE_RECEIVED' ||
+      (e.event === 'QUALITY_AUTHORITY_RECORDED' &&
+        str(e.decision) === 'CONFIRM_BINDING');
+    if (humanAct) {
       derived += 1;
       stepped = true;
     } else if (e.event === 'DECISION_RESUMED') {
@@ -1031,10 +1090,17 @@ function outcomeFrom(
   // Ordering decides it: an authority recorded AFTER the escalation settled
   // that escalation. Comparing sequence rather than presence is what keeps a
   // second, later disagreement legible.
-  const settled = last(events, 'QUALITY_AUTHORITY_RECORDED');
-  const answered =
-    Boolean(settled) &&
-    (num(settled?.sequence) ?? 0) > (num(qdr?.sequence) ?? 0);
+  // Position in the already-sorted array, not the `sequence` field. Not every
+  // transport populates `sequence` — the runtime's own evaluate/authority
+  // responses do not — and `(0) > (0)` is false, so an answered question went
+  // on reporting itself as open and a released lot still showed "Quality
+  // decision required" above its own RELEASE.
+  const indexOfLast = (type: string): number => {
+    for (let i = events.length - 1; i >= 0; i -= 1) if (events[i].event === type) return i;
+    return -1;
+  };
+  const settledAt = indexOfLast('QUALITY_AUTHORITY_RECORDED');
+  const answered = settledAt > -1 && settledAt > indexOfLast('QUALITY_DECISION_REQUIRED');
   if (!answered && (qdr || result?.quality_decision_required)) {
     return {
       visible: true,
@@ -1626,6 +1692,12 @@ function qualityAuthorityOf(
   return segment ? (segment as QualityAuthorityDTO) : undefined;
 }
 
+/** How many measurements were extracted but held pending identity. */
+function heldClaimCountOf(record: Record<string, unknown> | null | undefined): number {
+  const security = (record?.security ?? {}) as Record<string, unknown>;
+  return num(security.held_claim_count) ?? 0;
+}
+
 //: The canonical role names. "Verifier" alone reads as a generic checker; the
 //: architecture's whole claim is that the second read is INDEPENDENT, and the
 //: name is where an operator learns that.
@@ -1663,6 +1735,10 @@ export function qualityPanelFrom(
 ): QualityAuthorityPanelVM | null {
   const question = authority?.question;
   if (!question?.question_id) return null;
+  // One panel per question type. Without this an identity question would fall
+  // through into the measurement panel and render a question about viscosity
+  // that nobody asked.
+  if (str(question.question_type) !== 'EVIDENCE_APPLICABILITY') return null;
   if (str(question.status) !== 'OPEN') return null;
   if ((authority?.decisions ?? []).length > 0) return null;
 
@@ -1736,6 +1812,74 @@ export function qualityPanelFrom(
   };
 }
 
+/**
+ * The identity question, ready to answer — or null.
+ *
+ * Every noun the operator reads is a backend fact: the supplier's own batch
+ * id, the internal lot id, the artifact hash. The frontend composes the
+ * sentence and invents none of it.
+ */
+export function identityPanelFrom(
+  authority: QualityAuthorityDTO | undefined,
+  input?: { heldClaimCount?: number },
+): IdentityBindingPanelVM | null {
+  const question = authority?.question;
+  if (!question?.question_id) return null;
+  if (str(question.question_type) !== 'IDENTITY_BINDING') return null;
+  if (str(question.status) !== 'OPEN') return null;
+  if ((authority?.decisions ?? []).length > 0) return null;
+
+  const batch = str(question.supplier_batch);
+  const lotId = str(question.internal_lot_id);
+  const held = input?.heldClaimCount ?? 0;
+
+  return {
+    questionId: str(question.question_id),
+    // The exact question, and it is only about identity. Not "approve", not
+    // "accept evidence", not "release" — the human is confirming who this
+    // document belongs to, and nothing else.
+    question: `Does supplier batch ${batch} correspond to internal ${lotId} for this evidence?`,
+    reason:
+      `The certificate was read successfully, but supplier batch ${batch} is ` +
+      `not authoritatively linked to internal lot ${lotId}.`,
+    // Stated POSITIVELY, because the failure mode of this screen is being
+    // mistaken for an OCR failure. Everything that DID work is named.
+    verified: [
+      { label: 'Document', value: 'Parsed successfully' },
+      {
+        label: 'Measurements',
+        value: held ? `${held} extracted` : 'Extracted',
+      },
+      { label: 'Security', value: 'Passed' },
+    ],
+    supplierSide: {
+      heading: 'SUPPLIER DOCUMENT',
+      identifier: `Batch ${batch}`,
+      detail: [str(question.supplier_id), str(question.supplier_site)]
+        .filter(Boolean)
+        .join(' · '),
+    },
+    vouchSide: {
+      heading: 'VOUCH',
+      identifier: lotId,
+      detail: [str(question.material_id), str(question.po_reference)]
+        .filter(Boolean)
+        .join(' · '),
+    },
+    mappingStatus: 'Mapping not established',
+    // Identity verbs on both actions. Neither decides the lot: confirming
+    // establishes a correspondence and the engine still computes the outcome.
+    confirmLabel: 'Confirm binding',
+    confirmDetail: `Establish that batch ${batch} is ${lotId} for this decision`,
+    keepUnboundLabel: 'Keep unbound',
+    keepUnboundDetail: 'Retain the evidence without attaching it to this lot',
+    supplierBatch: batch,
+    internalLotId: lotId,
+    artifactId: str(question.artifact_id),
+    contentHash: str(question.content_hash),
+  };
+}
+
 /** §8. The durable stage that replaces the panel once a human has answered. */
 export function qualityAuthorityFrom(
   authority: QualityAuthorityDTO | undefined,
@@ -1743,7 +1887,36 @@ export function qualityAuthorityFrom(
   const decisions = authority?.decisions ?? [];
   if (decisions.length === 0) return null;
   const decision: HumanAuthorityDecisionDTO = decisions[decisions.length - 1];
-  const authorized = str(decision.decision) === 'ESTABLISH_EVIDENCE';
+  const verb = str(decision.decision);
+
+  // The identity authority is its own completed stage. It answers a different
+  // question, so it says a different thing — never "evidence established".
+  if (verb === 'CONFIRM_BINDING' || verb === 'KEEP_UNBOUND') {
+    const batch = str(decision.supplier_batch);
+    const boundLot = str(decision.bound_lot_id);
+    const confirmed = verb === 'CONFIRM_BINDING';
+    return {
+      decision: confirmed ? 'CONFIRM_BINDING' : 'KEEP_UNBOUND',
+      headline: confirmed ? 'Identity authority' : 'Kept unbound',
+      tone: confirmed ? 'released' : 'atrisk',
+      question: `Does supplier batch ${batch} correspond to internal ${boundLot} for this evidence?`,
+      answer: confirmed
+        ? `Supplier batch ${batch} confirmed as ${boundLot}`
+        : `Evidence retained; batch ${batch} was not attached to ${boundLot}`,
+      accountableActor: str(decision.accountable_actor),
+      authoritySource: str(decision.authority_source),
+      timestamp: str(decision.created_at),
+      clock: clockOf(str(decision.created_at)),
+      // The ARTIFACT is what this authority is bound to, not a claim set: the
+      // human confirmed a correspondence for specific bytes they were shown.
+      snapshotBinding: str(decision.content_hash).slice(0, 12),
+      answerLabel: 'Established',
+      bindingLabel: 'Source artifact',
+      stageLabel: 'Identity authority',
+    };
+  }
+
+  const authorized = verb === 'ESTABLISH_EVIDENCE';
   const characteristic = str(decision.characteristic).replace(/_/g, ' ');
 
   return {
@@ -1774,6 +1947,9 @@ export function qualityAuthorityFrom(
     timestamp: str(decision.created_at),
     clock: clockOf(str(decision.created_at)),
     snapshotBinding: str(decision.claim_set_hash).slice(0, 12),
+    answerLabel: 'Established',
+    bindingLabel: 'Evidence snapshot',
+    stageLabel: 'Quality authority',
   };
 }
 
@@ -1893,6 +2069,9 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     // One or the other, never both: an answered question has no panel, and an
     // unanswered one has no record. The control cannot outlive its decision.
     qualityAuthorityPanel: qualityPanelFrom(qualityAuthorityOf(input.record)),
+    identityBindingPanel: identityPanelFrom(qualityAuthorityOf(input.record), {
+      heldClaimCount: heldClaimCountOf(input.record),
+    }),
     qualityAuthority: qualityAuthorityFrom(qualityAuthorityOf(input.record)),
     runBanner: runBannerFrom(events, input.record),
   };
@@ -1942,8 +2121,10 @@ export function runBannerFrom(
   const because =
     trigger === 'QUALITY_AUTHORITY'
       ? 'resumed after Quality authority'
-      : trigger === 'HUMAN_EVIDENCE'
-        ? 'resumed after human evidence'
-        : 'resumed';
+      : trigger === 'IDENTITY_BINDING'
+        ? 'resumed after identity confirmation'
+        : trigger === 'HUMAN_EVIDENCE'
+          ? 'resumed after human evidence'
+          : 'resumed';
   return `Run ${run} · ${because}`;
 }

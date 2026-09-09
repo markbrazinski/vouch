@@ -56,14 +56,21 @@ export interface SpineNodeVM {
 }
 
 /**
- * §11. Six truthful failure classes, deliberately not one error state.
+ * §11. Seven truthful failure classes, deliberately not one error state.
  *
  * The distinction that matters most: TECHNICAL_FAILURE must never render a
  * disposition, and DOMAIN_ABSTENTION must never look like a crash. Vouch
  * abstaining is the product working.
+ *
+ * IDENTITY_CONFIRMATION_REQUIRED is separate from DOMAIN_ABSTENTION for the
+ * same reason: this evidence DOES establish an answer, and saying "the
+ * evidence could not establish an answer" would be false. What is unresolved
+ * is whose lot the answer belongs to — and unlike an abstention, a human can
+ * close it from paperwork they already hold.
  */
 export type FailureKind =
   | 'DOMAIN_ABSTENTION'
+  | 'IDENTITY_CONFIRMATION_REQUIRED'
   | 'TECHNICAL_FAILURE'
   | 'SECURITY_HOLD'
   | 'CONFLICT_STALE'
@@ -336,13 +343,49 @@ export interface QualityAuthorityPanelVM {
 }
 
 /**
+ * The identity question, ready to answer — or null.
+ *
+ * Deliberately NOT folded into `QualityAuthorityPanelVM`. That panel is
+ * measurement-shaped in every field (value, methodLine, threshold, passes,
+ * would_disposition) because it asks which of two results controls a
+ * requirement. This one asks whose lot a document describes. Sharing a type
+ * would mean a dozen fields that are meaningless in one case or the other,
+ * and a reader could no longer tell from the type which question is being
+ * asked.
+ */
+export interface IdentityBindingPanelVM {
+  questionId: string;
+  /** "Does supplier batch WP-26-0317-B correspond to internal LOT-1003?" */
+  question: string;
+  /** Why a human is here, in one sentence. */
+  reason: string;
+  /** What Vouch DID manage to do — stated positively, never inferred. */
+  verified: { label: string; value: string }[];
+  /** The unresolved pair, rendered side by side. */
+  supplierSide: { heading: string; identifier: string; detail: string };
+  vouchSide: { heading: string; identifier: string; detail: string };
+  /** "Mapping not established" */
+  mappingStatus: string;
+  /** The identity actions. Neither is a disposition. */
+  confirmLabel: string;
+  confirmDetail: string;
+  keepUnboundLabel: string;
+  keepUnboundDetail: string;
+  /** Echoed back on submit so a confirmation answers the question asked. */
+  supplierBatch: string;
+  internalLotId: string;
+  artifactId: string;
+  contentHash: string;
+}
+
+/**
  * §8. The durable stage that REPLACES the action panel once a human answers.
  *
  * Its presence is what removes the affordance: the workspace renders one or
  * the other, never both, and never a disabled button.
  */
 export interface QualityAuthorityRecordVM {
-  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD';
+  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD' | 'CONFIRM_BINDING' | 'KEEP_UNBOUND';
   /** "Applicability authorized" | "Kept held" */
   headline: string;
   tone: SemanticTone;
@@ -354,6 +397,16 @@ export interface QualityAuthorityRecordVM {
   clock: string;
   /** Evidence-snapshot binding, so the record shows what it was answered against. */
   snapshotBinding: string;
+  /**
+   * What the two variable rows are CALLED. An applicability authority
+   * establishes a measurement against a claim set; an identity authority
+   * establishes a correspondence against an artifact. Same shape, different
+   * nouns — and printing the wrong noun would misdescribe the audit record.
+   */
+  answerLabel: string;
+  bindingLabel: string;
+  /** "Quality authority" | "Identity authority" — the completed stage's name. */
+  stageLabel: string;
 }
 
 /** D7. One row in the far-right chronology. */
@@ -430,6 +483,12 @@ export interface DecisionWorkspaceVM {
    * takes its place, so the controls cannot outlive the decision they made.
    */
   qualityAuthorityPanel: QualityAuthorityPanelVM | null;
+  /**
+   * The identity question, present under exactly the same rule: only while it
+   * is open and unanswered. At most one of the two panels is ever non-null —
+   * a record has one open question or none.
+   */
+  identityBindingPanel: IdentityBindingPanelVM | null;
   /** The durable answered stage. Persists for the life of the record. */
   qualityAuthority: QualityAuthorityRecordVM | null;
   /**

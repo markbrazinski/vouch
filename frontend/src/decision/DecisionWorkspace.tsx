@@ -29,6 +29,7 @@ import {
   ConsequenceStage,
   DispositionStage,
   EvidenceStage,
+  IdentityBindingPanel,
   QualityAuthorityPanel,
   QualityAuthorityStage,
   ReconciliationStage,
@@ -211,6 +212,8 @@ export function DecisionWorkspace({
   vm,
   onEstablishEvidence,
   onKeepHeld,
+  onConfirmBinding,
+  onKeepUnbound,
 }: {
   vm: DecisionWorkspaceVM;
   /**
@@ -221,6 +224,9 @@ export function DecisionWorkspace({
    */
   onEstablishEvidence?: (claimId: string) => void;
   onKeepHeld?: () => void;
+  /** Settle the open IDENTITY question. Absent in read-only surfaces. */
+  onConfirmBinding?: () => void;
+  onKeepUnbound?: () => void;
 }) {
   const [viewing, setViewing] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -407,6 +413,14 @@ export function DecisionWorkspace({
               vm={vm.qualityAuthorityPanel}
               onEstablish={onEstablishEvidence}
               onHold={onKeepHeld}
+              submitting={vm.running}
+            />
+          )}
+          {vm.identityBindingPanel && (
+            <IdentityBindingPanel
+              vm={vm.identityBindingPanel}
+              onConfirm={onConfirmBinding}
+              onKeepUnbound={onKeepUnbound}
               submitting={vm.running}
             />
           )}

@@ -127,21 +127,30 @@ export const supplyEvidence = (input: {
   });
 
 /**
- * Settle a disputed applicability question.
+ * Settle the one open quality question — a disputed applicability, or an
+ * unresolved identity.
  *
  * Establishes a scoped authoritative FACT, never a disposition: there is no
  * field here that releases a lot, and the backend refuses any decision value
- * other than the two below. What the authorized evidence then means is still
+ * other than the four below. What the authorized evidence then means is still
  * computed deterministically after both agents re-derive their briefs.
+ *
+ * The identity fields are ECHOES of the open question, not selectors. The
+ * runtime refuses any that disagrees, so a confirmation cannot be composed to
+ * bind a batch, artifact or lot the human was never shown.
  */
 export const submitQualityAuthority = (input: {
   decisionRecordId: string;
-  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD';
+  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD' | 'CONFIRM_BINDING' | 'KEEP_UNBOUND';
   evidenceRef?: string;
   accountableActor: string;
   authoritySource: string;
   claimSetHash?: string;
   questionId?: string;
+  supplierBatch?: string;
+  boundLotId?: string;
+  artifactId?: string;
+  contentHash?: string;
 }) =>
   request('/quality-authority', {
     method: 'POST',
@@ -153,6 +162,10 @@ export const submitQualityAuthority = (input: {
       authority_source: input.authoritySource,
       claim_set_hash: input.claimSetHash,
       question_id: input.questionId,
+      supplier_batch: input.supplierBatch,
+      bound_lot_id: input.boundLotId,
+      artifact_id: input.artifactId,
+      content_hash: input.contentHash,
     }),
   });
 

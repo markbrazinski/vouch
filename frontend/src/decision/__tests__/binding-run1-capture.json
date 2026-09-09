@@ -1,0 +1,275 @@
+{
+ "ok": true,
+ "action": "evaluate_lot",
+ "backend": {
+  "mode": "local",
+  "corpus": "IN_MEMORY_FIXTURES",
+  "evidence_store": "LOCAL_SIMULATION",
+  "capability_store": "IN_MEMORY_NOT_DURABLE",
+  "record_store": "IN_MEMORY_NOT_DURABLE",
+  "event_store": "IN_MEMORY_NOT_DURABLE",
+  "reasoners": "LOCAL_SCRIPTED_REASONERS",
+  "durable": false
+ },
+ "decision_record_id": "DR-ff3ea0e9e315",
+ "lot_id": "LOT-1003",
+ "disposition": "",
+ "failure_category": "EVIDENCE_IDENTITY_UNRESOLVED",
+ "quality_decision_required": true,
+ "reason": "supplier batch WP-26-0317-B is not authoritatively linked to internal lot LOT-1003; identity confirmation required",
+ "mutation": {},
+ "consequences": {},
+ "decision_record": {
+  "record_id": "DR-ff3ea0e9e315",
+  "lot_id": "LOT-1003",
+  "run_count": 1,
+  "security": {
+   "inspection_performed": true,
+   "prompt_attack_detected": false,
+   "blocked": false,
+   "identity_unresolved_artifact_ids": [
+    "ART-3e29472df546"
+   ],
+   "unresolved_batch_identities": [
+    {
+     "artifact_id": "ART-3e29472df546",
+     "supplier_batch": "WP-26-0317-B",
+     "internal_lot_id": "LOT-1003",
+     "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+     "supplier_id": "SUP-NORTH",
+     "supplier_site": "SITE-N1",
+     "material_id": "MAT-ALLOY-7",
+     "po_reference": "PO-82",
+     "extracted_claim_count": 2
+    }
+   ],
+   "held_claim_count": 2
+  },
+  "snapshot_hash": "",
+  "investigator": {
+   "model_id": "",
+   "prompt_version": "",
+   "brief_hash": "",
+   "tool_calls": 0
+  },
+  "verifier": {
+   "model_id": "",
+   "prompt_version": "",
+   "brief_hash": "",
+   "tool_calls": 0
+  },
+  "reconciliation": "",
+  "quality_authority": {
+   "question": {
+    "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+    "question_type": "IDENTITY_BINDING",
+    "characteristic": "",
+    "options": [
+     {
+      "decision": "CONFIRM_BINDING",
+      "label": "Confirm supplier batch WP-26-0317-B is LOT-1003",
+      "establishes": "WP-26-0317-B -> LOT-1003"
+     },
+     {
+      "decision": "KEEP_UNBOUND",
+      "label": "Keep the evidence unbound",
+      "establishes": ""
+     }
+    ],
+    "investigator_evidence_ref": "",
+    "verifier_evidence_ref": "",
+    "equivalence_id": "",
+    "method_from": "",
+    "method_to": "",
+    "condition": "",
+    "status": "OPEN",
+    "supplier_batch": "WP-26-0317-B",
+    "internal_lot_id": "LOT-1003",
+    "artifact_id": "ART-3e29472df546",
+    "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+    "supplier_id": "SUP-NORTH",
+    "supplier_site": "SITE-N1",
+    "material_id": "MAT-ALLOY-7",
+    "po_reference": "PO-82"
+   },
+   "decisions": []
+  },
+  "basis": {
+   "spec_id": "",
+   "revision": ""
+  },
+  "disposition": "",
+  "policy": {
+   "version": "vouch-policy-2.1",
+   "gate_decision": ""
+  },
+  "capability": {
+   "id": "",
+   "consumed": false
+  },
+  "mutation": {
+   "action": "",
+   "before_version": 0,
+   "after_version": 0,
+   "inventory_delta": 0.0,
+   "ledger_sequence": 0
+  },
+  "failure_category": "EVIDENCE_IDENTITY_UNRESOLVED",
+  "caused_by": []
+ },
+ "events": [
+  {
+   "event": "EVIDENCE_RECEIVED",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037035+00:00",
+   "artifact_id": "ART-3e29472df546",
+   "source": "supplier-portal",
+   "content_type": "text/plain",
+   "requested_lot": "LOT-1003",
+   "requested_material": "MAT-ALLOY-7",
+   "storage_ref": "local://evidence/LOT-1003/ART-3e29472df546",
+   "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+   "object_version": "sim-v1",
+   "store_kind": "LOCAL_SIMULATION",
+   "trust_label": "UNTRUSTED_SUPPLIER",
+   "byte_length": 265
+  },
+  {
+   "event": "EVIDENCE_SECURITY_COMPLETED",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037378+00:00",
+   "artifact_id": "ART-3e29472df546",
+   "detection_ran": true,
+   "result": "EVIDENCE_IDENTITY_UNRESOLVED",
+   "guardrail_outcome": "CLEAN",
+   "guardrail_id": "",
+   "guardrail_version": "",
+   "malware_scan": "NOT_RUN",
+   "prompt_attack_detected": false,
+   "quarantined": false,
+   "binding_mismatches": [],
+   "binding_status": "UNRESOLVED_SUPPLIER_BATCH",
+   "claimed_identity": {
+    "claimed_lot": "",
+    "claimed_material": "MAT-ALLOY-7",
+    "claimed_supplier": "SUP-NORTH",
+    "claimed_supplier_site": "SITE-N1",
+    "claimed_supplier_batch": "WP-26-0317-B",
+    "claimed_lots": [],
+    "claimed_materials": [
+     "MAT-ALLOY-7"
+    ],
+    "claimed_suppliers": [
+     "SUP-NORTH"
+    ],
+    "claimed_supplier_sites": [
+     "SITE-N1"
+    ],
+    "claimed_supplier_batches": [
+     "WP-26-0317-B"
+    ]
+   },
+   "version": "vouch-sec-1"
+  },
+  {
+   "event": "EVIDENCE_BINDING_COMPLETED",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037407+00:00",
+   "artifact_id": "ART-3e29472df546",
+   "requested_lot": "LOT-1003",
+   "requested_material": "MAT-ALLOY-7",
+   "binding_status": "UNRESOLVED_SUPPLIER_BATCH",
+   "bound": false,
+   "claimed_identity": {
+    "claimed_lot": "",
+    "claimed_material": "MAT-ALLOY-7",
+    "claimed_supplier": "SUP-NORTH",
+    "claimed_supplier_site": "SITE-N1",
+    "claimed_supplier_batch": "WP-26-0317-B",
+    "claimed_lots": [],
+    "claimed_materials": [
+     "MAT-ALLOY-7"
+    ],
+    "claimed_suppliers": [
+     "SUP-NORTH"
+    ],
+    "claimed_supplier_sites": [
+     "SITE-N1"
+    ],
+    "claimed_supplier_batches": [
+     "WP-26-0317-B"
+    ]
+   },
+   "identity_stated": true,
+   "reasons": [
+    "document identifies itself as supplier batch WP-26-0317-B, which is not authoritatively linked to internal lot LOT-1003"
+   ],
+   "result": "EVIDENCE_IDENTITY_UNRESOLVED"
+  },
+  {
+   "event": "EVIDENCE_BINDING_MISMATCH",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037430+00:00",
+   "artifact_id": "ART-3e29472df546",
+   "requested_lot": "LOT-1003",
+   "binding_status": "UNRESOLVED_SUPPLIER_BATCH",
+   "claimed_identity": {
+    "claimed_lot": "",
+    "claimed_material": "MAT-ALLOY-7",
+    "claimed_supplier": "SUP-NORTH",
+    "claimed_supplier_site": "SITE-N1",
+    "claimed_supplier_batch": "WP-26-0317-B",
+    "claimed_lots": [],
+    "claimed_materials": [
+     "MAT-ALLOY-7"
+    ],
+    "claimed_suppliers": [
+     "SUP-NORTH"
+    ],
+    "claimed_supplier_sites": [
+     "SITE-N1"
+    ],
+    "claimed_supplier_batches": [
+     "WP-26-0317-B"
+    ]
+   },
+   "mismatches": [
+    "document identifies itself as supplier batch WP-26-0317-B, which is not authoritatively linked to internal lot LOT-1003"
+   ]
+  },
+  {
+   "event": "EVIDENCE_EXTRACTED",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037483+00:00",
+   "artifact_id": "ART-3e29472df546",
+   "method": "DETERMINISTIC_PARSER",
+   "confidence": 1.0,
+   "claim_count": 2,
+   "low_confidence": false,
+   "version": "coa-parser-1",
+   "structured_extraction": false
+  },
+  {
+   "event": "QUALITY_QUESTION_RAISED",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037562+00:00",
+   "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+   "question_type": "IDENTITY_BINDING",
+   "supplier_batch": "WP-26-0317-B",
+   "internal_lot_id": "LOT-1003",
+   "artifact_id": "ART-3e29472df546",
+   "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+   "document_parsed": true,
+   "security_clean": true,
+   "extracted_claim_count": 2
+  },
+  {
+   "event": "QUALITY_DECISION_REQUIRED",
+   "decision_record_id": "DR-ff3ea0e9e315",
+   "at": "2026-09-09T23:09:47.037592+00:00",
+   "reason": "IDENTITY_UNRESOLVED",
+   "lot_id": "LOT-1003",
+   "category": "EVIDENCE_IDENTITY_UNRESOLVED"
+  }
+ ]
+}

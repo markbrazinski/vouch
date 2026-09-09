@@ -162,6 +162,29 @@ export function DecisionRoute({ entry }: { entry: HeroAEntry }) {
             questionId: vm.qualityAuthorityPanel?.questionId,
           })
         }
+        onConfirmBinding={() =>
+          run.decide({
+            decision: 'CONFIRM_BINDING',
+            accountableActor: 'QA-LEAD',
+            authoritySource: 'Plant Quality Authority',
+            questionId: vm.identityBindingPanel?.questionId,
+            // Echoed straight from the rendered question, so the confirmation
+            // is provably about the pair the operator was shown. The runtime
+            // refuses any that disagrees.
+            supplierBatch: vm.identityBindingPanel?.supplierBatch,
+            boundLotId: vm.identityBindingPanel?.internalLotId,
+            artifactId: vm.identityBindingPanel?.artifactId,
+            contentHash: vm.identityBindingPanel?.contentHash,
+          })
+        }
+        onKeepUnbound={() =>
+          run.decide({
+            decision: 'KEEP_UNBOUND',
+            accountableActor: 'QA-LEAD',
+            authoritySource: 'Plant Quality Authority',
+            questionId: vm.identityBindingPanel?.questionId,
+          })
+        }
       />
     </div>
   );

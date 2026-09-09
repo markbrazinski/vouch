@@ -475,7 +475,13 @@ def ingest(
         reasons=list(binding_reasons),
         result=status.value,
     )
-    if binding_status is not BindingStatus.BOUND:
+    if binding_status not in (
+        BindingStatus.BOUND, BindingStatus.UNRESOLVED_SUPPLIER_BATCH
+    ):
+        # An unresolved supplier batch is NOT a mismatch: nothing about the
+        # document contradicts the receipt. Emitting a MISMATCH event for it
+        # made every triage surface report a wrong-lot document, which is the
+        # opposite of what happened and the loudest possible way to say it.
         events.emit(
             EventType.EVIDENCE_BINDING_MISMATCH,
             decision_record_id,

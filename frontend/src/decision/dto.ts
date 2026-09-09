@@ -99,6 +99,20 @@ export interface QualityQuestionDTO {
   method_to: string;
   condition: string;
   status: 'OPEN' | 'RESOLVED' | 'HELD' | string;
+  /**
+   * IDENTITY_BINDING questions only. The two identifiers a human is asked to
+   * correspond, plus the context that makes the question answerable. The
+   * supplier's batch id is what the DOCUMENT states; the internal lot id is
+   * what Vouch is evaluating. Nothing links them until a human says so.
+   */
+  supplier_batch?: string;
+  internal_lot_id?: string;
+  artifact_id?: string;
+  content_hash?: string;
+  supplier_id?: string;
+  supplier_site?: string;
+  material_id?: string;
+  po_reference?: string;
 }
 
 export interface QualityOptionDTO {
@@ -109,6 +123,14 @@ export interface QualityOptionDTO {
   condition: string;
   equivalence_id: string;
   selected_by: 'INVESTIGATOR' | 'VERIFIER' | string;
+  /**
+   * IDENTITY_BINDING options only: which action this card performs. The two
+   * identity answers are not measurements, so they carry a decision verb
+   * instead of a claim.
+   */
+  decision?: string;
+  label?: string;
+  establishes?: string;
   /**
    * Whether this measurement sits inside the requirement, computed by the
    * backend from the same requirement and frozen claim the engine uses.
@@ -148,7 +170,18 @@ export interface HumanAuthorityDecisionDTO {
   established_method?: string;
   established_condition?: string;
   established_via_equivalence?: string;
-  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD' | string;
+  decision:
+    | 'ESTABLISH_EVIDENCE'
+    | 'KEEP_HELD'
+    | 'CONFIRM_BINDING'
+    | 'KEEP_UNBOUND'
+    | string;
+  /** IDENTITY_BINDING authorities only. Scoped to this record and artifact. */
+  supplier_batch?: string;
+  bound_lot_id?: string;
+  artifact_id?: string;
+  content_hash?: string;
+  binding_ref?: string;
   accountable_actor: string;
   authority_source: string;
   created_at: string;

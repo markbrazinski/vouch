@@ -195,6 +195,16 @@ export function classifyFailure(input: unknown): FailureVM {
         detail: detail || 'The document was withheld from the decision agents.',
         suppressesDisposition: false,
       };
+    case 'EVIDENCE_IDENTITY_UNRESOLVED':
+      return {
+        kind: 'IDENTITY_CONFIRMATION_REQUIRED',
+        headline: 'Identity confirmation required',
+        detail:
+          detail ||
+          'The certificate was read successfully, but it is not ' +
+            'authoritatively linked to this lot.',
+        suppressesDisposition: false,
+      };
     case 'EXTRACTION_LOW_CONFIDENCE':
     case 'EVIDENCE_BINDING_MISMATCH':
     case 'EVIDENCE_UNBOUND':
@@ -623,12 +633,23 @@ export function useDecisionRun(initialId?: string) {
    */
   const decide = useCallback(
     async (input: {
-      decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD';
+      decision:
+        | 'ESTABLISH_EVIDENCE'
+        | 'KEEP_HELD'
+        | 'CONFIRM_BINDING'
+        | 'KEEP_UNBOUND';
       evidenceRef?: string;
       accountableActor: string;
       authoritySource: string;
       questionId?: string;
       claimSetHash?: string;
+      // Identity echoes. None of these selects anything — the runtime refuses
+      // any that disagrees with the open question, so a confirmation always
+      // answers the question that was actually asked.
+      supplierBatch?: string;
+      boundLotId?: string;
+      artifactId?: string;
+      contentHash?: string;
     }) => {
       if (liveRef.current) return;
       liveRef.current = true;
@@ -646,6 +667,10 @@ export function useDecisionRun(initialId?: string) {
           authoritySource: input.authoritySource,
           questionId: input.questionId,
           claimSetHash: input.claimSetHash,
+          supplierBatch: input.supplierBatch,
+          boundLotId: input.boundLotId,
+          artifactId: input.artifactId,
+          contentHash: input.contentHash,
         })) as { ok: boolean; error?: string };
         if (!started.ok) {
           setState((prev) => ({ ...prev, running: false, failure: classifyFailure(started) }));

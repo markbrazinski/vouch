@@ -14,6 +14,7 @@ import type {
   CompletedStageVM,
   ConsequenceVM,
   DispositionVM,
+  IdentityBindingPanelVM,
   QualityAuthorityPanelVM,
   QualityAuthorityRecordVM,
   ReconciliationVM,
@@ -975,6 +976,190 @@ export function QualityAuthorityPanel({
 
 
 /**
+ * The identity question, as a control an operator can answer.
+ *
+ * The failure mode this layout exists to prevent is being read as an OCR
+ * failure. So it leads with what DID work — parsed, extracted, security
+ * passed — and only then shows the two identifiers side by side with nothing
+ * between them. The unresolved thing is a correspondence, and the screen
+ * should look like a correspondence is missing, not like a document is broken.
+ */
+export function IdentityBindingPanel({
+  vm,
+  onConfirm,
+  onKeepUnbound,
+  submitting = false,
+}: {
+  vm: IdentityBindingPanelVM;
+  onConfirm?: () => void;
+  onKeepUnbound?: () => void;
+  submitting?: boolean;
+}) {
+  return (
+    <div
+      data-testid="identity-binding-panel"
+      style={{
+        animation: 'vFade .4s ease-out both',
+        marginTop: 14,
+        background: '#F3F4F9',
+        border: '1px solid rgba(69,80,140,.24)',
+        borderRadius: 12,
+        padding: '18px 20px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Dot color="#45508C" />
+        <Eyebrow>Identity confirmation required</Eyebrow>
+      </div>
+
+      <div
+        data-testid="identity-binding-question"
+        style={{ font: `600 15px/1.45 ${SANS}`, color: INK.primary, marginBottom: 3 }}
+      >
+        {vm.question}
+      </div>
+      <div style={{ font: `400 12px/1.5 ${SANS}`, color: INK.prose, marginBottom: 14 }}>
+        {vm.reason}
+      </div>
+
+      {/* What Vouch DID do. Stated, not implied — an operator must never have
+          to infer "the document was readable" from the absence of an error. */}
+      <div
+        data-testid="identity-verified-facts"
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 8,
+          marginBottom: 14,
+        }}
+      >
+        {vm.verified.map((f) => (
+          <span
+            key={f.label}
+            style={{
+              font: `500 10px ${MONO}`,
+              color: '#3E6B54',
+              background: 'rgba(62,107,84,.08)',
+              border: '1px solid rgba(62,107,84,.22)',
+              borderRadius: 5,
+              padding: '4px 8px',
+            }}
+          >
+            {f.label}: {f.value}
+          </span>
+        ))}
+      </div>
+
+      {/* The unresolved pair. Equal weight, and deliberately NOT joined by an
+          arrow: an arrow would draw the very correspondence the system is
+          refusing to assert. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: 12,
+          marginBottom: 10,
+        }}
+      >
+        {[
+          { key: 'supplier', side: vm.supplierSide },
+          { key: 'vouch', side: vm.vouchSide },
+        ].map(({ key, side }) => (
+          <div
+            key={key}
+            data-testid={`identity-side-${key}`}
+            style={{
+              background: N.nested,
+              border: `1px solid ${HAIR}`,
+              borderRadius: 9,
+              padding: '13px 14px',
+            }}
+          >
+            <div
+              style={{
+                font: `600 9px ${MONO}`,
+                color: INK.label,
+                letterSpacing: '.07em',
+                marginBottom: 8,
+              }}
+            >
+              {side.heading}
+            </div>
+            <div style={{ font: `700 18px/1.2 ${SANS}`, color: INK.primary }}>
+              {side.identifier}
+            </div>
+            <div style={{ font: `400 11px ${MONO}`, color: INK.muted, marginTop: 4 }}>
+              {side.detail}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div
+        data-testid="identity-mapping-status"
+        style={{
+          font: `600 10px ${MONO}`,
+          letterSpacing: '.06em',
+          color: '#9A5A2A',
+          marginBottom: 14,
+        }}
+      >
+        {vm.mappingStatus.toUpperCase()}
+      </div>
+
+      <button
+        type="button"
+        data-testid="identity-confirm-binding"
+        disabled={submitting}
+        onClick={() => onConfirm?.()}
+        style={{
+          font: `600 11px ${MONO}`,
+          color: '#FFFFFF',
+          background: submitting ? '#8189B5' : '#45508C',
+          border: '1px solid rgba(69,80,140,.4)',
+          borderRadius: 8,
+          padding: '10px 16px',
+          cursor: submitting ? 'progress' : 'pointer',
+        }}
+      >
+        {vm.confirmLabel}
+      </button>
+      <div
+        style={{
+          font: `400 10px/1.5 ${MONO}`,
+          color: INK.muted,
+          margin: '7px 0 14px',
+        }}
+      >
+        {vm.confirmDetail}
+      </div>
+
+      {/* Tertiary. Keeping the evidence unbound is a legitimate answer, but it
+          is not the one being asked for, so it must not compete. */}
+      <button
+        type="button"
+        data-testid="identity-keep-unbound"
+        disabled={submitting}
+        onClick={() => onKeepUnbound?.()}
+        style={{
+          font: `500 10px ${MONO}`,
+          color: INK.muted,
+          background: 'transparent',
+          border: 'none',
+          borderBottom: `1px solid ${HAIR}`,
+          borderRadius: 0,
+          padding: '2px 0',
+          cursor: submitting ? 'progress' : 'pointer',
+        }}
+      >
+        {vm.keepUnboundLabel}
+      </button>
+    </div>
+  );
+}
+
+
+/**
  * §8. The durable record of an answered question.
  *
  * This is what the action panel becomes. It never disappears again: the
@@ -1001,7 +1186,7 @@ export function QualityAuthorityStage({ vm }: { vm: QualityAuthorityRecordVM }) 
           marginBottom: 10,
         }}
       >
-        <Eyebrow>Quality authority</Eyebrow>
+        <Eyebrow>{vm.stageLabel}</Eyebrow>
         <Pill tone={vm.tone}>{vm.headline}</Pill>
       </div>
 
@@ -1011,11 +1196,11 @@ export function QualityAuthorityStage({ vm }: { vm: QualityAuthorityRecordVM }) 
 
       <div style={{ display: 'grid', gap: 7 }}>
         {[
-          ['Established', vm.answer],
+          [vm.answerLabel, vm.answer],
           ['Accountable', vm.accountableActor],
           ['Authority', vm.authoritySource],
           ['Recorded', vm.clock],
-          ['Evidence snapshot', vm.snapshotBinding],
+          [vm.bindingLabel, vm.snapshotBinding],
         ].map(([label, value]) => (
           <div
             key={label}
