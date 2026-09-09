@@ -52,10 +52,22 @@ def disagreed(vouch):
     return corpus, v, outcome
 
 
+def option_for(outcome, *, equivalence: bool):
+    """The offered path that does (or does not) rely on an equivalence."""
+    options = outcome.record.quality_authority.question.options
+    return next(o for o in options if bool(o["equivalence_id"]) is equivalence)
+
+
 def authorize(v, outcome, **overrides):
+    """Establish the equivalence-covered path — the one that RELEASES.
+
+    Named explicitly rather than inferred: the two offered paths lead to
+    different dispositions, so which one is established decides the lot.
+    """
     kwargs = dict(
         decision_record_id=outcome.decision_record_id,
-        decision="AUTHORIZE_APPLICABILITY",
+        decision="ESTABLISH_EVIDENCE",
+        evidence_ref=option_for(outcome, equivalence=True)["claim_id"],
         accountable_actor=ACTOR,
         authority_source=SOURCE,
     )
@@ -149,7 +161,12 @@ def test_run_one_raises_exactly_one_answerable_question(disagreed):
     assert {o["selected_by"] for o in question.options} == {
         "INVESTIGATOR", "VERIFIER"
     }
-    assert {o["value"] for o in question.options} == {285.0, 312.0}
+    assert {o["value"] for o in question.options} == {178.0, 312.0}
+    # The two paths lead to OPPOSITE dispositions, which is what makes this a
+    # decision rather than a ratification.
+    by_value = {o["value"]: o for o in question.options}
+    assert by_value[178.0]["within_limits"] is False
+    assert by_value[312.0]["within_limits"] is True
 
 
 def test_run_one_emits_the_escalation_events(disagreed):
@@ -167,7 +184,7 @@ def test_run_one_emits_the_escalation_events(disagreed):
 # ==========================================================================
 
 
-def test_authorize_resumes_the_same_record_and_releases(disagreed):
+def test_establishing_the_equivalence_path_resumes_and_releases(disagreed):
     corpus, v, first = disagreed
     outcome = authorize(v, first)
 
@@ -190,7 +207,7 @@ def test_the_human_did_not_release_the_lot(disagreed):
     outcome = authorize(v, first)
     authority = outcome.record.quality_authority.decisions[0]
 
-    assert authority.decision == "AUTHORIZE_APPLICABILITY"
+    assert authority.decision == "ESTABLISH_EVIDENCE"
     assert authority.question_type == "EVIDENCE_APPLICABILITY"
     # The authority names evidence, never a disposition or an action.
     assert authority.authorized_evidence_refs
@@ -355,6 +372,8 @@ def test_a_second_conflicting_answer_is_refused(disagreed):
     "overrides, category",
     [
         ({"decision": "RELEASE"}, FailureCategory.POLICY_REFUSAL),
+        ({"evidence_ref": ""}, FailureCategory.POLICY_REFUSAL),
+        ({"evidence_ref": "CLM-not-offered"}, FailureCategory.POLICY_REFUSAL),
         ({"decision": "release_lot"}, FailureCategory.POLICY_REFUSAL),
         ({"decision": ""}, FailureCategory.POLICY_REFUSAL),
         ({"accountable_actor": ""}, FailureCategory.POLICY_REFUSAL),
@@ -381,7 +400,8 @@ def test_invalid_authority_submissions_fail_closed(disagreed, overrides, categor
 def test_a_release_enum_cannot_be_smuggled_through_the_decision_field(disagreed):
     """There is no spelling of `decision` that releases a lot."""
     corpus, v, first = disagreed
-    for attempt in ("RELEASE", "RELEASE_LOT", "AUTHORIZE_RELEASE", "ACT", "ALLOW"):
+    for attempt in ("RELEASE", "RELEASE_LOT", "AUTHORIZE_RELEASE", "ACT", "ALLOW",
+                    "AUTHORIZE_APPLICABILITY"):
         with pytest.raises(VouchFailure):
             authorize(v, first, decision=attempt)
     assert corpus.lot("LOT-1006").status == "RECEIVED"
@@ -394,7 +414,13 @@ def test_authority_cannot_be_recorded_on_a_record_with_no_question(vouch):
     assert outcome.disposition == "RELEASE"
 
     with pytest.raises(VouchFailure) as raised:
-        authorize(v, outcome)
+        v.submit_quality_authority(
+            decision_record_id=outcome.decision_record_id,
+            decision="ESTABLISH_EVIDENCE",
+            evidence_ref="CLM-anything",
+            accountable_actor=ACTOR,
+            authority_source=SOURCE,
+        )
     assert raised.value.category is FailureCategory.POLICY_REFUSAL
 
 
@@ -448,7 +474,8 @@ def test_authority_survives_a_restart_and_still_resumes(corpus, tmp_path):
     second = VouchV2(corpus, record_store=JsonRecordStore(tmp_path / "records"))
     resumed = second.submit_quality_authority(
         decision_record_id=outcome.decision_record_id,
-        decision="AUTHORIZE_APPLICABILITY",
+        decision="ESTABLISH_EVIDENCE",
+        evidence_ref=option_for(outcome, equivalence=True)["claim_id"],
         accountable_actor=ACTOR,
         authority_source=SOURCE,
     )
@@ -669,3 +696,111 @@ def test_higher_trust_evidence_still_wins_for_both(corpus):
     for brief in (investigator, verifier):
         row = {c.test: c for c in brief.coverage}["viscosity"]
         assert row.evidence_ref == "CLM-qa"
+
+
+# ==========================================================================
+# the choice is load-bearing — both answers change the outcome
+# ==========================================================================
+
+
+def test_establishing_the_direct_path_quarantines_instead(disagreed):
+    """The other answer, and it must genuinely go the other way.
+
+    This is what makes the question a decision rather than a ratification. An
+    earlier fixture had both paths passing, so whichever was established the
+    disposition was RELEASE and the human's answer changed only a reason
+    string — ceremony wearing the costume of authority.
+
+    Here the direct ASTM-D2196 result is 178 cP against a 200 cP floor, so
+    establishing it means the lot cannot be defended and the deterministic
+    engine quarantines it. The human still never says QUARANTINE: they name
+    the controlling measurement, and the engine draws the conclusion.
+    """
+    corpus, v, first = disagreed
+    direct = option_for(first, equivalence=False)
+    assert direct["within_limits"] is False
+
+    outcome = v.submit_quality_authority(
+        decision_record_id=first.decision_record_id,
+        decision="ESTABLISH_EVIDENCE",
+        evidence_ref=direct["claim_id"],
+        accountable_actor=ACTOR,
+        authority_source=SOURCE,
+    )
+
+    assert outcome.record.reconciliation.outcome in (
+        "MATCH", "NON_MATERIAL_DIFFERENCE"
+    )
+    assert outcome.disposition == "QUARANTINE"
+    assert corpus.lot("LOT-1006").status == "QUARANTINED"
+    assert corpus.get("inventory", "LOT-1006").usable is False
+    assert outcome.record.mutation.action == "quarantine_lot"
+
+
+def test_the_two_answers_lead_to_opposite_dispositions(corpus):
+    """Stated as one property, because it is the whole point of the case."""
+    outcomes = {}
+    for equivalence in (True, False):
+        world = build_corpus()
+        v = VouchV2(world, record_store=InMemoryRecordStore())
+        first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+        chosen = option_for(first, equivalence=equivalence)
+        outcome = v.submit_quality_authority(
+            decision_record_id=first.decision_record_id,
+            decision="ESTABLISH_EVIDENCE",
+            evidence_ref=chosen["claim_id"],
+            accountable_actor=ACTOR,
+            authority_source=SOURCE,
+        )
+        outcomes[equivalence] = (
+            outcome.disposition,
+            world.lot("LOT-1006").status,
+            world.get("production_order", "C-419").status,
+        )
+
+    assert outcomes[True] == ("RELEASE", "RELEASED", "READY")
+    # C-419 goes BLOCKED rather than staying AT_RISK: it was AT_RISK because a
+    # named lot was queued against it, and quarantining that lot removes the
+    # thing that made the shortfall recoverable. "Short with a lot coming" and
+    # "short with nothing coming" are different plans.
+    assert outcomes[False] == ("QUARANTINE", "QUARANTINED", "BLOCKED")
+
+
+def test_the_established_measurement_is_recorded_readably(disagreed):
+    """The audit answer is "what did Quality establish", not "which row"."""
+    _, v, first = disagreed
+    chosen = option_for(first, equivalence=True)
+    outcome = authorize(v, first)
+    authority = outcome.record.quality_authority.decisions[0]
+
+    assert authority.established_value == chosen["value"] == 312.0
+    assert authority.established_units == "cP"
+    assert authority.established_method == "ASTM-D445"
+    assert authority.established_condition == "25C"
+    assert authority.established_via_equivalence == "EQV-1"
+
+
+def test_the_human_cannot_establish_evidence_the_question_did_not_offer(disagreed):
+    """Authority is scoped to the disputed question, not to the snapshot.
+
+    Without this, an authority could reach past the question into any claim on
+    the record — including one neither agent considered applicable.
+    """
+    corpus, v, first = disagreed
+    other = next(
+        c.claim_id
+        for c in v.claims[first.decision_record_id]
+        if c.claim_id not in {o["claim_id"] for o in
+                              first.record.quality_authority.question.options}
+    ) if len(v.claims[first.decision_record_id]) > 2 else "CLM-not-in-this-question"
+
+    with pytest.raises(VouchFailure) as raised:
+        v.submit_quality_authority(
+            decision_record_id=first.decision_record_id,
+            decision="ESTABLISH_EVIDENCE",
+            evidence_ref=other,
+            accountable_actor=ACTOR,
+            authority_source=SOURCE,
+        )
+    assert raised.value.category is FailureCategory.POLICY_REFUSAL
+    assert corpus.lot("LOT-1006").status == "RECEIVED"

@@ -257,8 +257,8 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
         // The rail row the gate asks for: "QUALITY · Applicability authorized",
         // then "EQV-1 · LOT-1006 · QA-LEAD" underneath it.
         short:
-          str(e.decision) === 'AUTHORIZE_APPLICABILITY'
-            ? 'Applicability authorized'
+          str(e.decision) === 'ESTABLISH_EVIDENCE'
+            ? 'Controlling evidence established'
             : 'Kept held',
         summary: [str(e.equivalence_id), str(e.accountable_actor)]
           .filter(Boolean)
@@ -286,7 +286,7 @@ function statusFor(e: LifecycleEventDTO): ActivityEventVM['resultStatus'] {
     case 'BRIEF_VALIDATION_FAILED':
       return 'caution';
     case 'QUALITY_AUTHORITY_RECORDED':
-      return str(e.decision) === 'AUTHORIZE_APPLICABILITY' ? 'good' : 'caution';
+      return str(e.decision) === 'ESTABLISH_EVIDENCE' ? 'good' : 'caution';
     case 'MUTATION_COMPLETED':
     case 'RECOVERY_EXECUTED':
       return 'good';
@@ -1178,6 +1178,68 @@ function briefSufficiency(
   return value || null;
 }
 
+/**
+ * What this agent actually SELECTED, when that is the thing in dispute.
+ *
+ * The lanes normally show `sufficiency`, which answers "is every requirement
+ * covered". On a MATERIAL_DISAGREEMENT that is the one field both agents
+ * agree on — they each found applicable evidence — so two cards read
+ * "Evidence covers the requirement" side by side under a banner saying they
+ * disagreed. The screen asserted agreement and disagreement at once, and hid
+ * the only dimension that actually differed.
+ *
+ * So when the briefs disagree, the lane states the chosen measurement and how
+ * it is authorized. Roles are NOT assumed: live Nova has been observed taking
+ * either path, so whatever each agent selected is what its own card shows.
+ *
+ * Returns null when there is no disagreement or no resolvable selection, and
+ * the lane falls back to sufficiency — the ordinary case, unchanged.
+ */
+function briefSelection(
+  record: Record<string, unknown> | null | undefined,
+  role: 'investigator' | 'verifier',
+  reconciliation: ReconciliationVM | null,
+): string | null {
+  if (reconciliation?.state !== 'MATERIAL_DISAGREEMENT') return null;
+
+  const segment = (record?.[role] ?? null) as Record<string, unknown> | null;
+  const brief = (segment?.brief ?? null) as Record<string, unknown> | null;
+  const coverage = (brief?.coverage ?? []) as Record<string, unknown>[];
+  if (!Array.isArray(coverage) || coverage.length === 0) return null;
+
+  // The first row that actually resolves evidence. The reconciliation names
+  // the differing FINGERPRINT FIELD (`coverage`), not a characteristic, so it
+  // cannot narrow this further — and a brief that covers several requirements
+  // still leads with the one it resolved.
+  const row = coverage.find((c) => c.evidence_ref);
+  if (!row) return null;
+
+  const claim = claimById(record, str(row.evidence_ref));
+  if (!claim) return null;
+
+  const value = claim.value === null || claim.value === undefined ? '' : String(claim.value);
+  const amount = [value, str(claim.units)].filter(Boolean).join(' ');
+  const equivalence = str(row.equivalence_record_id);
+  const route = equivalence ? `via ${equivalence}` : 'direct method';
+
+  return [amount, str(claim.method), str(claim.condition)]
+    .filter(Boolean)
+    .join(' · ')
+    .concat(` — ${route}`);
+}
+
+/** One frozen claim from the record's own canonical claim list. */
+function claimById(
+  record: Record<string, unknown> | null | undefined,
+  claimId: string,
+): Record<string, unknown> | null {
+  if (!claimId) return null;
+  const evidence = (record?.evidence ?? null) as Record<string, unknown> | null;
+  const claims = (evidence?.canonical_claims ?? []) as Record<string, unknown>[];
+  if (!Array.isArray(claims)) return null;
+  return claims.find((c) => str(c.claim_id) === claimId) ?? null;
+}
+
 function spineFrom(
   events: LifecycleEventDTO[],
   active: StageKey | null,
@@ -1268,11 +1330,16 @@ function spineFrom(
       // Event payload first (it is live mid-run, before any record exists),
       // then the agent's own stored brief. Null until one of them answers —
       // the model documents these as null-until-known, never a placeholder.
+      // On a disagreement the lane states what this agent SELECTED, because
+      // that is what differs; otherwise it states sufficiency as before.
       investigatorLane:
+        briefSelection(record, 'investigator', reconciliation) ||
         (investigator ? str(investigator.sufficiency) : '') ||
         briefSufficiency(record, 'investigator'),
       verifierLane:
-        (verifier ? str(verifier.sufficiency) : '') || briefSufficiency(record, 'verifier'),
+        briefSelection(record, 'verifier', reconciliation) ||
+        (verifier ? str(verifier.sufficiency) : '') ||
+        briefSufficiency(record, 'verifier'),
       reconciliationSeal: halted
         ? 'halted'
         : reconciliation
@@ -1502,6 +1569,8 @@ export function qualityPanelFrom(
 
   const options: QualityAuthorityOptionVM[] = (question.options ?? []).map((o) => {
     const equivalence = str(o.equivalence_id);
+    const passes = o.within_limits === true;
+    const threshold = str(o.threshold);
     return {
       claimId: str(o.claim_id),
       selectedBy: str(o.selected_by) === 'VERIFIER' ? 'VERIFIER' : 'INVESTIGATOR',
@@ -1510,21 +1579,33 @@ export function qualityPanelFrom(
       basis: equivalence
         ? `applicable via ${equivalence}`
         : `the method ${str(question.method_to)} names`,
+      // The verb is "establish", never "release" or "approve": the human is
+      // naming which measurement is controlling, and the engine still decides
+      // what that means.
+      actionLabel: equivalence
+        ? `Establish ${str(o.method)} via ${equivalence}`
+        : `Establish direct ${str(o.method)}`,
+      // Stated, not implied. Where the two paths lead to different
+      // dispositions, an operator choosing between two plausible numbers must
+      // be told what each one leads to.
+      consequence:
+        o.within_limits === null || o.within_limits === undefined
+          ? 'Consequence cannot be computed from this value'
+          : passes
+            ? `Deterministic evaluation will PASS${threshold ? ` — within ${threshold}` : ''}`
+            : `Deterministic evaluation will FAIL${threshold ? ` — outside ${threshold}` : ''}`,
+      passes,
     };
   });
 
   const characteristic = str(question.characteristic).replace(/_/g, ' ');
   const equivalenceId = str(question.equivalence_id);
-  const alternate = options.find((o) => o.basis.startsWith('applicable via'));
-  const direct = options.find((o) => !o.basis.startsWith('applicable via'));
-
   // The exact sentence. Every noun in it is a backend fact.
-  const question_text = equivalenceId
-    ? `Does Quality authorize ${equivalenceId} — ${str(question.method_from)} in place of ` +
-      `${str(question.method_to)} at ${str(question.condition)} — as applicable to the ` +
-      `${characteristic} requirement for this decision?`
-    : `Does Quality authorize the disputed ${characteristic} evidence as applicable ` +
-      `for this decision?`;
+  // "Which", not "whether". The two paths lead to different dispositions, so
+  // the operator is choosing between them rather than ratifying one.
+  const question_text =
+    `Which ${characteristic} determination should Quality establish as ` +
+    `controlling for this decision?`;
 
   const position = (o: QualityAuthorityOptionVM | undefined): string =>
     o ? `Selected ${o.measurement}, ${o.basis}.` : '';
@@ -1540,10 +1621,10 @@ export function qualityPanelFrom(
     disputed: equivalenceId
       ? `${equivalenceId} · ${str(question.method_from)} → ${str(question.method_to)} at ${str(question.condition)}`
       : characteristic,
-    // Deliberately NOT "Approve"/"Release". The human authorizes applicability
-    // or leaves the lot where it is; neither verb decides the lot.
-    primaryActionLabel: alternate ? 'Authorize applicability' : 'Authorize applicability',
-    secondaryActionLabel: direct ? 'Keep held' : 'Keep held',
+    // Deliberately NOT "Approve"/"Release". Establishing evidence names which
+    // measurement is controlling; holding leaves the lot where it is. Neither
+    // verb decides the lot.
+    holdActionLabel: 'Keep held',
   };
 }
 
@@ -1554,20 +1635,36 @@ export function qualityAuthorityFrom(
   const decisions = authority?.decisions ?? [];
   if (decisions.length === 0) return null;
   const decision: HumanAuthorityDecisionDTO = decisions[decisions.length - 1];
-  const authorized = str(decision.decision) === 'AUTHORIZE_APPLICABILITY';
+  const authorized = str(decision.decision) === 'ESTABLISH_EVIDENCE';
   const characteristic = str(decision.characteristic).replace(/_/g, ' ');
-  const equivalenceId = str(decision.equivalence_id);
 
   return {
-    decision: authorized ? 'AUTHORIZE_APPLICABILITY' : 'KEEP_HELD',
-    headline: authorized ? 'Applicability authorized' : 'Kept held',
+    decision: authorized ? 'ESTABLISH_EVIDENCE' : 'KEEP_HELD',
+    headline: authorized ? 'Controlling evidence established' : 'Kept held',
     tone: authorized ? 'released' : 'atrisk',
     question: qualityQuestionText(decision),
+    // What was established, in the operator's own terms. The backend records
+    // the measurement alongside the claim id precisely so this line does not
+    // have to name an opaque reference months later.
     answer: authorized
-      ? equivalenceId
-        ? `${equivalenceId} authorized as applicable to the ${characteristic} requirement`
-        : `Disputed ${characteristic} evidence authorized as applicable`
-      : `Lot kept held; the ${characteristic} question was not authorized`,
+      ? [
+          [
+            decision.established_value ?? '',
+            str(decision.established_units),
+          ]
+            .filter(Boolean)
+            .join(' '),
+          str(decision.established_method),
+          str(decision.established_condition),
+        ]
+          .filter(Boolean)
+          .join(' · ')
+          .concat(
+            str(decision.established_via_equivalence)
+              ? ` — via ${str(decision.established_via_equivalence)}`
+              : ' — direct method',
+          )
+      : `Lot kept held; no ${characteristic} determination was established`,
     accountableActor: str(decision.accountable_actor),
     authoritySource: str(decision.authority_source),
     timestamp: str(decision.created_at),

@@ -109,6 +109,14 @@ export interface QualityOptionDTO {
   condition: string;
   equivalence_id: string;
   selected_by: 'INVESTIGATOR' | 'VERIFIER' | string;
+  /**
+   * Whether this measurement sits inside the requirement, computed by the
+   * backend from the same requirement and frozen claim the engine uses.
+   * `null` when the value is not numeric. A PREDICTION, never a disposition.
+   */
+  within_limits?: boolean | null;
+  /** The requirement rendered for display, e.g. "[200.0, 400.0] cP". */
+  threshold?: string;
 }
 
 /** §3. A scoped authority fact. Never a disposition. */
@@ -128,7 +136,13 @@ export interface HumanAuthorityDecisionDTO {
   method_from: string;
   method_to: string;
   condition: string;
-  decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD' | string;
+  /** The measurement established, in readable terms. Empty for KEEP_HELD. */
+  established_value?: number | string | null;
+  established_units?: string;
+  established_method?: string;
+  established_condition?: string;
+  established_via_equivalence?: string;
+  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD' | string;
   accountable_actor: string;
   authority_source: string;
   created_at: string;

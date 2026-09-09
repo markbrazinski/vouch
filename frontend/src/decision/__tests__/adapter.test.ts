@@ -444,7 +444,10 @@ describe('terminal summary answers the three questions', () => {
 });
 
 describe('the Consequence spine node states the impact, not the recovery', () => {
-  const node = (events: typeof dto.events) =>
+  // `dto.events` is optional on the DTO, so `typeof dto.events` carries
+  // `| undefined` — which `project` does not accept. The helper always passes
+  // a real list, so the non-optional element type is the honest signature.
+  const node = (events: LifecycleEventDTO[]) =>
     project({
       decisionRecordId: dto.decision_record_id,
       lotId: dto.lot_id!,
@@ -477,7 +480,7 @@ describe('the Consequence spine node states the impact, not the recovery', () =>
         order_readiness: 'READY',
         sequence: 999,
       },
-    ] as typeof dto.events);
+    ] as LifecycleEventDTO[]);
     expect(n.headline).toBe('C-417 blocked');
     expect(n.headline).not.toMatch(/READY/);
   });

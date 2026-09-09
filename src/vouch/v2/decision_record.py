@@ -288,7 +288,17 @@ class HumanAuthorityDecision:
     method_from: str = ""
     method_to: str = ""
     condition: str = ""
-    decision: str = ""  # AUTHORIZE_APPLICABILITY | KEEP_HELD
+    #: The measurement that was established, in the operator's own terms. The
+    #: claim id alone is unreadable months later, and the audit question is
+    #: "what did Quality establish", not "which row did they point at".
+    established_value: float | str | None = None
+    established_units: str = ""
+    established_method: str = ""
+    established_condition: str = ""
+    #: Whether the established path relied on an equivalence, and which. Empty
+    #: when the direct method was chosen.
+    established_via_equivalence: str = ""
+    decision: str = ""  # ESTABLISH_EVIDENCE | KEEP_HELD
     accountable_actor: str = ""
     authority_source: str = ""
     created_at: str = field(default_factory=utcnow)
@@ -307,9 +317,9 @@ class QualityAuthoritySegment:
 
     @property
     def authorized_evidence_refs(self) -> list[str]:
-        """Evidence paths currently settled as applicable, newest wins."""
+        """The evidence Quality established as controlling, newest wins."""
         for decision in reversed(self.decisions):
-            if decision.decision == "AUTHORIZE_APPLICABILITY":
+            if decision.decision == "ESTABLISH_EVIDENCE":
                 return list(decision.authorized_evidence_refs)
         return []
 

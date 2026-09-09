@@ -17,10 +17,12 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { project, qualityAuthorityFrom, qualityPanelFrom } from '../adapter';
+import { classifyFailure } from '../useDecisionRun';
 import { QualityAuthorityPanel } from '../Stages';
 import type { QualityAuthorityDTO } from '../dto';
 import run1 from './quality-run1-capture.json';
 import run2 from './quality-run2-capture.json';
+import quarantined from './quality-quarantine-capture.json';
 import held from './quality-held-capture.json';
 
 const capture = (c: { record: unknown; events: unknown }) => ({
@@ -53,32 +55,50 @@ describe('the open applicability question', () => {
     expect(panel.equivalenceId).toBe('EQV-1');
   });
 
-  it('asks the narrow applicability question and names the real objects', () => {
-    expect(panel.question).toContain('EQV-1');
-    expect(panel.question).toContain('ASTM-D445');
-    expect(panel.question).toContain('ASTM-D2196');
-    expect(panel.question).toContain('25C');
+  it('names the real objects, on the option that relies on each', () => {
+    // The QUESTION asks which determination controls; the OPTIONS carry the
+    // methods and the equivalence, because that is where they apply.
     expect(panel.question).toContain('viscosity');
-    expect(panel.question.startsWith('Does Quality authorize')).toBe(true);
+    expect(panel.disputed).toContain('EQV-1');
+    expect(panel.disputed).toContain('ASTM-D445');
+    expect(panel.disputed).toContain('ASTM-D2196');
+    expect(panel.disputed).toContain('25C');
   });
 
   it('never asks the human to decide the lot', () => {
-    const forbidden = /approve|deny|release|quarantine|override|reject/i;
+    const forbidden = /approve|deny|override|reject/i;
     expect(panel.question).not.toMatch(forbidden);
-    expect(panel.primaryActionLabel).not.toMatch(forbidden);
-    expect(panel.secondaryActionLabel).not.toMatch(forbidden);
-    expect(panel.primaryActionLabel).toBe('Authorize applicability');
-    expect(panel.secondaryActionLabel).toBe('Keep held');
+    for (const o of panel.options) expect(o.actionLabel).not.toMatch(forbidden);
+    expect(panel.holdActionLabel).toBe('Keep held');
+    // The verb is "establish": the human names the controlling measurement,
+    // and the engine still decides what it means.
+    for (const o of panel.options) expect(o.actionLabel).toMatch(/^Establish /);
+  });
+
+  it('asks WHICH determination controls, not whether one is acceptable', () => {
+    expect(panel.question).toMatch(/^Which viscosity determination/);
+    expect(panel.question).toContain('controlling');
+  });
+
+  it('states the consequence of each path, because they differ', () => {
+    const direct = panel.options.find((o) => !o.basis.startsWith('applicable via'))!;
+    const alternate = panel.options.find((o) => o.basis.startsWith('applicable via'))!;
+
+    expect(direct.passes).toBe(false);
+    expect(direct.consequence).toMatch(/will FAIL/);
+    expect(alternate.passes).toBe(true);
+    expect(alternate.consequence).toMatch(/will PASS/);
   });
 
   it('states both positions as selections, with their real measurements', () => {
     expect(panel.options).toHaveLength(2);
-    expect(panel.investigatorPosition).toContain('285 cP');
-    expect(panel.investigatorPosition).toContain('ASTM-D2196');
-    expect(panel.verifierPosition).toContain('312 cP');
-    expect(panel.verifierPosition).toContain('ASTM-D445');
+    const measurements = panel.options.map((o) => o.measurement).join(' | ');
+    expect(measurements).toContain('178 cP');
+    expect(measurements).toContain('312 cP');
+    expect(measurements).toContain('ASTM-D2196');
+    expect(measurements).toContain('ASTM-D445');
     // The equivalence path is labelled as authorized, not as wrong.
-    expect(panel.verifierPosition).toContain('EQV-1');
+    expect(panel.options.map((o) => o.basis).join(' ')).toContain('EQV-1');
   });
 });
 
@@ -109,14 +129,15 @@ describe('the durable quality-authority record', () => {
   it('keeps who acted, under what authority, and against which snapshot', () => {
     const vm = qualityAuthorityFrom(authorityOf(run2))!;
 
-    expect(vm.decision).toBe('AUTHORIZE_APPLICABILITY');
-    expect(vm.headline).toBe('Applicability authorized');
+    expect(vm.decision).toBe('ESTABLISH_EVIDENCE');
+    expect(vm.headline).toBe('Controlling evidence established');
     expect(vm.accountableActor).toBe('QA-LEAD');
     expect(vm.authoritySource).toBe('Plant Quality Authority');
     expect(vm.timestamp).toBeTruthy();
     expect(vm.snapshotBinding).toBeTruthy();
-    // The question it answered stays legible after the fact.
-    expect(vm.question).toContain('EQV-1');
+    // What was established, readable without resolving a claim id.
+    expect(vm.answer).toContain('312 cP');
+    expect(vm.answer).toContain('ASTM-D445');
     expect(vm.answer).toContain('EQV-1');
   });
 
@@ -145,10 +166,12 @@ describe('run 2 is the same record', () => {
     const vm = project(capture(run2));
     const labels = vm.activity.map((a) => a.shortLabel);
 
-    expect(labels).toContain('Applicability authorized');
+    expect(labels).toContain('Controlling evidence established');
     expect(labels).toContain('Decision resumed');
 
-    const authority = vm.activity.find((a) => a.shortLabel === 'Applicability authorized')!;
+    const authority = vm.activity.find(
+      (a) => a.shortLabel === 'Controlling evidence established',
+    )!;
     expect(authority.actorType).toBe('human');
     expect(authority.resultSummary).toContain('EQV-1');
     expect(authority.resultSummary).toContain('QA-LEAD');
@@ -156,7 +179,9 @@ describe('run 2 is the same record', () => {
 
   it('files the authority act in run 1, where it was made', () => {
     const vm = project(capture(run2));
-    const authority = vm.activity.find((a) => a.shortLabel === 'Applicability authorized')!;
+    const authority = vm.activity.find(
+      (a) => a.shortLabel === 'Controlling evidence established',
+    )!;
 
     // The human answered the question run 1 raised; the resume is what opens
     // run 2. Filing the act under run 2 would date it after its own effect.
@@ -167,33 +192,101 @@ describe('run 2 is the same record', () => {
 describe('the panel component', () => {
   const panel = qualityPanelFrom(authorityOf(run1))!;
 
-  it('offers exactly two actions and reports which was chosen', async () => {
-    const onDecide = vi.fn();
-    render(<QualityAuthorityPanel vm={panel} onDecide={onDecide} />);
+  it('offers one action PER PATH, naming which evidence it establishes', async () => {
+    const onEstablish = vi.fn();
+    const onHold = vi.fn();
+    render(
+      <QualityAuthorityPanel vm={panel} onEstablish={onEstablish} onHold={onHold} />,
+    );
 
-    await userEvent.click(screen.getByTestId('quality-authorize'));
-    expect(onDecide).toHaveBeenCalledWith('AUTHORIZE_APPLICABILITY');
+    // Two establish buttons, one per disputed measurement. A single button
+    // would silently pick a side, and the two paths reach opposite
+    // dispositions — so it would be deciding the lot for the operator.
+    await userEvent.click(screen.getByTestId('quality-establish-investigator'));
+    await userEvent.click(screen.getByTestId('quality-establish-verifier'));
+
+    const chosen = onEstablish.mock.calls.map((c) => c[0]);
+    expect(new Set(chosen).size).toBe(2);
+    for (const claimId of chosen) {
+      expect(panel.options.map((o) => o.claimId)).toContain(claimId);
+    }
 
     await userEvent.click(screen.getByTestId('quality-keep-held'));
-    expect(onDecide).toHaveBeenCalledWith('KEEP_HELD');
-    expect(onDecide).toHaveBeenCalledTimes(2);
+    expect(onHold).toHaveBeenCalledTimes(1);
   });
 
-  it('shows both agent positions', () => {
+  it('shows both measurements and both consequences', () => {
     render(<QualityAuthorityPanel vm={panel} />);
 
-    expect(screen.getByTestId('quality-option-investigator').textContent).toContain('285 cP');
-    expect(screen.getByTestId('quality-option-verifier').textContent).toContain('312 cP');
+    const rendered = [
+      screen.getByTestId('quality-option-investigator').textContent,
+      screen.getByTestId('quality-option-verifier').textContent,
+    ].join(' | ');
+    expect(rendered).toContain('178 cP');
+    expect(rendered).toContain('312 cP');
+    expect(rendered).toMatch(/will FAIL/);
+    expect(rendered).toMatch(/will PASS/);
     expect(screen.getByTestId('quality-authority-question').textContent).toMatch(
-      /Does Quality authorize/,
+      /Which viscosity determination/,
     );
   });
 
   it('does not accept a second click while one is in flight', async () => {
-    const onDecide = vi.fn();
-    render(<QualityAuthorityPanel vm={panel} onDecide={onDecide} submitting />);
+    const onEstablish = vi.fn();
+    render(<QualityAuthorityPanel vm={panel} onEstablish={onEstablish} submitting />);
 
-    await userEvent.click(screen.getByTestId('quality-authorize'));
-    expect(onDecide).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByTestId('quality-establish-verifier'));
+    expect(onEstablish).not.toHaveBeenCalled();
+  });
+});
+
+describe('the choice is load-bearing', () => {
+  it('establishing the direct path quarantines instead of releasing', () => {
+    const vm = qualityAuthorityFrom(authorityOf(quarantined))!;
+
+    expect((quarantined.record as { disposition: string }).disposition).toBe('QUARANTINE');
+    expect(vm.decision).toBe('ESTABLISH_EVIDENCE');
+    expect(vm.answer).toContain('178 cP');
+    expect(vm.answer).toContain('ASTM-D2196');
+    expect(vm.answer).toContain('direct method');
+  });
+
+  it('renders the disagreement as a quality decision, never a crash', () => {
+    const failure = classifyFailure({ failure_category: 'MATERIAL_DISAGREEMENT' });
+
+    // The default branch used to catch this and render "Vouch could not
+    // complete this decision · A technical failure occurred", which is untrue
+    // and also blanked the disposition surface explaining the hold.
+    expect(failure.kind).toBe('DOMAIN_ABSTENTION');
+    expect(failure.headline).toBe('Quality decision required');
+    expect(failure.suppressesDisposition).toBe(false);
+    expect(failure.detail).toMatch(/different controlling evidence/);
+  });
+});
+
+describe('the agent cards show what actually differs', () => {
+  it('states each agent SELECTION rather than shared sufficiency', () => {
+    const vm = project(capture(run1));
+    const agents = vm.spine.find((n) => n.key === 'agents')!;
+
+    // Both lanes previously read "Evidence covers the requirement" — the one
+    // field the two agents agree on — under a banner saying they disagreed.
+    expect(agents.investigatorLane).not.toBe(agents.verifierLane);
+    const lanes = `${agents.investigatorLane} | ${agents.verifierLane}`;
+    expect(lanes).toContain('178 cP');
+    expect(lanes).toContain('312 cP');
+    expect(lanes).toContain('direct method');
+    expect(lanes).toContain('via EQV-1');
+  });
+
+  it('does not assume which role took which path', () => {
+    // Live Nova has been observed reversing these, so the lane must report
+    // whatever its own agent selected rather than a frozen assignment.
+    const vm = project(capture(run1));
+    const agents = vm.spine.find((n) => n.key === 'agents')!;
+    const lanes = [agents.investigatorLane, agents.verifierLane];
+
+    expect(lanes.filter((l) => l?.includes('direct method'))).toHaveLength(1);
+    expect(lanes.filter((l) => l?.includes('via EQV-1'))).toHaveLength(1);
   });
 });

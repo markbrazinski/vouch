@@ -141,13 +141,22 @@ export function DecisionRoute({ entry }: { entry: HeroAEntry }) {
       <BackBar label="Back to Incoming" to="/incoming" />
       <DecisionWorkspace
         vm={vm}
-        onQualityDecision={(decision) =>
+        onEstablishEvidence={(claimId) =>
           run.decide({
-            decision,
+            decision: 'ESTABLISH_EVIDENCE',
+            evidenceRef: claimId,
             // Who is acting, and under what authority. Hard-coded here only
             // because this build has no operator identity to read from; the
             // backend requires both and refuses an empty either way, so the
             // moment sign-in exists these become the signed-in operator.
+            accountableActor: 'QA-LEAD',
+            authoritySource: 'Plant Quality Authority',
+            questionId: vm.qualityAuthorityPanel?.questionId,
+          })
+        }
+        onKeepHeld={() =>
+          run.decide({
+            decision: 'KEEP_HELD',
             accountableActor: 'QA-LEAD',
             authoritySource: 'Plant Quality Authority',
             questionId: vm.qualityAuthorityPanel?.questionId,

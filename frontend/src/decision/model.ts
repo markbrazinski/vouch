@@ -294,10 +294,23 @@ export interface QualityAuthorityOptionVM {
   claimId: string;
   selectedBy: 'INVESTIGATOR' | 'VERIFIER';
   agentLabel: string;
-  /** "470 MPa by ASTM-E8 at room_temp" */
+  /** "312 cP by ASTM-D445 at 25C" */
   measurement: string;
   /** How this path is authorized: the named method, or the equivalence. */
   basis: string;
+  /** The action label for choosing THIS path. */
+  actionLabel: string;
+  /**
+   * What deterministic evaluation will conclude if this evidence is
+   * established — stated because the two paths lead to different dispositions
+   * and an operator must not have to infer that from a number and a limit.
+   *
+   * It is a PREDICTION from the frozen claim and the requirement, never a
+   * disposition: the engine still recomputes it after both agents re-derive.
+   */
+  consequence: string;
+  /** Whether that consequence is a pass. Drives tone only. */
+  passes: boolean;
 }
 
 export interface QualityAuthorityPanelVM {
@@ -312,8 +325,8 @@ export interface QualityAuthorityPanelVM {
   verifierPosition: string;
   /** The disputed object, stated plainly for the panel subhead. */
   disputed: string;
-  primaryActionLabel: string;
-  secondaryActionLabel: string;
+  /** The label for holding the lot instead of establishing either path. */
+  holdActionLabel: string;
 }
 
 /**
@@ -323,7 +336,7 @@ export interface QualityAuthorityPanelVM {
  * the other, never both, and never a disabled button.
  */
 export interface QualityAuthorityRecordVM {
-  decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD';
+  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD';
   /** "Applicability authorized" | "Kept held" */
   headline: string;
   tone: SemanticTone;

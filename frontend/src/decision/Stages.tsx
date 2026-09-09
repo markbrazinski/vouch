@@ -818,11 +818,14 @@ export function CompletedStageStack({
  */
 export function QualityAuthorityPanel({
   vm,
-  onDecide,
+  onEstablish,
+  onHold,
   submitting = false,
 }: {
   vm: QualityAuthorityPanelVM;
-  onDecide?: (decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD') => void;
+  /** Establish ONE named measurement as controlling for this decision. */
+  onEstablish?: (claimId: string) => void;
+  onHold?: () => void;
   submitting?: boolean;
 }) {
   return (
@@ -844,11 +847,7 @@ export function QualityAuthorityPanel({
 
       <div
         data-testid="quality-authority-question"
-        style={{
-          font: `600 15px/1.45 ${SANS}`,
-          color: INK.primary,
-          marginBottom: 4,
-        }}
+        style={{ font: `600 15px/1.45 ${SANS}`, color: INK.primary, marginBottom: 4 }}
       >
         {vm.question}
       </div>
@@ -856,74 +855,100 @@ export function QualityAuthorityPanel({
         {vm.disputed}
       </div>
 
-      {/* The two positions, stated as selections rather than as right and
-          wrong. Both agents were operating correctly. */}
-      <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+      {/* Each path is its own choice, with its own consequence stated. A
+          single button here would silently pick a side, and where the two
+          paths lead to different dispositions that button would be deciding
+          the lot on the operator's behalf. */}
+      <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
         {vm.options.map((o) => (
           <div
             key={o.claimId}
             data-testid={`quality-option-${o.selectedBy.toLowerCase()}`}
             style={{
-              display: 'grid',
-              gridTemplateColumns: '104px 1fr',
-              gap: 10,
-              alignItems: 'baseline',
               background: N.nested,
               border: `1px solid ${HAIR}`,
-              borderRadius: 8,
-              padding: '9px 12px',
+              borderRadius: 9,
+              padding: '12px 14px',
             }}
           >
-            <span style={{ font: `600 10px ${MONO}`, color: INK.label, letterSpacing: '.06em' }}>
-              {o.agentLabel.toUpperCase()}
-            </span>
-            <span style={{ font: `400 12px/1.5 ${SANS}`, color: INK.dense }}>
-              <strong style={{ fontWeight: 600 }}>{o.measurement}</strong>
-              <span style={{ color: INK.muted }}> — {o.basis}</span>
-            </span>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: 10,
+                marginBottom: 4,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ font: `700 13px ${SANS}`, color: INK.primary }}>
+                {o.measurement}
+              </span>
+              <span style={{ font: `400 11px ${MONO}`, color: INK.muted }}>{o.basis}</span>
+              <span
+                style={{
+                  font: `600 9px ${MONO}`,
+                  color: INK.label,
+                  letterSpacing: '.06em',
+                  marginLeft: 'auto',
+                }}
+              >
+                SELECTED BY {o.agentLabel.toUpperCase()}
+              </span>
+            </div>
+
+            <div
+              data-testid={`quality-consequence-${o.selectedBy.toLowerCase()}`}
+              style={{
+                font: `400 11px ${MONO}`,
+                color: o.passes ? '#3E6B54' : '#9A5A2A',
+                marginBottom: 10,
+              }}
+            >
+              {o.consequence}
+            </div>
+
+            <button
+              type="button"
+              data-testid={`quality-establish-${o.selectedBy.toLowerCase()}`}
+              disabled={submitting}
+              onClick={() => onEstablish?.(o.claimId)}
+              style={{
+                font: `600 11px ${MONO}`,
+                color: '#FFFFFF',
+                background: submitting ? '#8189B5' : '#45508C',
+                border: '1px solid rgba(69,80,140,.4)',
+                borderRadius: 8,
+                padding: '8px 14px',
+                cursor: submitting ? 'progress' : 'pointer',
+              }}
+            >
+              {o.actionLabel}
+            </button>
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button
-          type="button"
-          data-testid="quality-authorize"
-          disabled={submitting}
-          onClick={() => onDecide?.('AUTHORIZE_APPLICABILITY')}
-          style={{
-            font: `600 11px ${MONO}`,
-            color: '#FFFFFF',
-            background: submitting ? '#8189B5' : '#45508C',
-            border: '1px solid rgba(69,80,140,.4)',
-            borderRadius: 8,
-            padding: '9px 16px',
-            cursor: submitting ? 'progress' : 'pointer',
-          }}
-        >
-          {vm.primaryActionLabel}
-        </button>
-        <button
-          type="button"
-          data-testid="quality-keep-held"
-          disabled={submitting}
-          onClick={() => onDecide?.('KEEP_HELD')}
-          style={{
-            font: `600 11px ${MONO}`,
-            color: INK.button,
-            background: N.chip,
-            border: '1px solid rgba(0,0,0,.14)',
-            borderRadius: 8,
-            padding: '9px 16px',
-            cursor: submitting ? 'progress' : 'pointer',
-          }}
-        >
-          {vm.secondaryActionLabel}
-        </button>
-      </div>
+      <button
+        type="button"
+        data-testid="quality-keep-held"
+        disabled={submitting}
+        onClick={() => onHold?.()}
+        style={{
+          font: `600 11px ${MONO}`,
+          color: INK.button,
+          background: N.chip,
+          border: '1px solid rgba(0,0,0,.14)',
+          borderRadius: 8,
+          padding: '9px 16px',
+          cursor: submitting ? 'progress' : 'pointer',
+        }}
+      >
+        {vm.holdActionLabel}
+      </button>
     </div>
   );
 }
+
 
 /**
  * §8. The durable record of an answered question.

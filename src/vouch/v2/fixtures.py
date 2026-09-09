@@ -63,17 +63,26 @@ viscosity: 305 cP (ASTM-D2196, 25C)
 
 # LOT-1006 — the applicability-disagreement lot.
 #
-# TWO viscosity results, both real, both applicable on their face, and no rule
-# in the corpus ranks them:
+# TWO viscosity results, both real, both applicable, and they point OPPOSITE
+# ways against SPEC-R3:A's [200, 400] cP limit:
 #
-#   * 285 cP by ASTM-D2196 at 25C — the method SPEC-R3:A names outright.
-#   * 312 cP by ASTM-D445 at 25C — a different method, but EQV-1 is an
-#     authoritative equivalence that genuinely covers D445->D2196 for this
-#     material, characteristic and condition.
+#   * 178 cP by ASTM-D2196 at 25C — the method the requirement names outright.
+#     It is BELOW the 200 cP minimum, so establishing it means QUARANTINE.
+#   * 312 cP by ASTM-D445 at 25C — a different method, but EQV-1 genuinely
+#     covers D445->D2196 for this material, characteristic and condition. It
+#     is inside the limit, so establishing it means RELEASE.
 #
-# Both fall inside the [200, 400] cP limit, so the disagreement is purely about
-# WHICH evidence establishes the requirement — never about conformance. That
-# keeps the human question narrow: applicability, not a quality verdict.
+# The opposition is the point. An earlier version of this fixture had both
+# values passing, which made the disagreement real but the human question
+# ceremonial: whichever path was authorized, the disposition was RELEASE and
+# the answer changed only a reason string. A quality decision that cannot
+# change the outcome is not a decision.
+#
+# Now the two paths lead to different dispositions, so which evidence is
+# controlling is a question with consequences — exactly the kind an
+# accountable human exists to settle. Neither answer is a defect finding
+# against the other: both measurements are honest, and the corpus states no
+# precedence between a direct-method result and an equivalence-covered one.
 #
 # Note this is the SAME EQV-1 that does NOT cover LOT-1005's 40C result. One
 # equivalence, two lots, opposite outcomes, decided entirely by condition
@@ -84,7 +93,7 @@ Site: SITE-W1
 Material: MAT-RESIN-3
 Purchase Order: PO-86
 Specification SPEC-R3 Revision A
-viscosity: 285 cP (ASTM-D2196, 25C)
+viscosity: 178 cP (ASTM-D2196, 25C)
 viscosity: 312 cP (ASTM-D445, 25C)
 """
 

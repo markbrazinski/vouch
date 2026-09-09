@@ -354,6 +354,19 @@ def test_list_decisions_returns_rows_with_a_server_computed_state(hero):
     assert row["supplier_id"] == "SUP-EAST"
 
 
+def _equivalence_option(runtime, record_id):
+    """The offered path that relies on an equivalence — the one that RELEASES.
+
+    Named explicitly because the two paths lead to different dispositions, so
+    which is established decides the lot.
+    """
+    record = runtime.invoke({
+        "action": "get_decision", "decision_record_id": record_id,
+    })["record"]
+    options = record["quality_authority"]["question"]["options"]
+    return next(o for o in options if o["equivalence_id"])["claim_id"]
+
+
 def test_incoming_lists_arrivals_that_have_no_decision_yet(runtime):
     """A lot that has arrived and never been evaluated must still appear.
 
@@ -444,7 +457,8 @@ def test_a_resolved_disagreement_stops_asking_for_a_decision(runtime):
     resumed = runtime.invoke({
         "action": "submit_quality_authority",
         "decision_record_id": first["decision_record_id"],
-        "decision": "AUTHORIZE_APPLICABILITY",
+        "decision": "ESTABLISH_EVIDENCE",
+        "evidence_ref": _equivalence_option(runtime, first["decision_record_id"]),
         "accountable_actor": "QA-LEAD",
         "authority_source": "Plant Quality Authority",
     })

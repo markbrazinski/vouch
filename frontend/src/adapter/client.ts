@@ -136,7 +136,8 @@ export const supplyEvidence = (input: {
  */
 export const submitQualityAuthority = (input: {
   decisionRecordId: string;
-  decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD';
+  decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD';
+  evidenceRef?: string;
   accountableActor: string;
   authoritySource: string;
   claimSetHash?: string;
@@ -147,6 +148,7 @@ export const submitQualityAuthority = (input: {
     body: JSON.stringify({
       decision_record_id: input.decisionRecordId,
       decision: input.decision,
+      evidence_ref: input.evidenceRef,
       accountable_actor: input.accountableActor,
       authority_source: input.authoritySource,
       claim_set_hash: input.claimSetHash,

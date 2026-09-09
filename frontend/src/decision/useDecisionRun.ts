@@ -219,6 +219,22 @@ export function classifyFailure(input: unknown): FailureVM {
         detail: detail || 'The requested state change was not authorized.',
         suppressesDisposition: false,
       };
+    case 'MATERIAL_DISAGREEMENT':
+      // NOT a technical failure. Two independent reviews reached two valid
+      // conclusions and the pipeline failed closed — the authority model
+      // working exactly as designed. Falling through to the default branch
+      // rendered "Vouch could not complete this decision · A technical failure
+      // occurred", which is untrue, and its suppressesDisposition also blanked
+      // the disposition surface that explains the hold.
+      return {
+        kind: 'DOMAIN_ABSTENTION',
+        headline: 'Quality decision required',
+        detail:
+          detail ||
+          'Independent review selected different controlling evidence. ' +
+            'No disposition was made.',
+        suppressesDisposition: false,
+      };
     case 'PERSISTENCE_FAILURE':
     case 'MODEL_UNAVAILABLE':
     case 'TOOL_FAILURE':
@@ -607,7 +623,8 @@ export function useDecisionRun(initialId?: string) {
    */
   const decide = useCallback(
     async (input: {
-      decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD';
+      decision: 'ESTABLISH_EVIDENCE' | 'KEEP_HELD';
+      evidenceRef?: string;
       accountableActor: string;
       authoritySource: string;
       questionId?: string;
@@ -624,6 +641,7 @@ export function useDecisionRun(initialId?: string) {
         const started = (await api.submitQualityAuthority({
           decisionRecordId: recordId,
           decision: input.decision,
+          evidenceRef: input.evidenceRef,
           accountableActor: input.accountableActor,
           authoritySource: input.authoritySource,
           questionId: input.questionId,

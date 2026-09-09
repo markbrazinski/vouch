@@ -957,6 +957,7 @@ def invoke(payload: dict, context=None) -> dict:
                 decision=payload["decision"],
                 accountable_actor=payload["accountable_actor"],
                 authority_source=payload["authority_source"],
+                evidence_ref=payload.get("evidence_ref", ""),
                 claim_set_hash=payload.get("claim_set_hash", ""),
                 question_id=payload.get("question_id", ""),
             )

@@ -209,15 +209,18 @@ function FailureNotice({ vm }: { vm: NonNullable<DecisionWorkspaceVM['failure']>
 
 export function DecisionWorkspace({
   vm,
-  onQualityDecision,
+  onEstablishEvidence,
+  onKeepHeld,
 }: {
   vm: DecisionWorkspaceVM;
   /**
-   * Settle the open applicability question. Absent in read-only surfaces —
-   * the panel then renders the question and the two positions without
-   * offering controls, which is the honest state for a viewer who cannot act.
+   * Settle the open question by naming which measurement is controlling.
+   * Absent in read-only surfaces — the panel then renders the question and
+   * both paths without offering controls, which is the honest state for a
+   * viewer who cannot act.
    */
-  onQualityDecision?: (decision: 'AUTHORIZE_APPLICABILITY' | 'KEEP_HELD') => void;
+  onEstablishEvidence?: (claimId: string) => void;
+  onKeepHeld?: () => void;
 }) {
   const [viewing, setViewing] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -375,7 +378,8 @@ export function DecisionWorkspace({
           {vm.qualityAuthorityPanel && (
             <QualityAuthorityPanel
               vm={vm.qualityAuthorityPanel}
-              onDecide={onQualityDecision}
+              onEstablish={onEstablishEvidence}
+              onHold={onKeepHeld}
               submitting={vm.running}
             />
           )}

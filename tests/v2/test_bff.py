@@ -98,7 +98,8 @@ ROUTES = [
         "/api/quality-authority",
         {
             "decision_record_id": "DR-abc123",
-            "decision": "AUTHORIZE_APPLICABILITY",
+            "decision": "ESTABLISH_EVIDENCE",
+            "evidence_ref": "CLM-abc123-01",
             "accountable_actor": "QA-LEAD",
             "authority_source": "Plant Quality Authority",
         },
@@ -585,7 +586,8 @@ def test_an_http_request_can_never_become_the_worker(event, monkeypatch):
 
 VALID_AUTHORITY = {
     "decision_record_id": "DR-abc123",
-    "decision": "AUTHORIZE_APPLICABILITY",
+    "decision": "ESTABLISH_EVIDENCE",
+    "evidence_ref": "CLM-abc123-01",
     "accountable_actor": "QA-LEAD",
     "authority_source": "Plant Quality Authority",
 }
@@ -599,6 +601,9 @@ VALID_AUTHORITY = {
         {"decision": "QUARANTINE"},
         {"decision": ""},
         {"decision": None},
+        {"decision": "AUTHORIZE_APPLICABILITY"},
+        {"evidence_ref": ""},
+        {"evidence_ref": None},
         {"accountable_actor": ""},
         {"accountable_actor": "   "},
         {"authority_source": ""},
@@ -632,7 +637,7 @@ def test_the_proxy_cannot_invent_an_authority_decision(invoked):
     forwarded = invoked[0]
     assert forwarded["action"] == "submit_quality_authority"
     assert set(forwarded) <= {
-        "action", "decision_record_id", "decision",
+        "action", "decision_record_id", "decision", "evidence_ref",
         "accountable_actor", "authority_source",
         "claim_set_hash", "question_id",
     }

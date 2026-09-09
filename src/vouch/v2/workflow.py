@@ -1054,17 +1054,26 @@ class VouchV2:
         decision: str,
         accountable_actor: str,
         authority_source: str,
+        evidence_ref: str = "",
         claim_set_hash: str = "",
         question_id: str = "",
         events: EventLog | None = None,
     ) -> DecisionOutcome:
         """An accountable human settles the disputed applicability question.
 
-        This establishes a FACT, never a disposition. `AUTHORIZE_APPLICABILITY`
-        says which evidence path the agents may treat as settled; the lot's
-        outcome is still computed deterministically by the same engine, from
-        the same frozen claims, after both agents re-derive their briefs. There
-        is no code path from here to `release_lot`.
+        This establishes a FACT, never a disposition. `ESTABLISH_EVIDENCE`
+        names which of the disputed measurements is controlling for this
+        decision; the lot's outcome is still computed deterministically by the
+        same engine, from the same frozen claims, after both agents re-derive
+        their briefs. There is no code path from here to `release_lot` or to
+        `quarantine_lot`.
+
+        `evidence_ref` is REQUIRED and must be one of the options the question
+        offered. An earlier version inferred it — it silently took whichever
+        option carried an equivalence — which meant the operator pressed one
+        button and the code chose a side for them. Where the two paths lead to
+        different dispositions, that inference decides the lot, so the choice
+        must be stated rather than assumed.
 
         Every precondition is checked before anything is written, and the whole
         action is idempotent on (record, question, decision): a duplicate
@@ -1073,7 +1082,7 @@ class VouchV2:
         """
         events = self._event_log(events)
 
-        if decision not in ("AUTHORIZE_APPLICABILITY", "KEEP_HELD"):
+        if decision not in ("ESTABLISH_EVIDENCE", "KEEP_HELD"):
             raise VouchFailure(
                 FailureCategory.POLICY_REFUSAL,
                 f"unknown quality authority decision {decision!r}",
@@ -1140,32 +1149,58 @@ class VouchV2:
             )
 
         authorized: list[str] = []
-        if decision == "AUTHORIZE_APPLICABILITY":
-            # Authorize the path the question actually offered, and only if its
-            # evidence still resolves in this record's own claim set.
+        if decision == "ESTABLISH_EVIDENCE":
+            # The human names the controlling evidence. It must be one of the
+            # options this question actually offered — not merely any claim in
+            # the snapshot — so an authority cannot reach past the disputed
+            # question into unrelated evidence.
+            offered = {
+                option["claim_id"]: option for option in question.options
+            }
+            if not evidence_ref:
+                raise VouchFailure(
+                    FailureCategory.POLICY_REFUSAL,
+                    "establishing evidence requires naming which measurement is "
+                    f"controlling; this question offers {sorted(offered)}",
+                )
+            if evidence_ref not in offered:
+                raise VouchFailure(
+                    FailureCategory.POLICY_REFUSAL,
+                    f"evidence {evidence_ref} is not one of the options this "
+                    f"question offered ({sorted(offered)})",
+                )
             known = {
                 claim.claim_id for claim in self.claims.get(decision_record_id, [])
             }
-            chosen = [
-                option["claim_id"]
-                for option in question.options
-                if option.get("equivalence_id")
-            ] or [question.verifier_evidence_ref]
+            chosen = [evidence_ref]
             for claim_id in chosen:
                 if claim_id not in known:
                     raise VouchFailure(
                         FailureCategory.STATE_CONFLICT,
                         f"evidence {claim_id} is not in this decision's snapshot",
                     )
-            if question.equivalence_id and not any(
-                e.equivalence_id == question.equivalence_id
+            # Only the path that RELIES on an equivalence needs one to exist.
+            # Checking the question's equivalence unconditionally would refuse
+            # a perfectly good direct-method choice because the OTHER option's
+            # record had been withdrawn.
+            relied_on = offered[evidence_ref].get("equivalence_id") or ""
+            if relied_on and not any(
+                e.equivalence_id == relied_on
                 for e in self.corpus.all("equivalence")
             ):
                 raise VouchFailure(
                     FailureCategory.POLICY_REFUSAL,
-                    f"equivalence {question.equivalence_id} does not exist",
+                    f"equivalence {relied_on} does not exist",
                 )
             authorized = chosen
+
+        # What was established, in readable terms. Empty for KEEP_HELD, which
+        # settles the question without establishing any measurement.
+        established: dict = (
+            {k: v for k, v in offered[evidence_ref].items() if k != "selected_by"}
+            if decision == "ESTABLISH_EVIDENCE"
+            else {}
+        )
 
         authority = HumanAuthorityDecision(
             authority_decision_id=f"HAD-{uuid.uuid4().hex[:12]}",
@@ -1187,6 +1222,11 @@ class VouchV2:
             method_from=question.method_from,
             method_to=question.method_to,
             condition=question.condition,
+            established_value=established.get("value"),
+            established_units=established.get("units", ""),
+            established_method=established.get("method", ""),
+            established_condition=established.get("condition", ""),
+            established_via_equivalence=established.get("equivalence_id", ""),
             decision=decision,
             accountable_actor=accountable_actor,
             authority_source=authority_source,
@@ -1524,6 +1564,21 @@ class VouchV2:
 
             def option(item, selected_by):
                 claim = claims_by_id.get(item.evidence_ref)
+                # What deterministic evaluation WILL conclude if this evidence
+                # is established. Computed here, from the same requirement and
+                # the same frozen claim the engine uses, because the two paths
+                # lead to different dispositions and an operator must not have
+                # to infer that from a number and a limit.
+                #
+                # A prediction, never a disposition: nothing is recorded from
+                # it, and the engine still recomputes after both agents
+                # re-derive. Stating it is what makes the choice informed
+                # rather than a coin toss between two plausible numbers.
+                within = (
+                    requirement.in_limits(float(claim.value))
+                    if claim is not None and isinstance(claim.value, (int, float))
+                    else None
+                )
                 return {
                     "claim_id": item.evidence_ref,
                     "value": claim.value if claim else None,
@@ -1532,6 +1587,8 @@ class VouchV2:
                     "condition": claim.condition if claim else "",
                     "equivalence_id": item.equivalence_record_id or "",
                     "selected_by": selected_by,
+                    "within_limits": within,
+                    "threshold": requirement.threshold_text(),
                 }
 
             options = [option(mine, "INVESTIGATOR"), option(theirs, "VERIFIER")]

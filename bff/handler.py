@@ -184,7 +184,7 @@ def _validated(action: str, body: dict) -> dict:
         # and they are answered by the runtime against durable state.
         record_id()
         decision = body.get("decision")
-        if decision not in ("AUTHORIZE_APPLICABILITY", "KEEP_HELD"):
+        if decision not in ("ESTABLISH_EVIDENCE", "KEEP_HELD"):
             raise BadRequest("decision is not a recognised quality authority decision")
         payload["decision"] = decision
         for field in ("accountable_actor", "authority_source"):
@@ -192,6 +192,14 @@ def _validated(action: str, body: dict) -> dict:
             if not isinstance(value, str) or not value.strip():
                 raise BadRequest(f"{field} is required")
             payload[field] = value[:256]
+        # Which measurement is controlling. Required for ESTABLISH_EVIDENCE and
+        # meaningless for KEEP_HELD; the runtime checks it is one of the
+        # options the question actually offered, which the proxy cannot know.
+        if decision == "ESTABLISH_EVIDENCE":
+            value = body.get("evidence_ref")
+            if not isinstance(value, str) or not value.strip():
+                raise BadRequest("evidence_ref is required to establish evidence")
+            payload["evidence_ref"] = value[:256]
         text("claim_set_hash", limit=128)
         text("question_id", limit=256)
 
