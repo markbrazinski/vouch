@@ -93,6 +93,17 @@ ROUTES = [
         },
         "supply_evidence",
     ),
+    (
+        "POST",
+        "/api/quality-authority",
+        {
+            "decision_record_id": "DR-abc123",
+            "decision": "AUTHORIZE_APPLICABILITY",
+            "accountable_actor": "QA-LEAD",
+            "authority_source": "Plant Quality Authority",
+        },
+        "submit_quality_authority",
+    ),
 ]
 
 
@@ -109,7 +120,7 @@ def test_every_authorized_action_reaches_the_runtime(method, path, body, action,
 def test_the_allowlist_covers_exactly_the_browser_facing_actions():
     assert bff.ALLOWED_ACTIONS == {
         "list_decisions", "get_decision", "get_events", "get_source", "get_today",
-        "evaluate_lot", "supply_evidence",
+        "evaluate_lot", "supply_evidence", "submit_quality_authority",
     }
 
 
@@ -565,3 +576,65 @@ def test_an_http_request_can_never_become_the_worker(event, monkeypatch):
     bff.handler(event)
 
     assert ran == [], "an HTTP request entered the unvalidated worker branch"
+
+
+# ======================================================================
+# quality authority — the proxy validates SHAPE and forwards nothing else
+# ======================================================================
+
+
+VALID_AUTHORITY = {
+    "decision_record_id": "DR-abc123",
+    "decision": "AUTHORIZE_APPLICABILITY",
+    "accountable_actor": "QA-LEAD",
+    "authority_source": "Plant Quality Authority",
+}
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"decision": "RELEASE"},
+        {"decision": "release_lot"},
+        {"decision": "QUARANTINE"},
+        {"decision": ""},
+        {"decision": None},
+        {"accountable_actor": ""},
+        {"accountable_actor": "   "},
+        {"authority_source": ""},
+        {"decision_record_id": "not-a-record"},
+        {"decision_record_id": "../../etc/passwd"},
+    ],
+)
+def test_a_malformed_quality_authority_never_reaches_aws(mutation, invoked):
+    body = {**VALID_AUTHORITY, **mutation}
+    status, _ = _call("POST", "/api/quality-authority", body)
+
+    assert status == 400
+    assert invoked == [], "a malformed authority submission reached the runtime"
+
+
+def test_the_proxy_cannot_invent_an_authority_decision(invoked):
+    """Only the fields the action models are forwarded. A caller cannot smuggle
+    an extra key through, and the proxy adds none of its own."""
+    _call(
+        "POST",
+        "/api/quality-authority",
+        {
+            **VALID_AUTHORITY,
+            "disposition": "RELEASE",
+            "authorized_evidence_refs": ["CLM-forged"],
+            "lot_id": "LOT-1006",
+        },
+    )
+
+    assert len(invoked) == 1
+    forwarded = invoked[0]
+    assert forwarded["action"] == "submit_quality_authority"
+    assert set(forwarded) <= {
+        "action", "decision_record_id", "decision",
+        "accountable_actor", "authority_source",
+        "claim_set_hash", "question_id",
+    }
+    assert "disposition" not in forwarded
+    assert "authorized_evidence_refs" not in forwarded

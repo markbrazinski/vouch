@@ -230,6 +230,95 @@ class HumanContinuationSegment:
 
 
 @dataclass
+class QualityQuestion:
+    """The one unresolved applicability question a disagreement produced.
+
+    Built deterministically from the two briefs — never phrased by a model and
+    never invented by the frontend. It carries the structured facts a UI needs
+    to render the exact question, so the wording an operator answers is derived
+    from the same values an auditor later reads.
+    """
+
+    question_id: str = ""
+    question_type: str = ""
+    characteristic: str = ""
+    #: The competing evidence paths, each {claim_id, value, units, method,
+    #: condition, equivalence_id, selected_by}.
+    options: list[dict] = field(default_factory=list)
+    investigator_evidence_ref: str = ""
+    verifier_evidence_ref: str = ""
+    equivalence_id: str = ""
+    method_from: str = ""
+    method_to: str = ""
+    condition: str = ""
+    status: str = "OPEN"
+
+
+@dataclass
+class HumanAuthorityDecision:
+    """A scoped authoritative fact established by an accountable human.
+
+    This is NOT a disposition. It settles exactly one disputed applicability
+    question for exactly one DecisionRecord against exactly one evidence
+    snapshot, and it confers no power to release, quarantine, approve a
+    supplier, or widen the global equivalence catalog. What it authorizes is
+    which evidence path the agents may treat as settled; what that evidence
+    then MEANS is still computed deterministically afterwards.
+
+    The snapshot binding is what makes it safe to replay: an authority granted
+    against one frozen claim set does not silently carry to a different one.
+    """
+
+    authority_decision_id: str = ""
+    decision_record_id: str = ""
+    lot_id: str = ""
+    #: The run that raised the question, and the snapshot it was raised against.
+    source_run: int = 0
+    evidence_snapshot_id: str = ""
+    claim_set_hash: str = ""
+    lot_state_version: int = 0
+    question_id: str = ""
+    question_type: str = ""
+    characteristic: str = ""
+    #: The evidence paths this authority settles as applicable. Empty for
+    #: KEEP_HELD, which settles the question without authorizing a path.
+    authorized_evidence_refs: list[str] = field(default_factory=list)
+    disputed_evidence_refs: list[str] = field(default_factory=list)
+    equivalence_id: str = ""
+    method_from: str = ""
+    method_to: str = ""
+    condition: str = ""
+    decision: str = ""  # AUTHORIZE_APPLICABILITY | KEEP_HELD
+    accountable_actor: str = ""
+    authority_source: str = ""
+    created_at: str = field(default_factory=utcnow)
+
+
+@dataclass
+class QualityAuthoritySegment:
+    """The open question, and every authority decision recorded against it.
+
+    Append-only: a resolved question keeps its decision, and a later run never
+    rewrites an earlier one.
+    """
+
+    question: QualityQuestion = field(default_factory=QualityQuestion)
+    decisions: list[HumanAuthorityDecision] = field(default_factory=list)
+
+    @property
+    def authorized_evidence_refs(self) -> list[str]:
+        """Evidence paths currently settled as applicable, newest wins."""
+        for decision in reversed(self.decisions):
+            if decision.decision == "AUTHORIZE_APPLICABILITY":
+                return list(decision.authorized_evidence_refs)
+        return []
+
+    @property
+    def held(self) -> bool:
+        return any(d.decision == "KEEP_HELD" for d in self.decisions)
+
+
+@dataclass
 class ArchivedRun:
     """One completed run's structured evidence, kept when the next run begins.
 
@@ -278,6 +367,9 @@ class DecisionRecord:
     mutation: MutationSegment = field(default_factory=MutationSegment)
     consequences: ConsequenceSegment = field(default_factory=ConsequenceSegment)
     human: HumanContinuationSegment = field(default_factory=HumanContinuationSegment)
+    quality_authority: QualityAuthoritySegment = field(
+        default_factory=QualityAuthoritySegment
+    )
     storage: StorageSegment = field(default_factory=StorageSegment)
     #: Completed runs, oldest first. Run N is archived when run N+1 begins, so
     #: this holds every run but the current one.
@@ -657,10 +749,13 @@ __all__ = [
     "DispositionSegment",
     "EvidenceSegment",
     "ExtractionSegment",
+    "HumanAuthorityDecision",
     "HumanContinuationSegment",
     "IdentitySegment",
     "MutationSegment",
     "PolicySegment",
+    "QualityAuthoritySegment",
+    "QualityQuestion",
     "ReconciliationSegment",
     "SecuritySegment",
     "SnapshotSegment",

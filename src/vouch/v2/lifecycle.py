@@ -53,6 +53,13 @@ class EventType(str, Enum):
     RECOVERY_EVALUATED = "RECOVERY_EVALUATED"
     RECOVERY_EXECUTED = "RECOVERY_EXECUTED"
     QUALITY_DECISION_REQUIRED = "QUALITY_DECISION_REQUIRED"
+    #: A disagreement produced exactly one answerable applicability question.
+    #: Separate from QUALITY_DECISION_REQUIRED, which says only that a human is
+    #: needed: this says WHAT is being asked, in structured form.
+    QUALITY_QUESTION_RAISED = "QUALITY_QUESTION_RAISED"
+    #: An accountable human settled that question. The authority is scoped to
+    #: this record and this snapshot; it is never a disposition.
+    QUALITY_AUTHORITY_RECORDED = "QUALITY_AUTHORITY_RECORDED"
     HUMAN_EVIDENCE_RECEIVED = "HUMAN_EVIDENCE_RECEIVED"
     DECISION_RESUMED = "DECISION_RESUMED"
     # Milestone 2 only. Declared so the vocabulary is complete, not emitted yet.

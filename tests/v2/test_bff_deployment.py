@@ -91,13 +91,13 @@ def test_the_handler_holds_no_domain_logic() -> None:
         assert forbidden not in source, f"business logic in the BFF: {forbidden!r}"
 
 
-def test_the_allowlist_is_exactly_the_seven_browser_actions() -> None:
+def test_the_allowlist_is_exactly_the_eight_browser_actions() -> None:
     """No generic passthrough: the runtime's action surface is not the boundary."""
     sys.path.insert(0, str(ROOT / "bff"))
     import handler  # noqa: PLC0415
 
     assert handler.ALLOWED_ACTIONS == {
-        "evaluate_lot", "supply_evidence",
+        "evaluate_lot", "supply_evidence", "submit_quality_authority",
         "list_decisions", "get_decision", "get_events", "get_source", "get_today",
     }
     # Actions the runtime supports but a browser must never reach.

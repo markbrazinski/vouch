@@ -7,6 +7,9 @@ Actions:
   {"action": "evaluate_lot",     "lot_id": ..., "document": "<coa text>"}
   {"action": "supply_evidence",  "decision_record_id": ..., "lot_id": ...,
                                  "document": ..., "authority_source": ...}
+  {"action": "submit_quality_authority",
+                                 "decision_record_id": ..., "decision": ...,
+                                 "accountable_actor": ..., "authority_source": ...}
   {"action": "readiness",        "order_id": ...}
   {"action": "recovery",         "order_id": ...}
   {"action": "ledger"}
@@ -34,6 +37,7 @@ from __future__ import annotations
 import base64
 import binascii
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 # The runtime ships src/vouch alongside this entrypoint.
@@ -113,6 +117,13 @@ def _record_summary(record) -> dict:
             "tool_calls": len(record.verifier.tool_events),
         },
         "reconciliation": record.reconciliation.outcome,
+        # The open applicability question, if a disagreement raised one. The
+        # frontend renders the question from these structured facts rather
+        # than composing its own wording.
+        "quality_authority": {
+            "question": asdict(record.quality_authority.question),
+            "decisions": [asdict(d) for d in record.quality_authority.decisions],
+        },
         "basis": {"spec_id": record.basis.spec_id, "revision": record.basis.revision},
         "disposition": record.disposition.disposition,
         "policy": {
@@ -856,6 +867,31 @@ def invoke(payload: dict, context=None) -> dict:
                 # continuation exists to reach. Omitting the mutation and its
                 # consequences here left a caller unable to see the outcome of
                 # the second half of the story without reading the record.
+                "mutation": outcome.mutation,
+                "consequences": outcome.consequences,
+                "decision_record": _record_summary(outcome.record),
+                "events": outcome.events,
+            }
+
+        if action == "submit_quality_authority":
+            outcome = _VOUCH.submit_quality_authority(
+                decision_record_id=payload["decision_record_id"],
+                decision=payload["decision"],
+                accountable_actor=payload["accountable_actor"],
+                authority_source=payload["authority_source"],
+                claim_set_hash=payload.get("claim_set_hash", ""),
+                question_id=payload.get("question_id", ""),
+            )
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                "decision_record_id": outcome.decision_record_id,
+                "lot_id": outcome.lot_id,
+                "disposition": outcome.disposition,
+                "failure_category": outcome.failure_category,
+                "quality_decision_required": outcome.quality_decision_required,
+                "reason": outcome.reason,
                 "mutation": outcome.mutation,
                 "consequences": outcome.consequences,
                 "decision_record": _record_summary(outcome.record),

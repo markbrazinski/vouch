@@ -63,7 +63,9 @@ ALLOWED_ORIGIN = os.environ.get("VOUCH_ALLOWED_ORIGIN", "")
 READ_ACTIONS = frozenset(
     {"list_decisions", "get_decision", "get_events", "get_source", "get_today"}
 )
-WRITE_ACTIONS = frozenset({"evaluate_lot", "supply_evidence"})
+WRITE_ACTIONS = frozenset(
+    {"evaluate_lot", "supply_evidence", "submit_quality_authority"}
+)
 ALLOWED_ACTIONS = READ_ACTIONS | WRITE_ACTIONS
 
 #: Identifier shapes. Ids are generated as `DR-<12 hex>` / `ART-<12 hex>`, and
@@ -174,6 +176,24 @@ def _validated(action: str, body: dict) -> dict:
         if not isinstance(value, str) or not value.strip():
             raise BadRequest("authority_source is required")
         payload["authority_source"] = value[:256]
+    elif action == "submit_quality_authority":
+        # Transport only. The proxy checks SHAPE — that the fields are present,
+        # typed and bounded — and nothing else. Whether this record is actually
+        # awaiting this question, whether the snapshot still matches and
+        # whether the decision may be recorded at all are authority questions,
+        # and they are answered by the runtime against durable state.
+        record_id()
+        decision = body.get("decision")
+        if decision not in ("AUTHORIZE_APPLICABILITY", "KEEP_HELD"):
+            raise BadRequest("decision is not a recognised quality authority decision")
+        payload["decision"] = decision
+        for field in ("accountable_actor", "authority_source"):
+            value = body.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise BadRequest(f"{field} is required")
+            payload[field] = value[:256]
+        text("claim_set_hash", limit=128)
+        text("question_id", limit=256)
 
     return payload
 
@@ -235,6 +255,8 @@ def _route(method: str, path: str, query: dict) -> tuple[str, dict]:
             return "evaluate_lot", {}
         if parts == ["evidence"]:
             return "supply_evidence", {}
+        if parts == ["quality-authority"]:
+            return "submit_quality_authority", {}
     elif method == "GET":
         if parts == ["today"]:
             return "get_today", {}

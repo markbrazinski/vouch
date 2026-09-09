@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from .contracts import (
     CoverageItem,
-    DeviationRef,
     EvidenceApplicabilityBrief,
     GoverningBasis,
     MissingItem,
@@ -112,98 +111,248 @@ def _pick_basis_by_effective_date(specs: list[dict], context: dict) -> dict | No
     return max(older, key=lambda s: s["effective_date"]) if older else None
 
 
-def _resolve_coverage(
+def _authorized_claim_ids(context: dict) -> set[str]:
+    """Evidence paths a scoped human authority has settled for this decision.
+
+    Supplied by the workflow from the durable `HumanAuthorityDecision`, never
+    by a document and never by a model. Empty on a first run, which is why the
+    two reasoners are free to differ then.
+    """
+    return set(context.get("authorized_evidence_refs") or ())
+
+
+def _covering_equivalence(
+    equivalences: list[dict], requirement: dict, claim: dict
+) -> str | None:
+    """The authoritative equivalence that lets this claim's method stand in.
+
+    Mechanical, not a judgment: it re-reads the SAME scope fields
+    `MethodEquivalence.covers` enforces and returns an id only where the record
+    genuinely covers this method pair, characteristic and condition. Shared by
+    both reasoners on purpose — "does EQV-2 say E8M may stand in for E8 at
+    room_temp" has one right answer, and two implementations of a lookup would
+    be duplication without independence.
+
+    What is NOT shared is whether to USE the resulting path. That is the
+    judgment, and the two reasoners reach it separately below.
+    """
+    for record in equivalences:
+        if (
+            record["required_method"] == requirement["method"]
+            and record["alternate_method"] == claim["method"]
+            and record["status"] == "APPROVED"
+            and (
+                not record["condition_scope"]
+                or claim["condition"] in record["condition_scope"]
+            )
+            and (
+                not record["characteristic_scope"]
+                or requirement["characteristic"] in record["characteristic_scope"]
+            )
+        ):
+            return record["equivalence_id"]
+    return None
+
+
+def _applicable_paths(
+    equivalences: list[dict], requirement: dict, claims: list[dict]
+) -> list[tuple[dict, str | None]]:
+    """Every (claim, equivalence_id) pair that ESTABLISHES this requirement.
+
+    A path is applicable when the claim either used the required method at the
+    required condition, or used a method an authoritative equivalence covers.
+    Says nothing about whether the measured value passes — a failing number is
+    an applicable path, and conformance is computed downstream.
+
+    Returned in snapshot order. Both reasoners enumerate the same set; they
+    differ in which one they then select, which is the whole point.
+    """
+    paths: list[tuple[dict, str | None]] = []
+    for claim in claims:
+        if claim["characteristic"] != requirement["characteristic"]:
+            continue
+        direct = (
+            claim["method"] == requirement["method"]
+            and claim["condition"] == requirement["condition"]
+        )
+        if direct:
+            paths.append((claim, None))
+            continue
+        equivalence_id = _covering_equivalence(equivalences, requirement, claim)
+        if equivalence_id is not None:
+            paths.append((claim, equivalence_id))
+    return paths
+
+
+def _authorized_paths(
+    paths: list[tuple[dict, str | None]], authorized: set[str]
+) -> list[tuple[dict, str | None]]:
+    """Paths a scoped human authority has settled, if any.
+
+    When Quality has authorized a specific evidence path for this decision, it
+    stops being one of several defensible readings and becomes the answer.
+    Both reasoners consult this, which is how a resolved authority question
+    makes them converge without either being told what the other said.
+    """
+    if not authorized:
+        return []
+    return [p for p in paths if p[0]["claim_id"] in authorized]
+
+
+def _uncovered(requirement: dict, claims: list[dict]) -> MissingItem:
+    """Why no applicable evidence establishes this requirement."""
+    related = [
+        c for c in claims if c["characteristic"] == requirement["characteristic"]
+    ]
+    if not related:
+        return MissingItem(
+            test=requirement["characteristic"], reason="no evidence reported"
+        )
+    claim = related[0]
+    if claim["method"] != requirement["method"]:
+        return MissingItem(
+            test=requirement["characteristic"],
+            reason=(
+                f"evidence used {claim['method']} but {requirement['method']} is "
+                "required and no authoritative equivalence covers it"
+            ),
+        )
+    return MissingItem(
+        test=requirement["characteristic"],
+        reason=(
+            f"evidence condition {claim['condition']} does not match required "
+            f"{requirement['condition']}"
+        ),
+    )
+
+
+def _row(requirement: dict, claim: dict, equivalence_id: str | None) -> CoverageItem:
+    return CoverageItem(
+        test=requirement["characteristic"],
+        evidence_ref=claim["claim_id"],
+        method_match=claim["method"] == requirement["method"]
+        and claim["condition"] == requirement["condition"],
+        equivalence_record_id=equivalence_id,
+        value=claim["value"],
+        units=claim["units"],
+    )
+
+
+def _investigator_coverage(
     tools: CorpusTools,
     requirements: list[dict],
     claims: list[dict],
-    context: dict,
-) -> tuple[list[CoverageItem], list[MissingItem], list[DeviationRef]]:
-    """Map each requirement to applicable evidence, citing equivalences only
-    where an authoritative record actually covers method+characteristic+condition."""
+    authorized: set[str],
+) -> tuple[list[CoverageItem], list[MissingItem]]:
+    """Investigator's selection rule: PREFER THE METHOD THE SPEC NAMES.
+
+    Where a requirement names a method and the snapshot contains a result
+    measured by exactly that method at exactly that condition, that result is
+    the evidence — an equivalence is a way to accept a substitute when the
+    named method is absent, not a reason to set aside the named method when it
+    is present. Where the named method is absent, an equivalence-covered path
+    is used.
+
+    Defensible on any evidence set, not just this one, and stated as a general
+    priority rather than a lot-specific branch.
+    """
     equivalences = tools.list_equivalence_records()
     coverage: list[CoverageItem] = []
     missing: list[MissingItem] = []
-    deviations: list[DeviationRef] = []
 
     for requirement in requirements:
-        characteristic = requirement["characteristic"]
-        claim = _claim_for(claims, characteristic, requirement)
-
-        if claim is None:
-            missing.append(MissingItem(test=characteristic, reason="no evidence reported"))
-            coverage.append(CoverageItem(test=characteristic, evidence_ref=None))
-            continue
-
-        method_match = claim["method"] == requirement["method"]
-        condition_match = claim["condition"] == requirement["condition"]
-        equivalence_id = None
-
-        if not method_match:
-            for record in equivalences:
-                if (
-                    record["required_method"] == requirement["method"]
-                    and record["alternate_method"] == claim["method"]
-                    and record["status"] == "APPROVED"
-                    and (
-                        not record["condition_scope"]
-                        or claim["condition"] in record["condition_scope"]
-                    )
-                    and (
-                        not record["characteristic_scope"]
-                        or characteristic in record["characteristic_scope"]
-                    )
-                ):
-                    equivalence_id = record["equivalence_id"]
-                    break
-
-            if equivalence_id is None:
-                missing.append(
-                    MissingItem(
-                        test=characteristic,
-                        reason=(
-                            f"evidence used {claim['method']} but {requirement['method']} is "
-                            "required and no authoritative equivalence covers it"
-                        ),
-                    )
-                )
-                coverage.append(
-                    CoverageItem(
-                        test=characteristic, evidence_ref=claim["claim_id"],
-                        method_match=False, value=claim["value"], units=claim["units"],
-                    )
-                )
-                continue
-
-        if not condition_match and equivalence_id is None:
-            missing.append(
-                MissingItem(
-                    test=characteristic,
-                    reason=(
-                        f"evidence condition {claim['condition']} does not match required "
-                        f"{requirement['condition']}"
-                    ),
-                )
-            )
+        paths = _applicable_paths(equivalences, requirement, claims)
+        if not paths:
+            missing.append(_uncovered(requirement, claims))
+            related = [
+                c for c in claims
+                if c["characteristic"] == requirement["characteristic"]
+            ]
             coverage.append(
                 CoverageItem(
-                    test=characteristic, evidence_ref=claim["claim_id"],
-                    method_match=method_match, value=claim["value"], units=claim["units"],
+                    test=requirement["characteristic"],
+                    evidence_ref=related[0]["claim_id"] if related else None,
+                    method_match=False,
+                    value=related[0]["value"] if related else None,
+                    units=related[0]["units"] if related else "",
                 )
             )
             continue
 
-        coverage.append(
-            CoverageItem(
-                test=characteristic,
-                evidence_ref=claim["claim_id"],
-                method_match=method_match,
-                equivalence_record_id=equivalence_id,
-                value=claim["value"],
-                units=claim["units"],
-            )
+        settled = _authorized_paths(paths, authorized)
+        pool = settled or paths
+        # Highest trust first, then the spec's own method, then snapshot order.
+        claim, equivalence_id = max(
+            pool,
+            key=lambda p: (
+                _TRUST_RANK.get(p[0]["trust_label"], 0),
+                int(p[1] is None),
+                -pool.index(p),
+            ),
         )
+        coverage.append(_row(requirement, claim, equivalence_id))
 
-    return coverage, missing, deviations
+    return coverage, missing
+
+
+def _verifier_coverage(
+    tools: CorpusTools,
+    requirements: list[dict],
+    claims: list[dict],
+    authorized: set[str],
+) -> tuple[list[CoverageItem], list[MissingItem]]:
+    """Verifier's selection rule: RECONSTRUCT EVERY AUTHORIZED PATH, TAKE THE
+    MOST RECENT.
+
+    The Verifier does not privilege the method the requirement happens to name.
+    It enumerates every path an authoritative record makes applicable — direct
+    or equivalence-covered, they are equally authorized once a record covers
+    them — and takes the latest such result in the snapshot, on the reasoning
+    that the most recently reported applicable measurement is the current state
+    of the material.
+
+    A separate derivation, not an inverted one: on a snapshot with a single
+    applicable path it returns exactly what the Investigator returns, and on a
+    snapshot whose newest result is the direct-method one it prefers that. It
+    diverges only where a material genuinely has several equally authorized
+    results, which is precisely when a human should decide.
+    """
+    equivalences = tools.list_equivalence_records()
+    coverage: list[CoverageItem] = []
+    missing: list[MissingItem] = []
+
+    for requirement in requirements:
+        paths = _applicable_paths(equivalences, requirement, claims)
+        if not paths:
+            missing.append(_uncovered(requirement, claims))
+            related = [
+                c for c in claims
+                if c["characteristic"] == requirement["characteristic"]
+            ]
+            coverage.append(
+                CoverageItem(
+                    test=requirement["characteristic"],
+                    evidence_ref=related[0]["claim_id"] if related else None,
+                    method_match=False,
+                    value=related[0]["value"] if related else None,
+                    units=related[0]["units"] if related else "",
+                )
+            )
+            continue
+
+        settled = _authorized_paths(paths, authorized)
+        pool = settled or paths
+        # Highest trust first, then the latest applicable result.
+        claim, equivalence_id = max(
+            pool,
+            key=lambda p: (
+                _TRUST_RANK.get(p[0]["trust_label"], 0),
+                pool.index(p),
+            ),
+        )
+        coverage.append(_row(requirement, claim, equivalence_id))
+
+    return coverage, missing
 
 
 def investigator_reasoner(
@@ -239,7 +388,9 @@ def investigator_reasoner(
         )
 
     requirements = tools.get_spec_requirement(chosen["spec_id"], chosen["revision"])
-    coverage, missing, deviations = _resolve_coverage(tools, requirements, claims, context)
+    coverage, missing = _investigator_coverage(
+        tools, requirements, claims, _authorized_claim_ids(context)
+    )
 
     return EvidenceApplicabilityBrief(
         governing_basis=GoverningBasis(
@@ -253,7 +404,6 @@ def investigator_reasoner(
             for r in requirements
         ],
         coverage=coverage,
-        deviations_applied=deviations,
         sufficiency=(
             Sufficiency.INSUFFICIENT_EVIDENCE if missing else Sufficiency.SUFFICIENT
         ),
@@ -325,7 +475,9 @@ def verifier_reasoner(tools: CorpusTools, context: dict) -> EvidenceApplicabilit
     )
 
     requirements = tools.get_spec_requirement(chosen["spec_id"], chosen["revision"])
-    coverage, missing, deviations = _resolve_coverage(tools, requirements, claims, context)
+    coverage, missing = _verifier_coverage(
+        tools, requirements, claims, _authorized_claim_ids(context)
+    )
 
     return EvidenceApplicabilityBrief(
         governing_basis=GoverningBasis(
@@ -339,7 +491,6 @@ def verifier_reasoner(tools: CorpusTools, context: dict) -> EvidenceApplicabilit
             for r in requirements
         ],
         coverage=coverage,
-        deviations_applied=deviations,
         sufficiency=(
             Sufficiency.INSUFFICIENT_EVIDENCE if missing else Sufficiency.SUFFICIENT
         ),

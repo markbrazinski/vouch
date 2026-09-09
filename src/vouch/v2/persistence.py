@@ -557,13 +557,41 @@ def hydrate_record(document: dict) -> DecisionRecord:
                 rebuilt[field_name] = build(type(nested), payload[field_name])
         return build(ArchivedRun, rebuilt)
 
+    def build_quality_authority(payload):
+        """The quality-authority segment, whose nested members are dataclasses.
+
+        `build` alone would leave `question` and every entry of `decisions` as
+        plain dicts, so `record.quality_authority.question.status` would raise
+        after a restart and an authority fact would survive storage without
+        staying readable — the same failure `build_run` exists to prevent.
+        """
+        from .decision_record import (
+            HumanAuthorityDecision,
+            QualityAuthoritySegment,
+            QualityQuestion,
+        )
+
+        if not isinstance(payload, dict):
+            return QualityAuthoritySegment()
+        rebuilt = dict(payload)
+        if isinstance(payload.get("question"), dict):
+            rebuilt["question"] = build(QualityQuestion, payload["question"])
+        rebuilt["decisions"] = [
+            build(HumanAuthorityDecision, item)
+            for item in (payload.get("decisions") or [])
+            if isinstance(item, dict)
+        ]
+        return build(QualityAuthoritySegment, rebuilt)
+
     record = DecisionRecord(record_id=document.get("record_id", ""))
     for name in (f.name for f in dataclass_fields(DecisionRecord)):
         value = document.get(name)
         if value is None:
             continue
         current = getattr(record, name)
-        if is_dataclass(current):
+        if name == "quality_authority":
+            setattr(record, name, build_quality_authority(value))
+        elif is_dataclass(current):
             setattr(record, name, build(type(current), value))
         elif name == "archived_runs" and isinstance(value, list):
             setattr(record, name, [build_run(item) for item in value])

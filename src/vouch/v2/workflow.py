@@ -41,7 +41,11 @@ from .contracts import (
     VouchFailure,
 )
 from .corpus import Corpus
-from .decision_record import DecisionRecord
+from .decision_record import (
+    DecisionRecord,
+    HumanAuthorityDecision,
+    QualityQuestion,
+)
 from .disposition import compute_disposition
 from .evidence import (
     LOW_CONFIDENCE,
@@ -565,9 +569,17 @@ class VouchV2:
         record.snapshot.lot_state_version = lot_version
         record.snapshot.order_state_versions = dict(order_versions)
 
+        # The scoped human authority, if one has been recorded for this case.
+        # Both agents receive it identically — it is an authoritative fact
+        # about which evidence path is settled, not a hint about what the
+        # other agent concluded, so it converges them without either one
+        # seeing the other's brief.
+        authorized_refs = record.quality_authority.authorized_evidence_refs
+
         context = {
             "lot_id": lot_id,
             "material_id": lot.material_id,
+            "authorized_evidence_refs": authorized_refs,
             "manufactured_at": lot.manufactured_at,
             "received_at": lot.received_at,
             "supplier_site": lot.supplier_site,
@@ -644,6 +656,20 @@ class VouchV2:
             }
 
         if reconciliation.outcome is ReconciliationOutcome.MATERIAL_DISAGREEMENT:
+            # Turn the difference into ONE answerable question before
+            # escalating. Deterministic: it reads the two briefs and the frozen
+            # claims, so the question an operator answers and the question an
+            # auditor reads are the same object.
+            self._raise_quality_question(
+                record, events,
+                investigator=investigation.brief,
+                verifier=verification.brief,
+                claims_by_id=claims_by_id,
+                requirements=run_basis_checks(
+                    investigation.brief, self.corpus,
+                    lot_id=lot_id, claims_by_id=claims_by_id,
+                ).resolved_requirements,
+            )
             return self._quality_decision(
                 record, events, lot_id,
                 FailureCategory.MATERIAL_DISAGREEMENT,
@@ -1019,6 +1045,210 @@ class VouchV2:
         return outcome
 
     # ------------------------------------------------------------------
+    # human authority (quality decision on a disputed applicability question)
+    # ------------------------------------------------------------------
+    def submit_quality_authority(
+        self,
+        *,
+        decision_record_id: str,
+        decision: str,
+        accountable_actor: str,
+        authority_source: str,
+        claim_set_hash: str = "",
+        question_id: str = "",
+        events: EventLog | None = None,
+    ) -> DecisionOutcome:
+        """An accountable human settles the disputed applicability question.
+
+        This establishes a FACT, never a disposition. `AUTHORIZE_APPLICABILITY`
+        says which evidence path the agents may treat as settled; the lot's
+        outcome is still computed deterministically by the same engine, from
+        the same frozen claims, after both agents re-derive their briefs. There
+        is no code path from here to `release_lot`.
+
+        Every precondition is checked before anything is written, and the whole
+        action is idempotent on (record, question, decision): a duplicate
+        AUTHORIZE returns the existing outcome rather than recording a second
+        authority fact or starting a third run.
+        """
+        events = self._event_log(events)
+
+        if decision not in ("AUTHORIZE_APPLICABILITY", "KEEP_HELD"):
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                f"unknown quality authority decision {decision!r}",
+            )
+        if not accountable_actor or not authority_source:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                "an accountable actor and an authority source are both required",
+            )
+
+        record = self.resume(decision_record_id)
+        if record is None:
+            raise VouchFailure(
+                FailureCategory.PERSISTENCE_FAILURE,
+                f"no decision record {decision_record_id}",
+            )
+
+        question = record.quality_authority.question
+        if not question.question_id:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                "this decision has no open applicability question to answer",
+            )
+        if question_id and question_id != question.question_id:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                f"question {question_id} is not the open question on this record",
+            )
+        if record.failure_category != FailureCategory.MATERIAL_DISAGREEMENT.value:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                "this decision is not awaiting a quality authority decision",
+            )
+
+        # Snapshot binding. Authority granted against one frozen claim set must
+        # not carry to a different one — that is what stops a replayed action
+        # from settling a question about evidence nobody reviewed.
+        if claim_set_hash and claim_set_hash != record.snapshot.claim_set_hash:
+            raise VouchFailure(
+                FailureCategory.STATE_CONFLICT,
+                "the evidence snapshot has changed since this question was "
+                "raised; re-read the case before answering it",
+            )
+
+        # Idempotency. The same answer to the same question is inert.
+        for existing in record.quality_authority.decisions:
+            if (
+                existing.question_id == question.question_id
+                and existing.decision == decision
+            ):
+                return DecisionOutcome(
+                    decision_record_id=decision_record_id,
+                    lot_id=record.identity.lot_id,
+                    failure_category=record.failure_category,
+                    quality_decision_required=question.status == "OPEN",
+                    reason="this quality authority decision is already recorded",
+                    record=record,
+                    events=events.as_dicts(),
+                )
+        if record.quality_authority.decisions:
+            raise VouchFailure(
+                FailureCategory.POLICY_REFUSAL,
+                "this applicability question has already been answered",
+            )
+
+        authorized: list[str] = []
+        if decision == "AUTHORIZE_APPLICABILITY":
+            # Authorize the path the question actually offered, and only if its
+            # evidence still resolves in this record's own claim set.
+            known = {
+                claim.claim_id for claim in self.claims.get(decision_record_id, [])
+            }
+            chosen = [
+                option["claim_id"]
+                for option in question.options
+                if option.get("equivalence_id")
+            ] or [question.verifier_evidence_ref]
+            for claim_id in chosen:
+                if claim_id not in known:
+                    raise VouchFailure(
+                        FailureCategory.STATE_CONFLICT,
+                        f"evidence {claim_id} is not in this decision's snapshot",
+                    )
+            if question.equivalence_id and not any(
+                e.equivalence_id == question.equivalence_id
+                for e in self.corpus.all("equivalence")
+            ):
+                raise VouchFailure(
+                    FailureCategory.POLICY_REFUSAL,
+                    f"equivalence {question.equivalence_id} does not exist",
+                )
+            authorized = chosen
+
+        authority = HumanAuthorityDecision(
+            authority_decision_id=f"HAD-{uuid.uuid4().hex[:12]}",
+            decision_record_id=decision_record_id,
+            lot_id=record.identity.lot_id,
+            source_run=record.run_count,
+            evidence_snapshot_id=record.snapshot.snapshot_id,
+            claim_set_hash=record.snapshot.claim_set_hash,
+            lot_state_version=record.snapshot.lot_state_version,
+            question_id=question.question_id,
+            question_type=question.question_type,
+            characteristic=question.characteristic,
+            authorized_evidence_refs=authorized,
+            disputed_evidence_refs=[
+                question.investigator_evidence_ref,
+                question.verifier_evidence_ref,
+            ],
+            equivalence_id=question.equivalence_id,
+            method_from=question.method_from,
+            method_to=question.method_to,
+            condition=question.condition,
+            decision=decision,
+            accountable_actor=accountable_actor,
+            authority_source=authority_source,
+        )
+        record.quality_authority.decisions.append(authority)
+        question.status = "RESOLVED" if authorized else "HELD"
+        record.human.review_status = "RESOLVED" if authorized else "HELD"
+        record.human.authority_source = authority_source
+
+        events.emit(
+            EventType.QUALITY_AUTHORITY_RECORDED, decision_record_id,
+            authority_decision_id=authority.authority_decision_id,
+            question_id=question.question_id,
+            decision=decision,
+            accountable_actor=accountable_actor,
+            authority_source=authority_source,
+            characteristic=question.characteristic,
+            equivalence_id=question.equivalence_id,
+            authorized_evidence_refs=authorized,
+            evidence_snapshot_id=authority.evidence_snapshot_id,
+            claim_set_hash=authority.claim_set_hash,
+        )
+
+        if decision == "KEEP_HELD":
+            # Durably resolved as held. No second run, no determinism, no
+            # mutation — the lot simply stays where it is.
+            self._persist(record, events)
+            return DecisionOutcome(
+                decision_record_id=decision_record_id,
+                lot_id=record.identity.lot_id,
+                failure_category=record.failure_category,
+                quality_decision_required=False,
+                reason="quality authority elected to keep the lot held",
+                record=record,
+                events=events.as_dicts(),
+            )
+
+        # AUTHORIZE: the same record continues as the next run. The archive is
+        # what keeps run 1 intact — the agents' briefs, the disagreement and
+        # the question all stay readable after the rerun overwrites the live
+        # segments.
+        record.rerun()
+        self._persist(record, events)
+        events.emit(
+            EventType.DECISION_RESUMED, decision_record_id,
+            lot_id=record.identity.lot_id,
+            run_count=record.run_count,
+            resumed_run_ids=list(record.human.resumed_run_ids),
+            trigger="QUALITY_AUTHORITY",
+            authority_decision_id=authority.authority_decision_id,
+        )
+
+        outcome = self.evaluate_lot(
+            record.identity.lot_id,
+            decision_record_id=decision_record_id,
+            events=events,
+        )
+        if outcome.disposition in ("RELEASE", "QUARANTINE"):
+            record.human.final_outcome = outcome.disposition
+        return outcome
+
+    # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
     def _brief_contract_errors(self, brief, lot_id, claims_by_id) -> list[str]:
@@ -1253,6 +1483,88 @@ class VouchV2:
             else {},
             brief_rejected=run.brief is None and run.rejected_brief is not None,
         )
+
+    def _raise_quality_question(
+        self,
+        record: DecisionRecord,
+        events: EventLog,
+        *,
+        investigator,
+        verifier,
+        claims_by_id: dict,
+        requirements: list,
+    ) -> None:
+        """Derive the single answerable question from a material disagreement.
+
+        Only an evidence-selection difference produces an answerable question:
+        the two briefs each named applicable evidence for the same requirement
+        and named DIFFERENT evidence. That is a question a human can settle,
+        because both options are real rows in the frozen snapshot.
+
+        Anything else — a basis difference, a sufficiency difference — still
+        escalates through the normal channel, but this method leaves the
+        question unset rather than inventing one an operator could not answer.
+        """
+        left = {c.test: c for c in investigator.coverage if c.evidence_ref}
+        right = {c.test: c for c in verifier.coverage if c.evidence_ref}
+        characteristics = {r.characteristic for r in requirements}
+
+        for test in sorted(set(left) & set(right)):
+            mine, theirs = left[test], right[test]
+            if mine.evidence_ref == theirs.evidence_ref:
+                continue
+            if test not in characteristics:
+                continue
+
+            requirement = next(
+                (r for r in requirements if r.characteristic == test), None
+            )
+            if requirement is None:
+                continue
+
+            def option(item, selected_by):
+                claim = claims_by_id.get(item.evidence_ref)
+                return {
+                    "claim_id": item.evidence_ref,
+                    "value": claim.value if claim else None,
+                    "units": claim.units if claim else "",
+                    "method": claim.method if claim else "",
+                    "condition": claim.condition if claim else "",
+                    "equivalence_id": item.equivalence_record_id or "",
+                    "selected_by": selected_by,
+                }
+
+            options = [option(mine, "INVESTIGATOR"), option(theirs, "VERIFIER")]
+            # The equivalence in play is whichever side relied on one; that is
+            # the object the authority question is actually about.
+            equivalence = mine.equivalence_record_id or theirs.equivalence_record_id or ""
+            alternate = next(
+                (o for o in options if o["equivalence_id"]), None
+            )
+
+            record.quality_authority.question = QualityQuestion(
+                question_id=f"QQ-{record.record_id}-{test}",
+                question_type="EVIDENCE_APPLICABILITY",
+                characteristic=test,
+                options=options,
+                investigator_evidence_ref=mine.evidence_ref or "",
+                verifier_evidence_ref=theirs.evidence_ref or "",
+                equivalence_id=equivalence,
+                method_from=(alternate or {}).get("method", ""),
+                method_to=requirement.method,
+                condition=(alternate or {}).get("condition", requirement.condition),
+                status="OPEN",
+            )
+            events.emit(
+                EventType.QUALITY_QUESTION_RAISED, record.record_id,
+                question_id=record.quality_authority.question.question_id,
+                question_type="EVIDENCE_APPLICABILITY",
+                characteristic=test,
+                equivalence_id=equivalence,
+                investigator_evidence_ref=mine.evidence_ref or "",
+                verifier_evidence_ref=theirs.evidence_ref or "",
+            )
+            return
 
     def _quality_decision(
         self,
