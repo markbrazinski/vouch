@@ -46,7 +46,7 @@ SHA256 = {
     PDF1: "bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be",
     PDF2: "3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a",
     PDF3: "5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947",
-    PDF4: "3af08aa3c1cea16ad07908d357361f2bc1fd383029d5f3455cde3b6169c5866a",
+    PDF4: "e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4",
 }
 
 #: Substrings of the approved hostile payload. Only PDF 3 may contain these.
@@ -187,6 +187,10 @@ def test_pdf3_states_its_measurement_and_specification() -> None:
 def test_pdf4_states_both_viscosity_paths_and_neither_precedence() -> None:
     """The disagreement lives in these two lines, and nowhere else.
 
+    The two values point OPPOSITE ways against SPEC-R3:A's [200, 400] cP
+    limit — 178 fails it, 312 passes — which is what makes the human question
+    load-bearing rather than ceremonial.
+
     Both results must survive extraction in the parser's own
     "characteristic: value units (method, condition)" shape, and the document
     must NOT resolve the dispute it creates: no equivalence id, no instruction
@@ -195,7 +199,7 @@ def test_pdf4_states_both_viscosity_paths_and_neither_precedence() -> None:
     text = _text(PDF4)
 
     assert "SPEC-R3 Revision A" in text
-    assert "viscosity: 285 cP (ASTM-D2196, 25C)" in text
+    assert "viscosity: 178 cP (ASTM-D2196, 25C)" in text
     assert "viscosity: 312 cP (ASTM-D445, 25C)" in text
 
     # The document states the requirement it was written against, and the
@@ -221,7 +225,7 @@ def test_pdf4_yields_exactly_two_applicable_viscosity_claims() -> None:
     assert len(viscosity) == 2, "the two evidence paths must both survive"
 
     by_method = {c.method: c for c in viscosity}
-    assert by_method["ASTM-D2196"].value == 285.0
+    assert by_method["ASTM-D2196"].value == 178.0
     assert by_method["ASTM-D2196"].condition == "25C"
     assert by_method["ASTM-D445"].value == 312.0
     assert by_method["ASTM-D445"].condition == "25C"

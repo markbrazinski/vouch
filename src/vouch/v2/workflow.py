@@ -58,7 +58,12 @@ from .evidence import (
 from .lifecycle import EventLog, EventType, LifecycleEvent, utcnow
 from .persistence import InMemoryRecordStore, hydrate_claims, hydrate_record
 from .local_reasoners import investigator_reasoner, verifier_reasoner
-from .reconcile import POLICY_VERSION, reconcile, run_basis_checks
+from .reconcile import (
+    POLICY_VERSION,
+    reconcile,
+    resolve_test_name,
+    run_basis_checks,
+)
 
 #: One initial brief plus two repair attempts. The budget is what bounds the
 #: cost of a model that cannot satisfy the contract; it is not a safety
@@ -604,7 +609,7 @@ class VouchV2:
         investigation = self._run_with_retry(
             self.investigator, context, claims, events, record_id,
             validate=lambda brief: self._brief_contract_errors(
-                brief, lot_id, claims_by_id
+                brief, lot_id, claims_by_id, authorized_refs
             ),
         )
         record.investigator = self._agent_segment(investigation, snapshot)
@@ -622,7 +627,7 @@ class VouchV2:
         verification = self._run_with_retry(
             self.verifier, context, claims, events, record_id,
             validate=lambda brief: self._brief_contract_errors(
-                brief, lot_id, claims_by_id
+                brief, lot_id, claims_by_id, authorized_refs
             ),
         )
         record.verifier = self._agent_segment(verification, snapshot)
@@ -1298,7 +1303,9 @@ class VouchV2:
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
-    def _brief_contract_errors(self, brief, lot_id, claims_by_id) -> list[str]:
+    def _brief_contract_errors(
+        self, brief, lot_id, claims_by_id, authorized: list[str] | None = None
+    ) -> list[str]:
         """Objective contract violations in one brief, as machine-readable text.
 
         This is `run_basis_checks` — the SAME deterministic validator the
@@ -1309,7 +1316,9 @@ class VouchV2:
         It answers only questions with a structured answer: does the cited
         object exist, is the evidence in this snapshot and on this lot, is the
         requirement set complete, is a cited equivalence or deviation within
-        its own recorded scope, are two method identifiers the same string.
+        its own recorded scope, are two method identifiers the same string,
+        and — where Quality has established controlling evidence — is that the
+        evidence the brief actually cites.
 
         It does NOT decide which candidate spec governs, whether ambiguous
         evidence applies, or whether an equivalence is appropriate. Those stay
@@ -1319,7 +1328,71 @@ class VouchV2:
         checks = run_basis_checks(
             brief, self.corpus, lot_id=lot_id, claims_by_id=claims_by_id
         )
-        return list(checks.failures)
+        failures = list(checks.failures)
+        failures.extend(
+            self._authority_contract_errors(
+                brief, checks, claims_by_id, authorized or []
+            )
+        )
+        return failures
+
+    @staticmethod
+    def _authority_contract_errors(
+        brief, checks, claims_by_id: dict, authorized: list[str]
+    ) -> list[str]:
+        """Did this brief honour the evidence Quality established?
+
+        A contract check, not a judgment. It asks only whether the row for a
+        requirement covered by established evidence cites THAT evidence — the
+        agent still derives the basis, the applicability and everything else
+        itself.
+
+        Without it the authority was advisory: a live run 2 saw one agent cite
+        the established claim alongside the one it replaced and the other cite
+        only the unauthorized claim, which re-derived the very disagreement the
+        human had just settled. An authority a model may decline is not an
+        authority.
+
+        The unselected claims are NOT removed from the snapshot — they remain
+        frozen, hashed and auditable. What is constrained is which of them a
+        brief may treat as controlling.
+        """
+        if not authorized:
+            return []
+
+        settled = set(authorized)
+        characteristics = {r.characteristic for r in checks.resolved_requirements}
+        rows_by_test: dict[str, list] = {}
+        for item in brief.coverage:
+            rows_by_test.setdefault(
+                resolve_test_name(item.test, characteristics), []
+            ).append(item)
+
+        failures: list[str] = []
+        for requirement in checks.resolved_requirements:
+            rows = rows_by_test.get(requirement.characteristic, [])
+            # Only requirements the established evidence actually speaks to.
+            # An authority about viscosity says nothing about hardness.
+            relevant = [
+                claim_id
+                for claim_id in settled
+                if (claim := claims_by_id.get(claim_id)) is not None
+                and claim.characteristic == requirement.characteristic
+            ]
+            if not relevant:
+                continue
+            cited = {r.evidence_ref for r in rows if r.evidence_ref}
+            if cited == set(relevant):
+                continue
+            failures.append(
+                f"Quality established {', '.join(sorted(relevant))} as the "
+                f"controlling evidence for {requirement.characteristic}. This "
+                f"brief cites {sorted(cited) or 'none'}. Cite the established "
+                f"evidence in that requirement's coverage row and no other "
+                f"claim for it; the remaining claims stay in the snapshot but "
+                f"do not establish this requirement."
+            )
+        return failures
 
     def _run_with_retry(
         self, agent, context, claims, events, record_id, validate=None

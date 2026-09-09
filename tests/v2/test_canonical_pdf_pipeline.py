@@ -314,7 +314,12 @@ def test_pdf4_raises_one_answerable_question_about_the_equivalence(runtime):
     assert question["condition"] == "25C"
 
     values = {o["value"] for o in question["options"]}
-    assert values == {285.0, 312.0}
+    assert values == {178.0, 312.0}
+    # The two paths lead to OPPOSITE dispositions, which is what makes the
+    # question load-bearing rather than a ratification.
+    by_value = {o["value"]: o for o in question["options"]}
+    assert by_value[178.0]["would_disposition"] == "QUARANTINE"
+    assert by_value[312.0]["would_disposition"] == "RELEASE"
     assert {o["selected_by"] for o in question["options"]} == {
         "INVESTIGATOR", "VERIFIER"
     }

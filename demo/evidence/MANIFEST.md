@@ -108,8 +108,8 @@ outcome can never be mistaken for a quality verdict.
 | Lot | `LOT-1006` · `MAT-RESIN-3` · PO-86 · 200 kg |
 | Document type | Certificate of Analysis |
 | Cites | `SPEC-R3` **Revision A** (the governing revision) |
-| Measurements | viscosity 285 cP (ASTM-D2196, 25C) · viscosity 312 cP (ASTM-D445, 25C) |
-| SHA-256 | `3af08aa3c1cea16ad07908d357361f2bc1fd383029d5f3455cde3b6169c5866a` |
+| Measurements | viscosity **178 cP** (ASTM-D2196, 25C) · viscosity 312 cP (ASTM-D445, 25C) |
+| SHA-256 | `e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4` |
 | Intended path | **ordinary extraction** — Textract NOT required |
 | Qualified outcome | 2 claims @ confidence 1.0 → `BOUND` → agents select DIFFERENT evidence → `MATERIAL_DISAGREEMENT` → quality question → human authorizes applicability → **same record, run 2** → agents converge → `RELEASE` → `release_lot` → 200 kg usable → C-419 `AT_RISK → READY` |
 
@@ -121,10 +121,16 @@ direct-method result against an equivalence-covered one, so which of the two
 establishes the requirement is a real authority question with two defensible
 answers.
 
-Both values fall inside the `[200, 400] cP` limit. That is deliberate: the
-dispute is about **applicability only** and can never be mistaken for a quality
-verdict, which keeps the human question narrow — the operator authorizes an
-evidence path, never a disposition.
+**They point opposite ways against the `[200, 400] cP` limit.** 178 cP fails
+it; 312 cP passes. That is deliberate, and it is what makes the human question
+load-bearing: establish the direct result and the lot quarantines, establish
+the equivalence-covered one and it releases. An earlier version had both
+values passing, which made the disagreement real and the decision ceremonial —
+whichever path was chosen the disposition was RELEASE and the answer changed
+only a reason string.
+
+The human never says RELEASE or QUARANTINE. They name which measurement is
+controlling; the deterministic engine draws the conclusion.
 
 > **The document must not resolve what it creates.** It names no equivalence
 > record, states no precedence between the two methods, and contains no

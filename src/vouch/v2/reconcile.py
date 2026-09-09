@@ -416,6 +416,46 @@ def run_basis_checks(
             f"null) or a `missing` entry naming this test."
         )
 
+    # -- exactly ONE controlling row per requirement (category B) ---------
+    # The mirror of the completeness check above: that one says a requirement
+    # must not be answered with silence, this one says it must not be answered
+    # twice.
+    #
+    # `compute_disposition` keys coverage by characteristic, so a second row
+    # for the same requirement silently replaced the first and the disposition
+    # became a function of brief ORDERING. A live Nova run returned both the
+    # 178 cP direct result and the 312 cP equivalence-covered one for
+    # LOT-1006's single viscosity requirement; the failing row was overwritten
+    # and the lot released. Both agents did that, so they reconciled to MATCH
+    # and nothing downstream had reason to look.
+    #
+    # Fixing it in the engine — failing closed on any failing row — was the
+    # wrong repair: after Quality establishes one path as controlling, an
+    # unselected conflicting claim would still decide the lot, which is exactly
+    # the authority the human was asked to exercise.
+    #
+    # So the CONTRACT is the fix. A brief selects one controlling evidence path
+    # per requirement. Several claims may exist in the frozen snapshot — that
+    # is normal, and none of them are discarded — but choosing between them is
+    # the judgment the agent exists to make, and a brief that declines to
+    # choose has not answered.
+    by_test: dict[str, list] = {}
+    for item in brief.coverage:
+        by_test.setdefault(resolve_test_name(item.test, actual), []).append(item)
+    for requirement in resolved:
+        rows = by_test.get(requirement.characteristic, [])
+        if len(rows) <= 1:
+            continue
+        cited = [r.evidence_ref or "none" for r in rows]
+        failures.append(
+            f"{requirement.characteristic} has {len(rows)} coverage rows "
+            f"({', '.join(cited)}), but a brief states ONE controlling "
+            f"evidence path per requirement. Several claims may apply; "
+            f"choosing which one establishes this requirement is yours to "
+            f"decide. Keep the row for the evidence you are relying on and "
+            f"remove the others — they remain in the snapshot either way."
+        )
+
     # -- `missing` must mean absent, not failing (category B) -------------
     # A test is MISSING when no applicable evidence exists for it. It is not
     # missing because the evidence that does exist reports a failing number:

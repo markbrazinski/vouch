@@ -837,3 +837,252 @@ def test_the_scoped_authority_reaches_the_model_prompt():
                 f"to its model"
             )
             assert "Quality has established" in source
+
+
+# ==========================================================================
+# one controlling coverage row per requirement (strict contract)
+# ==========================================================================
+
+
+def _brief(rows, sufficiency=None):
+    """A brief carrying the given viscosity coverage rows."""
+    from vouch.v2.contracts import (
+        CoverageItem, EvidenceApplicabilityBrief, GoverningBasis,
+        RequiredTest, Sufficiency,
+    )
+
+    return EvidenceApplicabilityBrief(
+        governing_basis=GoverningBasis(spec_id="SPEC-R3", revision="A"),
+        required_tests=[RequiredTest(name="viscosity")],
+        coverage=[CoverageItem(**row) for row in rows],
+        sufficiency=sufficiency or Sufficiency.SUFFICIENT,
+    )
+
+
+def test_duplicate_coverage_for_one_requirement_is_rejected(corpus):
+    """1. A brief answers each requirement once.
+
+    `compute_disposition` keys coverage by characteristic, so a second row for
+    the same requirement silently replaced the first and the disposition became
+    a function of brief ORDERING. A live Nova run returned both LOT-1006
+    results for its single viscosity requirement and the failing one was
+    overwritten.
+    """
+    from vouch.v2.reconcile import run_basis_checks
+
+    checks = run_basis_checks(
+        _brief([
+            {"test": "viscosity", "evidence_ref": "CLM-a", "method_match": True},
+            {"test": "viscosity", "evidence_ref": "CLM-b",
+             "method_match": False, "equivalence_record_id": "EQV-1"},
+        ]),
+        corpus, lot_id="LOT-1006", claims_by_id={},
+    )
+
+    assert not checks.passed
+    assert any("coverage rows" in f for f in checks.failures)
+    assert any("ONE controlling evidence path" in f for f in checks.failures)
+
+
+def test_a_single_coverage_row_is_still_accepted(corpus, vouch):
+    """The check must reject duplication, not coverage."""
+    from vouch.v2.reconcile import run_basis_checks
+
+    checks = run_basis_checks(
+        _brief([{"test": "viscosity", "evidence_ref": "CLM-a", "method_match": True}]),
+        corpus, lot_id="LOT-1006", claims_by_id={},
+    )
+    assert not any("coverage rows" in f for f in checks.failures)
+
+
+def test_reversing_duplicate_row_order_cannot_change_the_outcome(corpus):
+    """2. Both orderings are refused identically.
+
+    The defect was order-dependence; the fix must not be order-dependent
+    either. Before this, one ordering released the lot and the other
+    quarantined it, from the same two rows.
+    """
+    from vouch.v2.reconcile import run_basis_checks
+
+    rows = [
+        {"test": "viscosity", "evidence_ref": "CLM-a", "method_match": True},
+        {"test": "viscosity", "evidence_ref": "CLM-b",
+         "method_match": False, "equivalence_record_id": "EQV-1"},
+    ]
+    forward = run_basis_checks(
+        _brief(rows), corpus, lot_id="LOT-1006", claims_by_id={}
+    )
+    reversed_ = run_basis_checks(
+        _brief(list(reversed(rows))), corpus, lot_id="LOT-1006", claims_by_id={}
+    )
+
+    # Both orderings are refused. The message lists the claims in brief order,
+    # which is cosmetic; what must not vary is the VERDICT.
+    assert forward.passed is reversed_.passed is False
+    assert len([f for f in forward.failures if "coverage rows" in f]) == 1
+    assert len([f for f in reversed_.failures if "coverage rows" in f]) == 1
+
+
+def test_a_duplicate_brief_never_reaches_disposition(vouch):
+    """It fails closed as a contract violation, not as a disposition."""
+    from vouch.v2.agents import AgentRun, ApplicabilityInvestigator
+
+    corpus, _ = vouch
+
+    class Duplicating(ApplicabilityInvestigator):
+        """Both applicable rows for one requirement — the live Nova behaviour."""
+
+        def run(self, **kwargs):
+            by_method = {c.method: c.claim_id for c in kwargs["claims"]}
+            return AgentRun(
+                _brief([
+                    {"test": "viscosity",
+                     "evidence_ref": by_method.get("ASTM-D2196"),
+                     "method_match": True},
+                    {"test": "viscosity",
+                     "evidence_ref": by_method.get("ASTM-D445"),
+                     "method_match": False, "equivalence_record_id": "EQV-1"},
+                ]),
+                "m", "v", "h", [], True,
+            )
+
+    v = VouchV2(
+        corpus, investigator=Duplicating(corpus), record_store=InMemoryRecordStore()
+    )
+    outcome = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+
+    assert outcome.disposition == "", "a duplicated brief must not disposition"
+    assert outcome.record.mutation.action == ""
+    assert corpus.lot("LOT-1006").status == "RECEIVED"
+
+
+# ==========================================================================
+# run 2 — the established evidence is the ONLY controlling row
+# ==========================================================================
+
+
+def test_run_two_must_cite_the_established_evidence(disagreed):
+    """3. An authority a model may decline is not an authority.
+
+    A live run 2 saw one agent cite the established claim alongside the one it
+    replaced, and the other cite only the unauthorized claim — re-deriving the
+    disagreement the human had just settled.
+    """
+    _, v, first = disagreed
+    established = option_for(first, equivalence=True)["claim_id"]
+    other = option_for(first, equivalence=False)["claim_id"]
+    claims_by_id = {c.claim_id: c for c in v.claims[first.decision_record_id]}
+
+    def errors(rows):
+        return v._brief_contract_errors(
+            _brief(rows), "LOT-1006", claims_by_id, [established]
+        )
+
+    # Citing the established evidence alone: accepted.
+    assert not [
+        e for e in errors([
+            {"test": "viscosity", "evidence_ref": established,
+             "method_match": False, "equivalence_record_id": "EQV-1"},
+        ]) if "Quality established" in e
+    ]
+
+    # Citing the OTHER claim: refused.
+    assert [
+        e for e in errors([
+            {"test": "viscosity", "evidence_ref": other, "method_match": True},
+        ]) if "Quality established" in e
+    ]
+
+    # Citing both: refused (and also caught as duplication).
+    assert [
+        e for e in errors([
+            {"test": "viscosity", "evidence_ref": established,
+             "method_match": False, "equivalence_record_id": "EQV-1"},
+            {"test": "viscosity", "evidence_ref": other, "method_match": True},
+        ]) if "Quality established" in e
+    ]
+
+    # Citing nothing: refused.
+    assert [
+        e for e in errors([
+            {"test": "viscosity", "evidence_ref": None},
+        ]) if "Quality established" in e
+    ]
+
+
+def test_an_authority_about_one_test_does_not_bind_another(vouch):
+    """The constraint is scoped to what the established evidence speaks to."""
+    corpus, v = vouch
+    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
+    claims = {c.claim_id: c for c in v.claims[outcome.decision_record_id]}
+    tensile = next(
+        c.claim_id for c in claims.values() if c.characteristic == "tensile_strength"
+    )
+
+    # An authority about tensile_strength says nothing about hardness, so a
+    # hardness row citing its own evidence must not be refused.
+    errors = v._brief_contract_errors(
+        outcome.record.investigator.brief
+        and _rebuild_brief(outcome.record.investigator.brief),
+        "LOT-1001", claims, [tensile],
+    )
+    assert not [e for e in errors if "hardness" in e and "Quality established" in e]
+
+
+def _rebuild_brief(payload):
+    from vouch.v2.contracts import EvidenceApplicabilityBrief
+
+    return EvidenceApplicabilityBrief(**payload)
+
+
+def test_unselected_evidence_stays_in_the_frozen_snapshot(disagreed):
+    """4. The authority narrows SELECTION, never the evidence.
+
+    Both measurements remain frozen, hashed and auditable — an auditor must be
+    able to see what Quality did not choose.
+    """
+    _, v, first = disagreed
+    before = {c.claim_id for c in v.claims[first.decision_record_id]}
+    hash_before = first.record.snapshot.claim_set_hash
+
+    outcome = authorize(v, first)
+    after = {c.claim_id for c in v.claims[first.decision_record_id]}
+
+    assert after == before, "no claim may be removed by an authority"
+    assert len(after) == 2
+    stored = v.record_store.load(first.decision_record_id)
+    kept = {c["claim_id"] for c in stored["evidence"]["canonical_claims"]}
+    assert kept == before
+    # The unselected claim is still readable, with its own value.
+    unselected = option_for(first, equivalence=False)["claim_id"]
+    assert unselected in kept
+    assert hash_before  # the run-1 snapshot is recorded
+
+
+def test_local_and_model_paths_enforce_the_same_contract(disagreed):
+    """7. One validator, both reasoner paths.
+
+    The scoped authority reached the local reasoners through `context` and the
+    Bedrock agents through their prompt — two channels, and for one deploy only
+    the first worked. The CONTRACT is what makes that safe: whatever a brief
+    came from, it is checked identically here.
+    """
+    _, v, first = disagreed
+    established = option_for(first, equivalence=True)["claim_id"]
+    claims_by_id = {c.claim_id: c for c in v.claims[first.decision_record_id]}
+
+    # `_brief_contract_errors` is the single entry point both paths use, and it
+    # is agnostic about which produced the brief.
+    import inspect
+
+    source = inspect.getsource(VouchV2.evaluate_lot)
+    assert source.count("_brief_contract_errors") == 2, (
+        "both the investigator and the verifier must be validated"
+    )
+    assert "authorized_refs" in source
+
+    offending = v._brief_contract_errors(
+        _brief([{"test": "viscosity", "evidence_ref": None}]),
+        "LOT-1006", claims_by_id, [established],
+    )
+    assert any("Quality established" in e for e in offending)

@@ -102,7 +102,7 @@ describe('production build excludes the dev fixture harness', () => {
         'bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be', // 1002
         '3ef47f4d3aa28751f02ed9d3a61fc019d864bfe8e9f5e281541ac0d20d9d853a', // 1003
         '5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947', // 1004
-        '3af08aa3c1cea16ad07908d357361f2bc1fd383029d5f3455cde3b6169c5866a', // 1006
+        'e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4', // 1006
       ].sort(),
     );
 

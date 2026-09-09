@@ -1,6 +1,6 @@
 {
   "record": {
-    "record_id": "DR-dddcba6f6419",
+    "record_id": "DR-e5e895b4a894",
     "lot_id": "LOT-1006",
     "run_count": 2,
     "disposition": "QUARANTINE",
@@ -25,7 +25,7 @@
         "coverage": [
           {
             "test": "viscosity",
-            "evidence_ref": "CLM-31776094593a-00",
+            "evidence_ref": "CLM-47da97cf6a99-00",
             "method_match": true,
             "equivalence_record_id": null,
             "value": 178.0,
@@ -56,7 +56,7 @@
         "coverage": [
           {
             "test": "viscosity",
-            "evidence_ref": "CLM-31776094593a-00",
+            "evidence_ref": "CLM-47da97cf6a99-00",
             "method_match": true,
             "equivalence_record_id": null,
             "value": 178.0,
@@ -73,8 +73,8 @@
     "evidence": {
       "canonical_claims": [
         {
-          "claim_id": "CLM-31776094593a-00",
-          "evidence_artifact_id": "ART-31776094593a",
+          "claim_id": "CLM-47da97cf6a99-00",
+          "evidence_artifact_id": "ART-47da97cf6a99",
           "lot_id": "LOT-1006",
           "material_id": "MAT-RESIN-3",
           "claim_type": "measurement",
@@ -92,8 +92,8 @@
           "source_hash": "593dc62a6e4a13ef634bb1633e7af7f13719e284361fd477912cc096679f160a"
         },
         {
-          "claim_id": "CLM-31776094593a-01",
-          "evidence_artifact_id": "ART-31776094593a",
+          "claim_id": "CLM-47da97cf6a99-01",
+          "evidence_artifact_id": "ART-47da97cf6a99",
           "lot_id": "LOT-1006",
           "material_id": "MAT-RESIN-3",
           "claim_type": "measurement",
@@ -114,12 +114,12 @@
     },
     "quality_authority": {
       "question": {
-        "question_id": "QQ-DR-dddcba6f6419-viscosity",
+        "question_id": "QQ-DR-e5e895b4a894-viscosity",
         "question_type": "EVIDENCE_APPLICABILITY",
         "characteristic": "viscosity",
         "options": [
           {
-            "claim_id": "CLM-31776094593a-00",
+            "claim_id": "CLM-47da97cf6a99-00",
             "value": 178.0,
             "units": "cP",
             "method": "ASTM-D2196",
@@ -131,7 +131,7 @@
             "would_disposition": "QUARANTINE"
           },
           {
-            "claim_id": "CLM-31776094593a-01",
+            "claim_id": "CLM-47da97cf6a99-01",
             "value": 312.0,
             "units": "cP",
             "method": "ASTM-D445",
@@ -143,8 +143,8 @@
             "would_disposition": "RELEASE"
           }
         ],
-        "investigator_evidence_ref": "CLM-31776094593a-00",
-        "verifier_evidence_ref": "CLM-31776094593a-01",
+        "investigator_evidence_ref": "CLM-47da97cf6a99-00",
+        "verifier_evidence_ref": "CLM-47da97cf6a99-01",
         "equivalence_id": "EQV-1",
         "method_from": "ASTM-D445",
         "method_to": "ASTM-D2196",
@@ -153,22 +153,22 @@
       },
       "decisions": [
         {
-          "authority_decision_id": "HAD-948f47b4373d",
-          "decision_record_id": "DR-dddcba6f6419",
+          "authority_decision_id": "HAD-3d092830bafc",
+          "decision_record_id": "DR-e5e895b4a894",
           "lot_id": "LOT-1006",
           "source_run": 1,
-          "evidence_snapshot_id": "SNAP-31d140861c36",
-          "claim_set_hash": "e589357cb49fbcc16e2f5764531dc8a3930526cde2806bd609e73a1948a60be8",
+          "evidence_snapshot_id": "SNAP-da4368184ef1",
+          "claim_set_hash": "818984c294b6cd700ec6eebfe88d26cc261f65aec562cb211803a01ca9a0973d",
           "lot_state_version": 1,
-          "question_id": "QQ-DR-dddcba6f6419-viscosity",
+          "question_id": "QQ-DR-e5e895b4a894-viscosity",
           "question_type": "EVIDENCE_APPLICABILITY",
           "characteristic": "viscosity",
           "authorized_evidence_refs": [
-            "CLM-31776094593a-00"
+            "CLM-47da97cf6a99-00"
           ],
           "disputed_evidence_refs": [
-            "CLM-31776094593a-00",
-            "CLM-31776094593a-01"
+            "CLM-47da97cf6a99-00",
+            "CLM-47da97cf6a99-01"
           ],
           "equivalence_id": "EQV-1",
           "method_from": "ASTM-D445",
@@ -182,7 +182,7 @@
           "decision": "ESTABLISH_EVIDENCE",
           "accountable_actor": "QA-LEAD",
           "authority_source": "Plant Quality Authority",
-          "created_at": "2026-09-09T19:54:48.927936+00:00"
+          "created_at": "2026-09-09T20:13:54.313381+00:00"
         }
       ]
     }
@@ -190,20 +190,20 @@
   "events": [
     {
       "event": "QUALITY_AUTHORITY_RECORDED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.927940+00:00",
-      "authority_decision_id": "HAD-948f47b4373d",
-      "question_id": "QQ-DR-dddcba6f6419-viscosity",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.313385+00:00",
+      "authority_decision_id": "HAD-3d092830bafc",
+      "question_id": "QQ-DR-e5e895b4a894-viscosity",
       "decision": "ESTABLISH_EVIDENCE",
       "accountable_actor": "QA-LEAD",
       "authority_source": "Plant Quality Authority",
       "characteristic": "viscosity",
       "equivalence_id": "EQV-1",
       "authorized_evidence_refs": [
-        "CLM-31776094593a-00"
+        "CLM-47da97cf6a99-00"
       ],
-      "evidence_snapshot_id": "SNAP-31d140861c36",
-      "claim_set_hash": "e589357cb49fbcc16e2f5764531dc8a3930526cde2806bd609e73a1948a60be8",
+      "evidence_snapshot_id": "SNAP-da4368184ef1",
+      "claim_set_hash": "818984c294b6cd700ec6eebfe88d26cc261f65aec562cb211803a01ca9a0973d",
       "established_value": 178.0,
       "established_units": "cP",
       "established_method": "ASTM-D2196",
@@ -212,23 +212,23 @@
     },
     {
       "event": "DECISION_RESUMED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.928798+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314267+00:00",
       "lot_id": "LOT-1006",
       "run_count": 2,
       "resumed_run_ids": [
-        "DR-dddcba6f6419#run2"
+        "DR-e5e895b4a894#run2"
       ],
       "trigger": "QUALITY_AUTHORITY",
-      "authority_decision_id": "HAD-948f47b4373d"
+      "authority_decision_id": "HAD-3d092830bafc"
     },
     {
       "event": "EVIDENCE_SNAPSHOT_CREATED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.928888+00:00",
-      "snapshot_id": "SNAP-96cf561ea6a9",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314358+00:00",
+      "snapshot_id": "SNAP-ba1f2cb106ae",
       "claim_count": 2,
-      "snapshot_hash": "e589357cb49fbcc16e2f5764531dc8a3930526cde2806bd609e73a1948a60be8",
+      "snapshot_hash": "818984c294b6cd700ec6eebfe88d26cc261f65aec562cb211803a01ca9a0973d",
       "state_versions": {
         "lot": 1,
         "C-419": 1
@@ -236,16 +236,16 @@
     },
     {
       "event": "INVESTIGATOR_STARTED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.928988+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314450+00:00",
       "model_id": "us.amazon.nova-pro-v1:0",
       "prompt_version": "investigator-v2.2",
       "temperature": 0.0
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929074+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314530+00:00",
       "agent": "investigator",
       "tool": "get_evidence_snapshot",
       "category": "evidence",
@@ -253,21 +253,21 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929151+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314615+00:00",
       "agent": "investigator",
       "tool": "get_evidence_snapshot",
       "result_count": 2,
       "object_refs": [
-        "CLM-31776094593a-00",
-        "CLM-31776094593a-01"
+        "CLM-47da97cf6a99-00",
+        "CLM-47da97cf6a99-01"
       ],
       "elapsed_ms": 0.0
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929236+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314694+00:00",
       "agent": "investigator",
       "tool": "list_candidate_specs",
       "category": "specification",
@@ -275,8 +275,8 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929314+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314773+00:00",
       "agent": "investigator",
       "tool": "list_candidate_specs",
       "result_count": 1,
@@ -287,8 +287,8 @@
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929396+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314856+00:00",
       "agent": "investigator",
       "tool": "get_spec_requirement",
       "category": "specification",
@@ -296,8 +296,8 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929473+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.314935+00:00",
       "agent": "investigator",
       "tool": "get_spec_requirement",
       "result_count": 1,
@@ -308,8 +308,8 @@
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929557+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315022+00:00",
       "agent": "investigator",
       "tool": "list_equivalence_records",
       "category": "equivalence",
@@ -317,8 +317,8 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929638+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315111+00:00",
       "agent": "investigator",
       "tool": "list_equivalence_records",
       "result_count": 1,
@@ -329,25 +329,25 @@
     },
     {
       "event": "APPLICABILITY_BRIEF_COMPLETED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929737+00:00",
-      "brief_hash": "79b73a93005a12bd3eec0edf81ce61db7f2417f7512d105d6b009ef0378f7691",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315217+00:00",
+      "brief_hash": "b24c0aad39dcbcd58d44f7751b997957d98c6b3af52de0f047426099d28b9888",
       "basis": "SPEC-R3:A",
       "required_test_count": 1,
       "sufficiency": "SUFFICIENT"
     },
     {
       "event": "VERIFIER_STARTED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929856+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315339+00:00",
       "model_id": "us.amazon.nova-pro-v1:0",
       "prompt_version": "verifier-v2.2",
       "temperature": 0.0
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.929957+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315439+00:00",
       "agent": "verifier",
       "tool": "get_evidence_snapshot",
       "category": "evidence",
@@ -355,21 +355,21 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930054+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315528+00:00",
       "agent": "verifier",
       "tool": "get_evidence_snapshot",
       "result_count": 2,
       "object_refs": [
-        "CLM-31776094593a-00",
-        "CLM-31776094593a-01"
+        "CLM-47da97cf6a99-00",
+        "CLM-47da97cf6a99-01"
       ],
       "elapsed_ms": 0.0
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930158+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315627+00:00",
       "agent": "verifier",
       "tool": "list_candidate_specs",
       "category": "specification",
@@ -377,8 +377,8 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930261+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315724+00:00",
       "agent": "verifier",
       "tool": "list_candidate_specs",
       "result_count": 1,
@@ -389,8 +389,8 @@
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930362+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315831+00:00",
       "agent": "verifier",
       "tool": "get_spec_requirement",
       "category": "specification",
@@ -398,8 +398,8 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930466+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.315928+00:00",
       "agent": "verifier",
       "tool": "get_spec_requirement",
       "result_count": 1,
@@ -410,8 +410,8 @@
     },
     {
       "event": "TOOL_CALLED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930580+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316041+00:00",
       "agent": "verifier",
       "tool": "list_equivalence_records",
       "category": "equivalence",
@@ -419,8 +419,8 @@
     },
     {
       "event": "TOOL_RESULT_BOUND",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930692+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316150+00:00",
       "agent": "verifier",
       "tool": "list_equivalence_records",
       "result_count": 1,
@@ -431,21 +431,21 @@
     },
     {
       "event": "VERIFIER_BRIEF_COMPLETED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930818+00:00",
-      "brief_hash": "79b73a93005a12bd3eec0edf81ce61db7f2417f7512d105d6b009ef0378f7691"
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316269+00:00",
+      "brief_hash": "b24c0aad39dcbcd58d44f7751b997957d98c6b3af52de0f047426099d28b9888"
     },
     {
       "event": "RECONCILIATION_COMPLETED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.930956+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316392+00:00",
       "outcome": "NON_MATERIAL_DIFFERENCE",
       "differing_fields": []
     },
     {
       "event": "DISPOSITION_COMPUTED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931098+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316518+00:00",
       "disposition": "QUARANTINE",
       "basis": "SPEC-R3:A",
       "failing_test_count": 1,
@@ -463,25 +463,25 @@
     },
     {
       "event": "POLICY_EVALUATED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931285+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316659+00:00",
       "policy_version": "vouch-policy-2.1",
       "gate_decision": "ALLOWED",
       "action": "quarantine_lot"
     },
     {
       "event": "CAPABILITY_ISSUED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931412+00:00",
-      "capability_id": "CAP-0601179515e34247",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316780+00:00",
+      "capability_id": "CAP-d4e93f395e3f47fb",
       "target": "LOT-1006",
       "action": "quarantine_lot",
-      "expiry": "2026-09-09T19:59:48.931257+00:00"
+      "expiry": "2026-09-09T20:18:54.316633+00:00"
     },
     {
       "event": "MUTATION_COMPLETED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931566+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.316915+00:00",
       "before_version": 1,
       "after_version": 2,
       "ledger_seq": 1,
@@ -490,25 +490,25 @@
     },
     {
       "event": "POLICY_EVALUATED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931739+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.317084+00:00",
       "policy_version": "vouch-policy-2.1",
       "gate_decision": "ALLOWED",
       "action": "set_order_readiness"
     },
     {
       "event": "CAPABILITY_ISSUED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931856+00:00",
-      "capability_id": "CAP-c4e4968843704c47",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.317209+00:00",
+      "capability_id": "CAP-7ce01f64a9a64d1a",
       "target": "C-419",
       "action": "set_order_readiness",
-      "expiry": "2026-09-09T19:59:48.931718+00:00"
+      "expiry": "2026-09-09T20:18:54.317062+00:00"
     },
     {
       "event": "MUTATION_COMPLETED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.931993+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.317345+00:00",
       "before_version": 1,
       "after_version": 2,
       "ledger_seq": 2,
@@ -517,8 +517,8 @@
     },
     {
       "event": "READINESS_TRANSITIONED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.932112+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.317465+00:00",
       "order_id": "C-419",
       "from": "AT_RISK",
       "to": "BLOCKED",
@@ -527,8 +527,8 @@
     },
     {
       "event": "CONSEQUENCE_RECALCULATED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.932234+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.317589+00:00",
       "order_id": "C-419",
       "order_readiness": "BLOCKED",
       "coverage_delta": 0.0,
@@ -540,8 +540,8 @@
     },
     {
       "event": "RECOVERY_EVALUATED",
-      "decision_record_id": "DR-dddcba6f6419",
-      "at": "2026-09-09T19:54:48.932412+00:00",
+      "decision_record_id": "DR-e5e895b4a894",
+      "at": "2026-09-09T20:13:54.317744+00:00",
       "blocked_order_id": "C-419",
       "candidate_count": 3,
       "eligible_count": 0,
