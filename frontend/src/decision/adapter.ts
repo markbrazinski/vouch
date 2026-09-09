@@ -743,17 +743,34 @@ function consequenceFrom(
   const transitions = allOf(events, 'READINESS_TRANSITIONED');
   if (!recalcs.length && !evaluated && !executed && !transitions.length) return null;
 
-  const metrics: ConsequenceVM['metrics'] = recalcs.map((e) => ({
+  const metrics: ConsequenceVM['metrics'] = recalcs.map((e) => {
+    // `coverage_delta` is the LOT's inventory delta — the same figure for every
+    // order in the batch — so it rendered as "coverage 0" beside an order that
+    // was fully covered. The order's own composition is what belongs here.
+    const required = num(e.required);
+    const available = num(e.available);
+    const planned = num(e.planned) ?? 0;
+    const uncovered = num(e.uncovered) ?? 0;
+    const note =
+      required === undefined || available === undefined
+        ? undefined
+        : uncovered > 0
+          ? `${available} of ${required} released · short ${uncovered}`
+          : planned > 0
+            ? `${available} of ${required} released · ${planned} queued`
+            : `${available} of ${required} released`;
+    return {
     label: str(e.order_id),
     value: str(e.order_readiness),
-    note: e.coverage_delta !== undefined ? `coverage ${str(e.coverage_delta)}` : undefined,
+    note,
     severity:
       str(e.order_readiness) === 'BLOCKED'
         ? 'blocked'
         : str(e.order_readiness) === 'AT_RISK'
           ? 'atrisk'
           : 'released',
-  }));
+    };
+  });
 
   const readinessChanges = (
     result?.consequences?.readiness_changes ??

@@ -198,6 +198,21 @@ export function toOrder(dto: TodayOrderDTO): TodayOrderVM {
   };
 }
 
+/**
+ * Readiness, in words, and labelled as readiness.
+ *
+ * `from`/`to` on a causal link are the order's PLAN status catching up to what
+ * Vouch computed. Rendering the raw enum as "C-417 is now AT_RISK" read as a
+ * plan change and hid which of the two moved — the distinction the whole
+ * surface exists to show.
+ */
+const READINESS_WORDING: Record<string, string> = {
+  READY: 'ready',
+  AT_RISK: 'at risk',
+  BLOCKED: 'blocked',
+  COMPLETE: 'complete',
+};
+
 const REFUSAL_WORDING: Record<string, string> = {
   INSUFFICIENT_QUANTITY: 'not enough released material',
   NOT_APPROVED: 'stock exists, but it is not approved for this product',
@@ -312,6 +327,15 @@ export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEvent
       sentence =
         `${enabling}${remains}Vouch moved ${order} into the available ` +
         `${slotClock(row.to_slot ?? '')} slot.`;
+    } else if (row.kind === 'readiness' && row.disposition === 'QUARANTINE') {
+      // The queued coverage was lost. Never "removed inventory" — a quarantined
+      // lot was never usable, and its inventory_delta is correctly 0 — and
+      // never a plan change either. The quantity is deliberately not taken from
+      // the delta, which would print "0 kg".
+      const to = READINESS_WORDING[row.to ?? ''] ?? row.to;
+      sentence =
+        `The material queued for ${order} from ${lot} is no longer available, ` +
+        `so its readiness moved to ${to}. The plan is unchanged.`;
     } else if (row.kind === 'quarantine' || row.disposition === 'QUARANTINE') {
       // Never "removed inventory": a quarantined lot was never usable, so the
       // consequence is a QUALITY one. The basis is named because "quarantined"
@@ -324,11 +348,17 @@ export function toCausalHistory(rows: CausalEventDTO[] | undefined): CausalEvent
         `The remaining evidence cannot support release, so ${order || 'the order'} ` +
         `remains blocked.`;
     } else if ((row.inventory_delta ?? 0) > 0) {
+      // A release ADDS material, so this is an improvement, and saying so
+      // matters: "C-417 is now AT_RISK" made the one clean decision of the day
+      // read as damage. The plan is untouched — what moved is Vouch readiness.
+      const to = READINESS_WORDING[row.to ?? ''] ?? row.to;
+      const from = READINESS_WORDING[row.from ?? ''] ?? row.from;
       sentence =
         `${lot} released ${qty(row.inventory_delta)} kg of ${row.material_id ?? ''}, ` +
-        `and ${order} is now ${row.to}.`;
+        `improving ${order} readiness from ${from} to ${to}. The plan is unchanged.`;
     } else {
-      sentence = `${order} is now ${row.to} after ${lot} was assessed.`;
+      const to = READINESS_WORDING[row.to ?? ''] ?? row.to;
+      sentence = `${order} readiness is now ${to} after ${lot} was assessed.`;
     }
 
     return {

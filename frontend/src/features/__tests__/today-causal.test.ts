@@ -83,6 +83,42 @@ describe('Today causal history', () => {
     expect(event.decisionRecordId).toBe('DR-aaa');
   });
 
+  it('names an improvement as an improvement, in readiness terms', () => {
+    // The link's from/to are the PLAN catching up to computed readiness.
+    // Rendering the raw enum ("C-417 is now AT_RISK") read as a plan change and
+    // made the day's one clean decision look like damage.
+    // Alone — with no resequence to fold into — the readiness link stands on
+    // its own sentence, and that sentence must say what improved.
+    const [event] = toCausalHistory([
+      { ...RELEASE_EXPOSES_SHORTFALL, to: 'AT_RISK' },
+    ]);
+    expect(event.sentence).toContain('improving C-417 readiness from ready to at risk');
+    expect(event.sentence).toContain('The plan is unchanged');
+    expect(event.sentence).not.toMatch(/AT_RISK|READY/);
+  });
+
+  it('says the queued coverage was lost, never that stock was removed', () => {
+    const [event] = toCausalHistory([
+      {
+        kind: 'readiness',
+        lot_id: 'LOT-1002',
+        disposition: 'QUARANTINE',
+        order_id: 'C-417',
+        from: 'AT_RISK',
+        to: 'BLOCKED',
+        material_id: 'MAT-ALLOY-7',
+        // A quarantined lot was never usable, so the delta is correctly zero.
+        inventory_delta: 0,
+        decision_record_id: 'DR-ccc',
+      },
+    ]);
+    expect(event.sentence).toContain('queued for C-417 from LOT-1002 is no longer available');
+    expect(event.sentence).toContain('readiness moved to blocked');
+    expect(event.sentence).toContain('The plan is unchanged');
+    // The delta is 0 here; printing it would say "0 kg".
+    expect(event.sentence).not.toMatch(/0 kg|removed|took away|reduced/);
+  });
+
   it('names the governing basis a quarantine was decided against', () => {
     const [event] = toCausalHistory([
       {

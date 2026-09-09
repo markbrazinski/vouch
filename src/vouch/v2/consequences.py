@@ -211,10 +211,20 @@ def recalculate_consequences(
             readiness_changes.append(change)
             caused_by.append(causal)
 
+        # `coverage_delta` is the LOT's inventory delta, so it is identical for
+        # every order in this batch and says nothing about any one order's
+        # coverage — the workspace rendered it as "coverage 0" beside an order
+        # that was fully covered. The order's own numbers are emitted alongside
+        # it so a consumer never has to infer coverage from a lot-level figure.
+        first = result.coverage[0] if result.coverage else None
         events.emit(
             EventType.CONSEQUENCE_RECALCULATED, decision_record_id,
             order_id=order.order_id, order_readiness=result.readiness.value,
             coverage_delta=inventory_delta,
+            required=first.required if first else 0.0,
+            available=first.available if first else 0.0,
+            planned=first.planned if first else 0.0,
+            uncovered=first.uncovered if first else 0.0,
         )
 
     return {

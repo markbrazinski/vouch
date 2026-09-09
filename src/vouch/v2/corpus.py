@@ -443,6 +443,22 @@ class Corpus:
     #: QUARANTINED or REJECTED lot is terminal for this purpose — the plan
     #: needs another source — and a RELEASED lot is already counted in
     #: `usable_inventory`, so counting it here would double it.
+    #:
+    #: DEFERRED POLICY, recorded rather than implemented.
+    #:
+    #: A lot halted at EVIDENCE_UNBOUND or SECURITY_QUARANTINE stays RECEIVED,
+    #: so a PlannedCoverage row against it would keep counting as queued even
+    #: though its evidence cannot currently be relied upon. Those states are
+    #: arguably terminal for planning purposes and should probably stop
+    #: counting — but "arguably" is the point: an unbound artifact can be
+    #: re-submitted with a readable one, and a security hold is a fact about a
+    #: DOCUMENT rather than the material, so neither is as final as a
+    #: quarantine.
+    #:
+    #: Not decided here because nothing depends on it: neither LOT-1003 nor
+    #: LOT-1004 has an allocation row, so the demo is unaffected. Deciding it
+    #: on a case that cannot exercise it would be guessing. Revisit when a
+    #: queued lot can actually reach one of those states.
     COVERABLE_LOT_STATES = frozenset({"RECEIVED", "PENDING_QA"})
 
     def planned_coverage(self, order_id: str, material_id: str) -> float:

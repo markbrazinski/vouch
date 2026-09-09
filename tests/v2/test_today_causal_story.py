@@ -464,3 +464,27 @@ def test_the_opening_frame_is_not_softened_by_the_allocation(world):
     line = compute_readiness(corpus, "C-417").coverage[0]
     assert (line.available, line.planned, line.uncovered) == (0, 400.0, 500.0)
     assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
+
+
+def test_deferred_terminal_hold_policy_is_recorded_not_implemented():
+    """A queued lot on a terminal HOLD still counts. Deliberately, for now.
+
+    EVIDENCE_UNBOUND and SECURITY_QUARANTINE both leave the lot at RECEIVED, so
+    an allocation against such a lot keeps counting as queued coverage even
+    though its evidence cannot currently be relied upon.
+
+    That is a real gap and it is documented on `Corpus.COVERABLE_LOT_STATES`
+    rather than fixed, because nothing exercises it: neither LOT-1003 nor
+    LOT-1004 has an allocation row. This test exists so the gap is visible and
+    so closing it is a deliberate edit rather than a silent behaviour change.
+    """
+    corpus = build_corpus()
+    # No canonical lot in a hold state carries an allocation, so the gap is
+    # unreachable in this world.
+    holdable = {"LOT-1003", "LOT-1004"}
+    allocated = {row.lot_id for row in corpus.all("planned_coverage")}
+    assert not (allocated & holdable)
+
+    # And the current rule is exactly as documented: RECEIVED still counts.
+    assert "RECEIVED" in corpus.COVERABLE_LOT_STATES
+    assert "QUARANTINED" not in corpus.COVERABLE_LOT_STATES
