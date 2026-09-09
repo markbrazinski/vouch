@@ -34,6 +34,7 @@ import { IncomingRoute } from '../decision/IncomingRoute';
 import type { ArrivalDocuments, HeroAEntry } from '../decision/entry';
 import { INK, MONO, N, SANS, HAIR } from '../decision/primitives';
 import { getToday, listDecisions } from '../adapter/client';
+import { useFilmReset } from '../dev/useFilmReset';
 import {
   prefetchSurfaces,
   RecordSurface,
@@ -139,6 +140,22 @@ export function RoutedShell({
     ]);
   }, []);
 
+  /**
+   * Shift+R resets the LOT-1006 scenario while filming. DEV-only: the hook
+   * registers no listener in a production build.
+   *
+   * After a reset the shell routes to Incoming, which re-reads authoritative
+   * state — the lot is RECEIVED again and C-419 is back to AT_RISK, so the
+   * next take starts from the canonical picture rather than a cached one.
+   */
+  const { toast } = useFilmReset(() => {
+    prefetchSurfaces([
+      { key: 'today', load: getToday },
+      { key: 'decisions', load: () => listDecisions(50) },
+    ]);
+    navigate('/incoming');
+  });
+
   return (
     <div
       style={{
@@ -151,6 +168,28 @@ export function RoutedShell({
         background: '#CFC9BD',
       }}
     >
+      {toast && (
+        <div
+          data-testid="film-reset-toast"
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 20,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 100,
+            background: INK.primary,
+            color: '#F6F3EC',
+            font: `600 12px ${MONO}`,
+            padding: '9px 16px',
+            borderRadius: 8,
+            boxShadow: '0 8px 24px rgba(0,0,0,.3)',
+          }}
+        >
+          {toast}
+        </div>
+      )}
+
       <div
         data-testid="acceptance-frame"
         style={{

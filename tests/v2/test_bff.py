@@ -125,6 +125,21 @@ def test_the_allowlist_covers_exactly_the_browser_facing_actions():
     }
 
 
+def test_the_dev_reset_route_does_not_exist_in_the_deployed_bff(invoked):
+    """The film/dev LOT reset is served ONLY by `scripts/local_bff.py`.
+
+    It mutates authoritative corpus state, so adding it to the deployed
+    handler's allowlist would widen the browser-to-runtime security boundary
+    for production in order to serve a filming convenience. Here it must be
+    an ordinary unrouted path: refused before AWS is touched.
+    """
+    for method, body in (("POST", {"lot_id": "LOT-1006"}), ("GET", None)):
+        status, _ = _call(method, "/api/dev/reset-lot", body)
+        assert status == 400, method
+    assert invoked == [], "a reset request reached the runtime"
+    assert not any("reset" in action for action in bff.ALLOWED_ACTIONS)
+
+
 @pytest.mark.parametrize(
     "path",
     ["/api/ledger", "/api/recovery", "/api/readiness", "/api/invoke", "/api/anything"],

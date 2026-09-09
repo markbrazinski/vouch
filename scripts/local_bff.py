@@ -80,11 +80,72 @@ def _start_background_locally(payload: dict) -> None:
 bff.start_background = _start_background_locally
 
 
+#: The dev/film LOT reset route.
+#:
+#: Deliberately implemented HERE and not in `bff/handler.py`: the deployed
+#: handler's action allowlist is the security boundary between a browser and
+#: the runtime, and adding a corpus-mutating action to it would widen that
+#: boundary for production in order to serve a filming convenience. This file
+#: is local-only by construction — it is never deployed, and the Lambda never
+#: imports it — so the route simply cannot exist in production.
+#:
+#: The reset itself is `vouch.v2.demo_reset.reset_lot`, which whitelists the
+#: lots it will touch. This layer adds no authority of its own.
+RESET_PATH = "/api/dev/reset-lot"
+
+
+def _reset_lot(body: str) -> tuple[int, dict]:
+    """Restore one canonical demo lot. Returns (status, response body)."""
+    from vouch.config import load
+    from vouch.v2.demo_reset import NotResettable, reset_lot
+
+    try:
+        parsed = json.loads(body or "{}")
+    except json.JSONDecodeError:
+        return 400, {"ok": False, "error": "body must be JSON"}
+    lot_id = parsed.get("lot_id", "")
+    if not isinstance(lot_id, str):
+        return 400, {"ok": False, "error": "lot_id must be a string"}
+
+    config = load()
+    if config.state_table:
+        from vouch.v2.state import DynamoCorpus
+
+        corpus = DynamoCorpus(config.state_table)
+    else:
+        # No table configured: nothing authoritative to reset. Say so rather
+        # than resetting an in-process corpus the runtime cannot see.
+        return 503, {
+            "ok": False,
+            "error": "no state table configured; cannot reset authoritative state",
+        }
+
+    try:
+        result = reset_lot(corpus, lot_id)
+    except NotResettable as exc:
+        return 400, {"ok": False, "error": str(exc)}
+    return 200, {"ok": True, **result}
+
+
 class Proxy(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def _serve(self, method: str) -> None:
         parsed = urlparse(self.path)
+
+        if parsed.path == RESET_PATH:
+            if method == "OPTIONS":
+                return self._respond(204, b"", cors=True)
+            if method != "POST":
+                return self._respond(
+                    405, json.dumps({"ok": False, "error": "POST only"}).encode(),
+                    cors=True,
+                )
+            length = int(self.headers.get("content-length") or 0)
+            raw = self.rfile.read(length).decode() if length else ""
+            status, payload = _reset_lot(raw)
+            return self._respond(status, json.dumps(payload).encode(), cors=True)
+
         length = int(self.headers.get("content-length") or 0)
         body = self.rfile.read(length).decode() if length else ""
 
@@ -124,6 +185,17 @@ class Proxy(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _respond(self, status: int, payload: bytes, *, cors: bool = False) -> None:
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        if cors:
+            self.send_header("access-control-allow-origin", bff.ALLOWED_ORIGIN)
+            self.send_header("access-control-allow-headers", "content-type")
+            self.send_header("access-control-allow-methods", "POST, OPTIONS")
+        self.send_header("content-length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
     def do_GET(self) -> None:  # noqa: N802
         self._serve("GET")
 
@@ -142,6 +214,7 @@ class Proxy(BaseHTTPRequestHandler):
 def main() -> int:
     print(f"local BFF on http://127.0.0.1:{PORT}  ->  {bff.RUNTIME_ARN.rsplit('/', 1)[-1]}")
     print("   routes: /api/evaluate /api/evidence /api/today /api/decisions[/{id}[/events|/sources]]")
+    print(f"   dev:    POST {RESET_PATH}  (local only; whitelisted lots)")
     ThreadingHTTPServer(("127.0.0.1", PORT), Proxy).serve_forever()
     return 0
 
