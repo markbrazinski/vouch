@@ -240,3 +240,47 @@ def test_frame_d_the_quarantine_triggers_no_second_resequence(world):
     assert (outcome.consequences.get("recovery") or {}).get("executed") is not True
     assert corpus.order("C-418").planned_slot == "2026-08-15T08:00"
     assert corpus.order("C-418").state_version == 2  # moved once, by the release
+
+
+# ==========================================================================
+# durable-store shapes
+# ==========================================================================
+
+
+def test_causal_history_sorts_when_the_store_returns_mixed_number_types():
+    """DynamoDB round-trips numbers as Decimal or str; memory keeps ints.
+
+    Sorting that mixed list raised `TypeError: '<' not supported between
+    instances of 'int' and 'str'`, and because the sort happens while BUILDING
+    the payload it took the entire Today read down — a 400 on the surface the
+    demo opens on. Every local test passed, because the in-memory store only
+    ever produces ints, so this pins the coercion directly.
+    """
+    import importlib.util
+    import os
+    from decimal import Decimal
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    os.environ["VOUCH_MODE"] = "local"
+    spec = importlib.util.spec_from_file_location(
+        "vouch_today_sort_entrypoint", root / "app" / "Gatehouse" / "main.py"
+    )
+    runtime = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(runtime)
+    key = runtime.ledger_sequence_of
+
+    rows = [
+        {"kind": "quarantine", "ledger_sequence": None},
+        {"kind": "resequence", "ledger_sequence": "3"},
+        {"kind": "readiness", "ledger_sequence": 2},
+        {"kind": "extra", "ledger_sequence": Decimal("4")},
+        {"kind": "unparseable", "ledger_sequence": "not-a-number"},
+    ]
+    rows.sort(key=key)
+
+    # Every shape the stores actually produce is orderable together.
+    assert [row["kind"] for row in rows[-3:]] == ["readiness", "resequence", "extra"]
+    # Neither a missing nor an unparseable sequence raises.
+    assert key({}) == 0.0
+    assert key({"ledger_sequence": "not-a-number"}) == 0.0

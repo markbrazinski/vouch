@@ -527,14 +527,46 @@ def _today_causality() -> list[dict]:
     if not hasattr(store, "list_ids"):
         return []
 
+    # Today explains TODAY, not the whole ledger.
+    #
+    # The durable store holds every execution ever run against these lots — 86
+    # causal links after qualification, 38 of them the same LOT-1002 quarantine
+    # replayed. Rendering all of them buries the day's actual decisions in
+    # months of debugging history.
+    #
+    # So a link counts only if it still describes current authoritative state:
+    # the lot it names is in the status that decision produced. A superseded run
+    # (the lot was later reseeded, or re-decided) drops out, and Records keeps
+    # the full ungrouped ledger, which is where history belongs.
+    def _current(lot_id: str, disposition: str) -> bool:
+        lot = _CORPUS.lot(lot_id) if lot_id else None
+        if lot is None:
+            return False
+        if disposition == "RELEASE":
+            return lot.status == "RELEASED"
+        if disposition == "QUARANTINE":
+            return lot.status == "QUARANTINED"
+        # Anything else changed no plan state, so a record for it makes no
+        # causal claim about today. A lot sitting at RECEIVED after a reseed is
+        # precisely the case: an old run's links would otherwise survive it.
+        return False
+
     history: list[dict] = []
+    seen: set[tuple] = set()
     for record_id in store.list_ids():
         document = store.load(record_id) or {}
         consequences = document.get("consequences") or {}
         lot_id = (document.get("identity") or {}).get("lot_id", "")
         disposition = (document.get("disposition") or {}).get("disposition", "")
 
+        if not _current(lot_id, disposition):
+            continue
+
         for link in consequences.get("caused_by") or []:
+            key = ("readiness", lot_id, link.get("order_id", ""))
+            if key in seen:
+                continue
+            seen.add(key)
             history.append(
                 {
                     "kind": "readiness",
@@ -547,6 +579,7 @@ def _today_causality() -> list[dict]:
                     "inventory_delta": link.get("inventory_delta", 0),
                     "decision_record_id": link.get("decision_record_id", record_id),
                     "ledger_sequence": link.get("ledger_sequence", 0),
+                    "saved_at": document.get("saved_at", ""),
                 }
             )
 
@@ -557,7 +590,8 @@ def _today_causality() -> list[dict]:
         # lot get quarantined and Today said nothing about it. Recorded here as
         # a QUALITY fact, carrying the governing basis that decided it, with no
         # claim that any material was removed.
-        if disposition == "QUARANTINE":
+        if disposition == "QUARANTINE" and ("quarantine", lot_id) not in seen:
+            seen.add(("quarantine", lot_id))
             basis = document.get("basis") or {}
             blocked = [
                 order.order_id
@@ -580,12 +614,15 @@ def _today_causality() -> list[dict]:
                     # After every readiness link this run produced, and there
                     # are none, so it sorts on the mutation that did happen.
                     "ledger_sequence": ((document.get("mutation") or {}).get("ledger_sequence") or 0),
+                    "saved_at": document.get("saved_at", ""),
                 }
             )
 
         recovery = consequences.get("recovery") or {}
         moved = recovery.get("caused_by") or {}
-        if moved and recovery.get("executed"):
+        moved_key = ("resequence", lot_id, moved.get("order_id", ""))
+        if moved and recovery.get("executed") and moved_key not in seen:
+            seen.add(moved_key)
             history.append(
                 {
                     "kind": "resequence",
@@ -597,13 +634,34 @@ def _today_causality() -> list[dict]:
                     "to_slot": moved.get("to_slot", ""),
                     "decision_record_id": moved.get("decision_record_id", record_id),
                     "ledger_sequence": moved.get("ledger_sequence", 0),
+                    "saved_at": document.get("saved_at", ""),
                     "candidates": recovery.get("candidates") or [],
                 }
             )
 
     # Ledger order is the order things actually happened in.
-    history.sort(key=lambda row: row.get("ledger_sequence") or 0)
+    history.sort(key=lambda row: (row.get("saved_at") or "", ledger_sequence_of(row)))
     return history
+
+
+def ledger_sequence_of(row: dict) -> float:
+    """Sort key for a causal entry, tolerant of how the store returned it.
+
+    The durable store round-trips numbers as `Decimal` or `str` while the
+    in-memory store keeps `int`, and sorting that mixed list raises
+    `TypeError: '<' not supported between instances of 'int' and 'str'`. Since
+    the sort happens while BUILDING the payload, that took the whole Today read
+    down with a 400 — on the surface the demo opens on — while every local test
+    passed, because the in-memory store only ever produces ints.
+
+    An unparseable sequence sorts first rather than failing the read: a
+    mis-ordered entry is a presentation problem, and Today refusing to load is
+    a much worse one.
+    """
+    try:
+        return float(row.get("ledger_sequence") or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def invoke(payload: dict, context=None) -> dict:
