@@ -8,6 +8,12 @@ without failing a single test.
 
 The causal shape this pins, and it is easy to get backwards:
 
+  * At seed NOTHING has been decided, so all three orders read
+    AWAITING_QUALITY. Their material is allocated and sitting in receiving.
+    This is a PRE-DECISION state and deliberately not AT_RISK or BLOCKED:
+    before Vouch evaluates anything there is no negative finding to report,
+    and rendering one made an untouched plant look like a failing one.
+
   * LOT-1001 RELEASE covers C-418 outright (500 of 500) and brings C-417 to
     500 released + 400 queued against a 900 requirement — fully coverable ON
     PLAN, so AT_RISK rather than BLOCKED. The plan has not failed; it depends
@@ -56,16 +62,45 @@ def _verdicts(recovery: dict) -> dict[str, tuple[str, str]]:
 # ==========================================================================
 
 
-def test_frame_a_plan_says_ready_while_vouch_says_blocked(world):
+def test_frame_a_plan_says_ready_while_vouch_awaits_quality(world):
     """The distinction the UI must show, and must not collapse.
 
-    C-417 is the planned order — the plan genuinely says READY. Vouch says
-    BLOCKED because no ALLOY-7 has been released yet. Both are true, and
-    showing only one of them is what makes the opening frame a lie.
+    C-417's plan genuinely says READY. Vouch says AWAITING_QUALITY: the alloy
+    it needs is sitting in receiving, allocated, and undecided.
+
+    This test previously asserted BLOCKED, and that was the semantic bug. No
+    evidence had been evaluated at seed time, so BLOCKED reported a negative
+    judgement nobody had made and rendered an untouched factory as a failing
+    one. "Not yet decided" is its own state.
     """
     corpus, _ = world
     assert corpus.order("C-417").status == "READY"
-    assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
+    assert compute_readiness(corpus, "C-417").readiness is Readiness.AWAITING_QUALITY
+
+
+def test_frame_a_awaiting_quality_is_not_a_negative_verdict(world):
+    """Every canonical order is pre-decision at seed, and none reads as failed."""
+    corpus, _ = world
+    for order_id in ("C-417", "C-418", "C-419"):
+        readiness = compute_readiness(corpus, order_id).readiness
+        assert readiness is Readiness.AWAITING_QUALITY, order_id
+        assert readiness not in (Readiness.AT_RISK, Readiness.BLOCKED), order_id
+
+
+def test_frame_a_a_decided_lot_ends_the_pre_decision_state(world):
+    """AWAITING_QUALITY is strictly pre-decision.
+
+    Quarantine LOT-1002 and C-417 must stop reading as merely pending: part of
+    its shortfall is now an evaluated fact. Without this the new state could
+    mask a real negative, which is the one thing it must never do.
+    """
+    from dataclasses import replace
+
+    corpus, _ = world
+    corpus.put(
+        "lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status="QUARANTINED")
+    )
+    assert compute_readiness(corpus, "C-417").readiness is not Readiness.AWAITING_QUALITY
 
 
 def test_frame_a_no_incoming_material_counts_as_usable(world):
@@ -433,6 +468,25 @@ def test_an_evidence_level_failure_still_asks_for_a_human():
 # ==========================================================================
 
 
+def _contribution(corpus, lot_id: str, order_id: str = "C-417",
+                  material_id: str = "MAT-ALLOY-7") -> float:
+    """How much ONE lot currently contributes to an order's planned coverage.
+
+    Isolates a single allocation from the order total so these tests assert the
+    lot-status rule they are named for, rather than the fixture's allocation
+    count.
+    """
+    with_lot = corpus.planned_coverage(order_id, material_id)
+    without = sum(
+        row.quantity
+        for row in corpus.planned_coverage_rows(order_id, material_id)
+        if row.lot_id != lot_id
+        and getattr(corpus.lot(row.lot_id), "status", None)
+        in corpus.COVERABLE_LOT_STATES
+    )
+    return round(with_lot - without, 6)
+
+
 def test_coverage_is_never_inferred_from_a_shared_material(world):
     """The whole reason PlannedCoverage exists.
 
@@ -443,8 +497,17 @@ def test_coverage_is_never_inferred_from_a_shared_material(world):
     """
     corpus, _ = world
     rows = corpus.planned_coverage_rows("C-417", "MAT-ALLOY-7")
-    assert [r.lot_id for r in rows] == ["LOT-1002"]
-    assert corpus.planned_coverage("C-418", "MAT-ALLOY-7") == 0.0
+    # The invariant is the ABSENCE of the unallocated lots, asserted directly.
+    # This used to pin the exact row list, which coupled it to how many
+    # allocations the fixture happened to hold and broke the moment LOT-1001's
+    # genuine allocation was recorded — without any inference having crept in.
+    assert {r.lot_id for r in rows} == {"LOT-1002", "LOT-1001"}
+    assert not {"LOT-1003", "LOT-1004"} & {r.lot_id for r in rows}
+    # C-418 is allocated LOT-1001 and nothing else; the 650 kg of unallocated
+    # MAT-ALLOY-7 still contributes nothing to it.
+    assert [r.lot_id for r in corpus.planned_coverage_rows("C-418", "MAT-ALLOY-7")] == [
+        "LOT-1001"
+    ]
 
     # C-419 has an EXPLICIT row (PC-2, LOT-1006), which is the point rather
     # than a counterexample: its 200 kg counts because someone allocated that
@@ -461,9 +524,11 @@ def test_a_queued_lot_counts_while_it_can_still_be_released(world):
     from dataclasses import replace
 
     corpus, _ = world
+    # Measured as LOT-1002's own contribution — the total also carries
+    # LOT-1001's separately-allocated 500 kg, which this test is not about.
     for status in ("RECEIVED", "PENDING_QA"):
         corpus.put("lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status=status))
-        assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 400.0, status
+        assert _contribution(corpus, "LOT-1002") == 400.0, status
 
 
 def test_a_refused_lot_stops_counting(world):
@@ -473,7 +538,7 @@ def test_a_refused_lot_stops_counting(world):
     corpus, _ = world
     for status in ("QUARANTINED", "REJECTED"):
         corpus.put("lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status=status))
-        assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 0.0, status
+        assert _contribution(corpus, "LOT-1002") == 0.0, status
 
 
 def test_a_released_lot_is_not_counted_twice(world):
@@ -482,19 +547,23 @@ def test_a_released_lot_is_not_counted_twice(world):
 
     corpus, _ = world
     corpus.put("lot", "LOT-1002", replace(corpus.lot("LOT-1002"), status="RELEASED"))
-    assert corpus.planned_coverage("C-417", "MAT-ALLOY-7") == 0.0
+    assert _contribution(corpus, "LOT-1002") == 0.0
 
 
-def test_the_opening_frame_is_not_softened_by_the_allocation(world):
-    """0 released + 400 queued against 900 required is still short 500.
+def test_the_opening_frame_states_the_real_shortfall(world):
+    """Pre-decision does not mean the numbers are softened.
 
-    AT_RISK would be a lie here: the plan does not add up even if LOT-1002
-    releases perfectly.
+    C-417 still shows 0 kg available against a 900 kg requirement. What changed
+    is only the LABEL on that fact: 900 kg is queued across LOT-1001 and
+    LOT-1002, neither decided, so nothing is uncovered by a *plan* — the
+    question is entirely open. The arithmetic is reported unflatteringly and in
+    full; it is simply not called a failure before anyone has looked.
     """
     corpus, _ = world
     line = compute_readiness(corpus, "C-417").coverage[0]
-    assert (line.available, line.planned, line.uncovered) == (0, 400.0, 500.0)
-    assert compute_readiness(corpus, "C-417").readiness is Readiness.BLOCKED
+    assert (line.required, line.available, line.short_by) == (900.0, 0, 900.0)
+    assert (line.planned, line.uncovered) == (900.0, 0.0)
+    assert compute_readiness(corpus, "C-417").readiness is Readiness.AWAITING_QUALITY
 
 
 def test_deferred_terminal_hold_policy_is_recorded_not_implemented():

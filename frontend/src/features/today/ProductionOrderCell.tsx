@@ -2,9 +2,15 @@ import type { ProductionOrder } from '../../view-models/types';
 import { readinessDot, readinessLabel, readinessTone } from '../../components/tokens';
 import { StatusPill } from '../../components/StatusPill';
 
-const BG = { READY: '#FCFBF7', AT_RISK: '#FBF8EF', BLOCKED: '#FBF3F1' } as const;
+const BG = {
+  READY: '#FCFBF7',
+  AWAITING_QUALITY: '#EFF0F7',
+  AT_RISK: '#FBF8EF',
+  BLOCKED: '#FBF3F1',
+} as const;
 const BORDER = {
   READY: 'rgba(0,0,0,.1)',
+  AWAITING_QUALITY: 'rgba(69,80,140,.34)',
   AT_RISK: 'rgba(181,133,42,.4)',
   BLOCKED: 'rgba(142,43,36,.4)',
 } as const;

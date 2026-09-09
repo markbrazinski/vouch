@@ -7,6 +7,7 @@ const CELL: Record<
   { color: string; bg: string; border: string; blockedZero?: string }
 > = {
   READY: { color: '#3E6B54', bg: '#EEF2ED', border: 'rgba(62,107,84,.28)' },
+  AWAITING_QUALITY: { color: '#45508C', bg: '#EAEBF4', border: 'rgba(69,80,140,.32)' },
   AT_RISK: { color: '#8a6318', bg: '#F7F1E0', border: 'rgba(181,133,42,.3)' },
   BLOCKED: { color: '#8E2B24', bg: '#FBF3F1', border: 'rgba(142,43,36,.3)' },
 };

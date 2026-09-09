@@ -393,6 +393,37 @@ export function LiveTodayPage({
         </div>
       )}
 
+      {/* Pre-decision, and deliberately calm. The material has not been
+          evaluated yet, so this states a pending question rather than a
+          conflict — and it is mutually exclusive with the divergence banner
+          below, which asserts something evidence has actually established. */}
+      {vm.awaitingQuality.length > 0 && (
+        <div
+          data-testid="today-awaiting-quality"
+          style={{
+            marginTop: 16,
+            background: '#EAEBF4',
+            border: '1px solid rgba(69,80,140,.32)',
+            borderRadius: 11,
+            padding: '13px 16px',
+          }}
+        >
+          <div
+            style={{
+              font: "600 10px 'IBM Plex Mono'",
+              letterSpacing: '.1em',
+              color: '#45508C',
+            }}
+          >
+            MATERIAL DECISIONS PENDING
+          </div>
+          <div style={{ marginTop: 5, font: "400 12.5px/1.6 'Public Sans'", color: '#3C4468' }}>
+            Today&rsquo;s plan depends on incoming material that Quality has not yet
+            cleared.
+          </div>
+        </div>
+      )}
+
       {/* Divergence is a DIFFERENT statement: the plan has not caught up yet. */}
       {vm.divergent.length > 0 && (
         <div

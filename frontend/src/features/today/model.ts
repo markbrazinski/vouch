@@ -20,10 +20,10 @@ import type {
   TodayOrderDTO,
 } from '../../decision/dto';
 import type { ProductionReadiness, SemanticTone } from '../../view-models/types';
-import { readinessTone } from '../../components/tokens';
+import { readinessLabel, readinessTone } from '../../components/tokens';
 
 /** Readiness values the UI has a visual language for. */
-const KNOWN: ProductionReadiness[] = ['READY', 'AT_RISK', 'BLOCKED'];
+const KNOWN: ProductionReadiness[] = ['READY', 'AWAITING_QUALITY', 'AT_RISK', 'BLOCKED'];
 
 export interface PlannedSourceVM {
   lotId: string;
@@ -126,6 +126,8 @@ export interface TodayVM {
   lines: TodayLineVM[];
   /** Orders whose computed readiness has outrun their stored status. */
   divergent: TodayOrderVM[];
+  /** Orders waiting on a material decision nobody has made yet. */
+  awaitingQuality: TodayOrderVM[];
   /** What the recorded decisions did to this plan, oldest first. */
   causalHistory: CausalEventVM[];
   /** Totals straight from the payload — the count of what was returned. */
@@ -186,8 +188,12 @@ export function toOrder(dto: TodayOrderDTO): TodayOrderVM {
     plannedSlot: dto.planned_slot ?? '',
     status,
     readiness,
-    // Stored and computed disagreeing is the signal Today exists to show.
-    divergent: status !== '' && status !== readiness,
+    // Stored and computed disagreeing is the signal Today exists to show —
+    // but only once evidence has actually contradicted the plan. A stored
+    // READY against a computed AWAITING_QUALITY is not a disagreement, it is
+    // a question nobody has answered yet, and banner copy saying "plan and
+    // evidence disagree" would be asserting a conflict that does not exist.
+    divergent: status !== '' && status !== readiness && readiness !== 'AWAITING_QUALITY',
     tone: readinessTone[readiness],
     reason: dto.reason ?? '',
     coverage,
@@ -208,6 +214,7 @@ export function toOrder(dto: TodayOrderDTO): TodayOrderVM {
  */
 const READINESS_WORDING: Record<string, string> = {
   READY: 'ready',
+  AWAITING_QUALITY: 'awaiting quality',
   AT_RISK: 'at risk',
   BLOCKED: 'blocked',
   COMPLETE: 'complete',
@@ -416,10 +423,13 @@ export function toToday(dto: TodayDTO): TodayVM {
     counts: KNOWN.map((readiness) => ({
       readiness,
       count: counts[readiness] ?? 0,
-      label: readiness === 'AT_RISK' ? 'AT RISK' : readiness,
+      label: readinessLabel[readiness],
     })),
     lines,
     divergent: lines.flatMap((l) => l.orders).filter((o) => o.divergent),
+    awaitingQuality: lines
+      .flatMap((l) => l.orders)
+      .filter((o) => o.readiness === 'AWAITING_QUALITY'),
     causalHistory: toCausalHistory(dto.causal_history),
     orderCount: lines.reduce((n, l) => n + l.orders.length, 0),
     lineCount: lines.length,

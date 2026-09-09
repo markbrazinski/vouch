@@ -63,7 +63,9 @@ describe('all arithmetic stays in the backend', () => {
 
   it('reports the backend readiness tally, not a recount of the rows', () => {
     const counts = Object.fromEntries(vm.counts.map((c) => [c.readiness, c.count]));
-    expect(counts).toEqual({ READY: 2, AT_RISK: 0, BLOCKED: 1 });
+    // AWAITING_QUALITY is always present in the display order, at whatever
+    // the payload reports — 0 here, since this capture is post-decision.
+    expect(counts).toEqual({ READY: 2, AWAITING_QUALITY: 0, AT_RISK: 0, BLOCKED: 1 });
   });
 
   it('does not treat a covered order as short', () => {
@@ -108,5 +110,52 @@ describe('empty and unknown inputs stay truthful', () => {
       lines: [{ line_id: 'L', orders: [{ order_id: 'C-1', readiness: 'READY' }] }],
     } as TodayDTO).lines;
     expect(line.orders[0].divergent).toBe(false);
+  });
+});
+
+describe('pre-decision is not a negative verdict', () => {
+  /** The capture, with one order rewritten to the pre-decision state. */
+  const awaiting = (readiness: string, status = 'READY'): TodayDTO =>
+    ({
+      ...dto,
+      lines: (dto.lines ?? []).map((line) => ({
+        ...line,
+        orders: (line.orders ?? []).map((o) =>
+          o.order_id === 'C-417' ? { ...o, readiness, status } : o,
+        ),
+      })),
+    }) as TodayDTO;
+
+  it('labels AWAITING_QUALITY without borrowing AT RISK or BLOCKED', () => {
+    const vm2 = toToday(awaiting('AWAITING_QUALITY'));
+    const c417 = vm2.lines.flatMap((l) => l.orders).find((o) => o.orderId === 'C-417')!;
+    expect(c417.readiness).toBe('AWAITING_QUALITY');
+    const label = vm2.counts.find((c) => c.readiness === 'AWAITING_QUALITY')!.label;
+    expect(label).toBe('AWAITING QUALITY');
+    // Never the words the brief ruled out for this state.
+    expect(['AT RISK', 'BLOCKED', 'READY']).not.toContain(label);
+  });
+
+  it('is toned as an open question, not a warning', () => {
+    const vm2 = toToday(awaiting('AWAITING_QUALITY'));
+    const c417 = vm2.lines.flatMap((l) => l.orders).find((o) => o.orderId === 'C-417')!;
+    expect(c417.tone).toBe('decision');
+    expect(c417.tone).not.toBe('atrisk');
+    expect(c417.tone).not.toBe('blocked');
+  });
+
+  it('does NOT claim plan and evidence disagree before a decision exists', () => {
+    // Stored READY vs computed AWAITING_QUALITY is an open question, not a
+    // contradiction. Counting it as divergence is what put the alarming
+    // "PLAN AND EVIDENCE DISAGREE" banner on an untouched fresh seed.
+    const vm2 = toToday(awaiting('AWAITING_QUALITY'));
+    expect(vm2.divergent.map((o) => o.orderId)).toEqual([]);
+    expect(vm2.awaitingQuality.map((o) => o.orderId)).toEqual(['C-417']);
+  });
+
+  it('still reports divergence once evidence really does contradict the plan', () => {
+    const vm2 = toToday(awaiting('BLOCKED'));
+    expect(vm2.divergent.map((o) => o.orderId)).toEqual(['C-417']);
+    expect(vm2.awaitingQuality).toEqual([]);
   });
 });

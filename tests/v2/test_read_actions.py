@@ -660,13 +660,17 @@ def test_get_today_reports_authoritative_readiness_per_line(runtime):
     response = runtime.invoke({"action": "get_today"})
 
     assert response["ok"]
-    assert set(response["readiness_counts"]) >= {"READY", "AT_RISK", "BLOCKED"}
+    assert set(response["readiness_counts"]) >= {
+        "READY", "AWAITING_QUALITY", "AT_RISK", "BLOCKED",
+    }
     assert response["lines"]
 
     orders = [o for line in response["lines"] for o in line["orders"]]
     assert {"C-417", "C-418", "C-419"} <= {o["order_id"] for o in orders}
     for order in orders:
-        assert order["readiness"] in ("READY", "AT_RISK", "BLOCKED", "COMPLETE")
+        assert order["readiness"] in (
+            "READY", "AWAITING_QUALITY", "AT_RISK", "BLOCKED", "COMPLETE",
+        )
         assert order["reason"], "a readiness verdict must say why"
 
 

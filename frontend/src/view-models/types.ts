@@ -7,7 +7,8 @@
 export type InventoryState = 'PENDING_RELEASE' | 'RELEASED' | 'QUARANTINED' | 'REJECTED';
 export type DispositionState =
   'EVALUATING' | 'RELEASE_VERIFIED' | 'QUARANTINE_VERIFIED' | 'QUALITY_DECISION_REQUIRED';
-export type ProductionReadiness = 'READY' | 'AT_RISK' | 'BLOCKED';
+export type ProductionReadiness =
+  'READY' | 'AWAITING_QUALITY' | 'AT_RISK' | 'BLOCKED';
 
 export type SemanticTone =
   'decision' | 'released' | 'atrisk' | 'quarantine' | 'blocked' | 'refused' | 'progress';

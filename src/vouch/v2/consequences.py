@@ -28,6 +28,11 @@ from .lifecycle import EventLog, EventType
 
 class Readiness(str, Enum):
     READY = "READY"
+    #: Short, and every lot queued to close the gap is still undecided. This is
+    #: a PRE-DECISION state, not a negative one: Vouch has not evaluated the
+    #: material yet, so calling it AT_RISK or BLOCKED would report a judgement
+    #: nobody has made. "Not yet decided" must never render as "failed".
+    AWAITING_QUALITY = "AWAITING_QUALITY"
     AT_RISK = "AT_RISK"
     BLOCKED = "BLOCKED"
     COMPLETE = "COMPLETE"
@@ -118,12 +123,29 @@ def compute_readiness(corpus: Corpus, order_id: str) -> ReadinessResult:
             f"(need {c.required}, have {c.available}, {c.planned} queued)"
             for c in shortfalls
         )
+        # Fully queued, and nothing queued has been decided yet: the plan is
+        # intact and simply waiting on Quality. Once ANY queued lot reaches a
+        # disposition the shortfall is partly evaluated fact, and it falls
+        # through to AT_RISK — a named lot is still on its way, but the picture
+        # now contains a real decision.
+        if all(
+            corpus.coverage_awaits_decision(order_id, c.material_id) for c in shortfalls
+        ):
+            return ReadinessResult(order_id, Readiness.AWAITING_QUALITY, coverage, detail)
         return ReadinessResult(order_id, Readiness.AT_RISK, coverage, detail)
 
     detail = "; ".join(
         f"{c.material_id} short by {c.short_by} (need {c.required}, have {c.available})"
         for c in uncovered
     )
+    # Partially queued counts as pre-decision too, but only when every line
+    # that is short has SOME undecided lot queued against it. An order with a
+    # requirement nothing was ever allocated to has a gap that no pending
+    # decision can close, and that is a planning failure to report now rather
+    # than a question to wait on.
+    if all(corpus.coverage_awaits_decision(order_id, c.material_id) for c in uncovered):
+        return ReadinessResult(order_id, Readiness.AWAITING_QUALITY, coverage, detail)
+
     # The ratio path still decides among orders with nothing queued: an order
     # covered to 95% is a warning, one covered to 56% is a stop.
     worst = min(c.ratio for c in uncovered)

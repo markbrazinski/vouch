@@ -477,6 +477,32 @@ class Corpus:
             total += row.quantity
         return total
 
+    #: Lot states meaning "Vouch has not reached a disposition on this yet".
+    #:
+    #: A subset of COVERABLE_LOT_STATES, and currently equal to it — but they
+    #: answer different questions and must not be merged. COVERABLE asks "can
+    #: this allocation still arrive"; this asks "has anyone decided". A lot
+    #: RELEASED after a human authority run is coverable-by-way-of-inventory
+    #: and firmly decided, so the sets diverge the moment a state is added that
+    #: is undecided-but-uncoverable, or decided-but-still-queued.
+    UNDECIDED_LOT_STATES = frozenset({"RECEIVED", "PENDING_QA"})
+
+    def coverage_awaits_decision(self, order_id: str, material_id: str) -> bool:
+        """True when every lot queued for this requirement is still undecided.
+
+        This is the difference between "not yet evaluated" and "evaluated and
+        found wanting". If even one queued lot has reached a disposition, the
+        shortfall is partly an evaluated fact and this is no longer a purely
+        pre-decision state.
+        """
+        rows = self.planned_coverage_rows(order_id, material_id)
+        if not rows:
+            return False
+        return all(
+            getattr(self.lot(row.lot_id), "status", None) in self.UNDECIDED_LOT_STATES
+            for row in rows
+        )
+
     def planned_coverage_rows(self, order_id: str, material_id: str) -> list[PlannedCoverage]:
         """Every allocation for this requirement, honourable or not.
 

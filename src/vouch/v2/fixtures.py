@@ -373,6 +373,26 @@ def build_corpus() -> Corpus:
         "planned_coverage", "PC-1",
         PlannedCoverage("PC-1", "C-417", "MAT-ALLOY-7", "LOT-1002", 400.0),
     )
+    # The other 500 of C-417's 900 was planned to come from LOT-1001, and
+    # C-418's whole 500 from the same lot. Both rows were missing, which is why
+    # a fresh seed read BLOCKED on two orders whose material had simply not
+    # been looked at yet: with nothing queued, `uncovered` equalled the full
+    # requirement and the ratio path called it a stop.
+    #
+    # LOT-1001 holds exactly 500, so it can honour only one of these at a time.
+    # That is deliberate and it is the Hero A pivot: the release covers C-418
+    # outright, and C-417 keeps the 400 queued against LOT-1002 while the 500
+    # it also wanted is now spoken for. Recording both rows states the PLAN —
+    # what was intended to come from where — which is the only thing that
+    # distinguishes "not yet decided" from "already failed".
+    corpus.put(
+        "planned_coverage", "PC-3",
+        PlannedCoverage("PC-3", "C-417", "MAT-ALLOY-7", "LOT-1001", 500.0),
+    )
+    corpus.put(
+        "planned_coverage", "PC-4",
+        PlannedCoverage("PC-4", "C-418", "MAT-ALLOY-7", "LOT-1001", 500.0),
+    )
     # C-419's remaining 200 kg is queued against LOT-1006 specifically, which
     # is why C-419 reads AT_RISK rather than BLOCKED before the applicability
     # question is settled: a named lot is on its way. Resolving that question

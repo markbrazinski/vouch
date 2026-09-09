@@ -585,7 +585,9 @@ def _today_plan() -> dict:
     backend that guessed at it would be inventing operational history.
     """
     lines: dict[str, list[dict]] = {}
-    counts = {"READY": 0, "AT_RISK": 0, "BLOCKED": 0, "COMPLETE": 0}
+    counts = {
+        "READY": 0, "AWAITING_QUALITY": 0, "AT_RISK": 0, "BLOCKED": 0, "COMPLETE": 0,
+    }
     for order in _CORPUS.all("production_order"):
         result = compute_readiness(_CORPUS, order.order_id)
         readiness = result.readiness.value
