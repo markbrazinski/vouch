@@ -30,16 +30,17 @@ import * as api from '../adapter/client';
 import { GhostButton, INK, MONO, N, Pill, SANS, HAIR } from './primitives';
 import type { SourceArtifactVM } from './model';
 
-const TRUST_CHIP: Record<
-  SourceArtifactVM['trustClass'],
-  { text: string; fg: string; bg: string; br: string }
+/**
+ * Trust chips, for the classes that actually distinguish something.
+ *
+ * `supplier_untrusted` is deliberately absent — it is the DEFAULT class, so the
+ * chip appeared on essentially every certificate and carried no signal. Absence
+ * now MEANS supplier-declared; the three that remain are the exceptions worth
+ * naming. Same rule as the context column's badge.
+ */
+const TRUST_CHIP: Partial<
+  Record<SourceArtifactVM['trustClass'], { text: string; fg: string; bg: string; br: string }>
 > = {
-  supplier_untrusted: {
-    text: 'Supplier-declared · Untrusted',
-    fg: '#9A5A2A',
-    bg: '#F6EEE6',
-    br: 'rgba(154,90,42,.4)',
-  },
   quarantined: {
     text: 'Quarantined · excluded from decision',
     fg: '#9A5A2A',
@@ -178,19 +179,21 @@ export function SourceDocumentViewer({
           }}
         >
           <div style={{ font: `700 14px ${SANS}` }}>{artifact.displayName}</div>
-          <span
-            style={{
-              font: `700 9px ${MONO}`,
-              letterSpacing: '.04em',
-              color: chip.fg,
-              background: chip.bg,
-              border: `1px solid ${chip.br}`,
-              borderRadius: 5,
-              padding: '4px 9px',
-            }}
-          >
-            {chip.text}
-          </span>
+          {chip && (
+            <span
+              style={{
+                font: `700 9px ${MONO}`,
+                letterSpacing: '.04em',
+                color: chip.fg,
+                background: chip.bg,
+                border: `1px solid ${chip.br}`,
+                borderRadius: 5,
+                padding: '4px 9px',
+              }}
+            >
+              {chip.text}
+            </span>
+          )}
           <div style={{ flex: 1 }} />
           <button
             type="button"

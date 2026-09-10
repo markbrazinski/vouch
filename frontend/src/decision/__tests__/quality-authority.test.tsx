@@ -103,16 +103,19 @@ describe('the open applicability question', () => {
     );
   });
 
-  it('states the consequence of each path, because they differ', () => {
+  it('states the requirement of each path, not the disposition', () => {
     const direct = panel.options.find((o) => o.routeLabel === 'DIRECT METHOD')!;
     const alternate = panel.options.find((o) => o.routeLabel.startsWith('VIA '))!;
 
-    // The consequence NAMES the disposition. "FAIL" is the arithmetic; the
-    // operator is choosing between two outcomes and the card says which.
+    // `passes` still differs — it is the arithmetic, and it drives tone. What
+    // the card no longer does is NAME the disposition each path would produce:
+    // that pre-answers the question the human is here to decide.
     expect(direct.passes).toBe(false);
-    expect(direct.consequence).toContain('QUARANTINE');
     expect(alternate.passes).toBe(true);
-    expect(alternate.consequence).toContain('RELEASE');
+    expect(direct.consequence).toMatch(/^Requirement /);
+    expect(alternate.consequence).toMatch(/^Requirement /);
+    expect(direct.consequence).not.toContain('QUARANTINE');
+    expect(alternate.consequence).not.toContain('RELEASE');
     for (const o of panel.options) {
       expect(o.consequence).not.toMatch(/cannot be computed/);
     }
@@ -254,10 +257,12 @@ describe('the panel component', () => {
     ].join(' | ');
     expect(rendered).toContain('178 cP');
     expect(rendered).toContain('312 cP');
-    expect(rendered).toContain('QUARANTINE');
-    expect(rendered).toContain('RELEASE');
     expect(rendered).toContain('DIRECT METHOD');
     expect(rendered).toContain('VIA EQV-1');
+    // The requirement, not the disposition each path would produce.
+    expect(rendered).toContain('Requirement');
+    expect(rendered).not.toContain('QUARANTINE');
+    expect(rendered).not.toContain('RELEASE');
     expect(rendered).toContain('INDEPENDENT VERIFIER');
     expect(screen.getByTestId('quality-authority-question').textContent).toMatch(
       /Which viscosity result/,
@@ -310,6 +315,58 @@ describe('the agent cards show what actually differs', () => {
     expect(lanes).toContain('312 cP');
     expect(lanes).toContain('direct method');
     expect(lanes).toContain('via EQV-1');
+  });
+
+  it('keeps the SELECTION above the newly-published event sufficiency', () => {
+    // Both completion events now carry `sufficiency`. On a disagreement that is
+    // the one field the agents AGREE on, so if the event tier outranked the
+    // selection tier the two lanes would read identically again — the exact
+    // thing this display exists to prevent.
+    //
+    // The capture predates the backend change, so the event is upgraded here to
+    // the shape a live run now emits.
+    const raw = capture(run1);
+    const withSufficiency = {
+      ...raw,
+      events: (raw.events as Record<string, unknown>[]).map((e) =>
+        e.event === 'VERIFIER_BRIEF_COMPLETED' || e.event === 'APPLICABILITY_BRIEF_COMPLETED'
+          ? { ...e, sufficiency: 'SUFFICIENT' }
+          : e,
+      ) as never[],
+    };
+
+    const agents = project(withSufficiency).spine.find((n) => n.key === 'agents')!;
+
+    expect(agents.investigatorLane).not.toBe('SUFFICIENT');
+    expect(agents.verifierLane).not.toBe('SUFFICIENT');
+    expect(agents.investigatorLane).not.toBe(agents.verifierLane);
+    const lanes = `${agents.investigatorLane} | ${agents.verifierLane}`;
+    expect(lanes).toContain('direct method');
+    expect(lanes).toContain('via EQV-1');
+  });
+
+  it('never pre-announces the disposition each choice would produce', () => {
+    // The cards used to read "If established: deterministic result = RELEASE"
+    // and "... = QUARANTINE". That turns an authority question into two
+    // labelled outcomes: an operator picks the result they want instead of
+    // deciding which MEASUREMENT governs, which is the only thing being asked.
+    const vm = qualityPanelFrom(
+      (run1 as { record: { quality_authority: unknown } }).record
+        .quality_authority as unknown as QualityAuthorityDTO,
+    )!;
+    render(<QualityAuthorityPanel vm={vm} />);
+
+    const rendered = [
+      screen.getByTestId('quality-option-investigator').textContent,
+      screen.getByTestId('quality-option-verifier').textContent,
+    ].join(' | ');
+    expect(rendered).not.toContain('RELEASE');
+    expect(rendered).not.toContain('QUARANTINE');
+    expect(rendered).not.toMatch(/deterministic result/i);
+
+    // What replaces it still tells the operator what the number is judged
+    // against — the requirement, on both cards.
+    for (const o of vm.options) expect(o.consequence).toMatch(/^Requirement /);
   });
 
   it('does not assume which role took which path', () => {

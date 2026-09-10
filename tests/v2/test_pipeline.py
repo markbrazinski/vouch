@@ -409,6 +409,55 @@ def test_full_lifecycle_event_sequence(vouch):
     assert required <= emitted
 
 
+def test_verifier_completion_event_publishes_its_own_sufficiency(vouch):
+    """Both roles publish `sufficiency` on their completion event.
+
+    This is what lets a live projection resolve the Verifier lane the moment the
+    Verifier finishes. When only the Investigator published it, the Verifier
+    lane could not be answered from the event stream at all — it resolved from
+    the stored DecisionRecord, which does not exist until the decision is
+    terminal, so the lane visibly filled in AFTER the disposition and
+    consequence it actually preceded.
+
+    `basis` stays investigator-only: the verifier is deliberately blind.
+    """
+    corpus, v = vouch
+    events = EventLog()
+    v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}], events=events)
+
+    verifier = events.of_type(EventType.VERIFIER_BRIEF_COMPLETED)
+    assert verifier, "the verifier must emit a completion event"
+
+    for e in verifier:
+        assert "sufficiency" in e.payload, (
+            "VERIFIER_BRIEF_COMPLETED must carry the verifier's own sufficiency; "
+            "without it the live lane cannot resolve before the terminal record"
+        )
+        assert e.payload["sufficiency"], "sufficiency must not be blank"
+        assert "brief_hash" in e.payload
+        assert "basis" not in e.payload, "the verifier is blind to governing basis"
+
+    investigator = events.of_type(EventType.APPLICABILITY_BRIEF_COMPLETED)
+    assert investigator
+    for e in investigator:
+        assert e.payload.get("sufficiency"), "the investigator still publishes it"
+        assert e.payload.get("basis"), "and still publishes its basis"
+
+
+def test_verifier_sufficiency_is_its_own_not_the_investigators(vouch):
+    """The published value is the verifier's OWN assertion.
+
+    An independent verifier that echoed the investigator's sufficiency would
+    make the lane assert agreement that was never independently reached.
+    """
+    corpus, v = vouch
+    events = EventLog()
+    outcome = v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}], events=events)
+
+    emitted = events.of_type(EventType.VERIFIER_BRIEF_COMPLETED)[-1].payload["sufficiency"]
+    assert emitted == outcome.record.verifier.brief["sufficiency"]
+
+
 def test_precedent_consulted_is_not_emitted_in_milestone_1(vouch):
     corpus, v = vouch
     events = EventLog()

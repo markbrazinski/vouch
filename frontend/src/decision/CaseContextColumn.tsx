@@ -13,8 +13,23 @@ import * as api from '../adapter/client';
 import { Eyebrow, Field, GhostButton, INK, MONO, N, Panel, Pill, SANS, HAIR } from './primitives';
 import type { EstablishedTruthVM, SourceArtifactVM } from './model';
 
-const TRUST_COPY: Record<SourceArtifactVM['trustClass'], { label: string; color: string }> = {
-  supplier_untrusted: { label: 'Supplier-declared · Untrusted', color: '#9A5A2A' },
+/**
+ * Trust badges, for the classes that actually distinguish something.
+ *
+ * `supplier_untrusted` is deliberately absent. It is the DEFAULT class — every
+ * incoming supplier certificate resolves to it — so the badge appeared on
+ * essentially every document and told an operator nothing they did not already
+ * know from the fact that a supplier sent it. A label that is always present
+ * carries no signal and costs a line of chrome above the document.
+ *
+ * The three that remain are exceptions worth flagging: evidence a human
+ * authorized, evidence excluded by security, and internal records that are
+ * authoritative rather than declared. Absence of a badge now MEANS
+ * supplier-declared, which is the common case.
+ */
+const TRUST_COPY: Partial<
+  Record<SourceArtifactVM['trustClass'], { label: string; color: string }>
+> = {
   quarantined: { label: 'Quarantined · excluded', color: '#9A5A2A' },
   human_authorized: { label: 'Human-authorized', color: '#3E6B54' },
   internal: { label: 'Authoritative internal', color: '#3E6B54' },
@@ -306,23 +321,27 @@ export function CaseContextColumn({
             </div>
             <div style={{ font: `400 10px ${MONO}`, color: INK.label, marginTop: 2 }}>{meta}</div>
 
-            <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span
-                style={{
-                  font: `600 8px ${MONO}`,
-                  letterSpacing: '.05em',
-                  color: TRUST_COPY[selected.trustClass].color,
-                  border: `1px solid ${TRUST_COPY[selected.trustClass].color}55`,
-                  borderRadius: 4,
-                  padding: '2px 6px',
-                }}
-              >
-                {TRUST_COPY[selected.trustClass].label.toUpperCase()}
-              </span>
-              {selected.securityState === 'quarantined' && (
-                <Pill tone="quarantine">⊘ EXCLUDED</Pill>
-              )}
-            </div>
+            {(TRUST_COPY[selected.trustClass] || selected.securityState === 'quarantined') && (
+              <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 7 }}>
+                {TRUST_COPY[selected.trustClass] && (
+                  <span
+                    style={{
+                      font: `600 8px ${MONO}`,
+                      letterSpacing: '.05em',
+                      color: TRUST_COPY[selected.trustClass]!.color,
+                      border: `1px solid ${TRUST_COPY[selected.trustClass]!.color}55`,
+                      borderRadius: 4,
+                      padding: '2px 6px',
+                    }}
+                  >
+                    {TRUST_COPY[selected.trustClass]!.label.toUpperCase()}
+                  </span>
+                )}
+                {selected.securityState === 'quarantined' && (
+                  <Pill tone="quarantine">⊘ EXCLUDED</Pill>
+                )}
+              </div>
+            )}
 
             {/* Sponsor depth: the compact EXTRACTION row, in the existing
                 provenance area. Meaning first; method is secondary metadata. */}

@@ -13,7 +13,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { claimsByArtifact, project, toSource } from '../adapter';
 import { mergeEvents } from '../useDecisionRun';
@@ -461,5 +461,57 @@ describe('a refused disposition is never presented as a state change', () => {
       record: CAPTURE.record,
     });
     expect(vm.dispositionLabel).toBe('QUARANTINE');
+  });
+});
+
+/**
+ * The trust badge names exceptions, not the default.
+ *
+ * `supplier_untrusted` is what every incoming supplier certificate resolves to,
+ * so a badge for it appeared on essentially every document and told the
+ * operator nothing. Absence now MEANS supplier-declared.
+ */
+describe('the trust badge only marks what is exceptional', () => {
+  const artifact = (trustClass: SourceArtifactVM['trustClass']): SourceArtifactVM =>
+    ({
+      artifactId: 'ART-1',
+      displayName: 'northern-alloys-coa.pdf',
+      kind: 'DOCUMENT',
+      meta: 'hash abc',
+      locators: [],
+      securityState: 'cleared',
+      claims: [],
+      trustClass,
+    }) as unknown as SourceArtifactVM;
+
+  const chipText = (trustClass: SourceArtifactVM['trustClass']) => {
+    cleanup();
+    render(<SourceDocumentViewer artifact={artifact(trustClass)} onClose={() => {}} />);
+    return screen.getByTestId('source-viewer').textContent ?? '';
+  };
+
+  it('shows NO badge on an ordinary supplier document', () => {
+    expect(chipText('supplier_untrusted')).not.toMatch(/untrusted/i);
+  });
+
+  it('still names the three states that actually distinguish something', () => {
+    expect(chipText('quarantined')).toMatch(/Quarantined/);
+    expect(chipText('human_authorized')).toMatch(/Human-authorized/);
+    expect(chipText('internal')).toMatch(/Authoritative internal/);
+  });
+
+  it('says nothing about trust in the case column for a supplier document', () => {
+    cleanup();
+    const src = artifact('supplier_untrusted');
+    render(
+      <CaseContextColumn
+        sources={[src]}
+        selectedId={src.artifactId}
+        truth={EMPTY_TRUTH}
+        onSelect={() => {}}
+        onOpenSource={() => {}}
+      />,
+    );
+    expect(document.body.textContent ?? '').not.toMatch(/untrusted/i);
   });
 });

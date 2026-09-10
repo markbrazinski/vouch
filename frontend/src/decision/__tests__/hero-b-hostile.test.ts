@@ -16,6 +16,8 @@ import { describe, expect, it } from 'vitest';
 import run1 from './hero-b-run1-capture.json';
 import run2 from './hero-b-run2-capture.json';
 import hostile from './hostile-capture.json';
+// Hero A carries the real 13.4s investigator->verifier gap this file pins.
+import heroA from './hero-a-capture.json';
 import { project, toActivity } from '../adapter';
 import type { EvaluateDTO, LifecycleEventDTO } from '../dto';
 
@@ -411,5 +413,302 @@ describe('the verifier lane reads the VERIFIER\'s own brief', () => {
 
   it('still proves independence through reconciliation, which IS populated', () => {
     expect(vmOf(run1, 'LOT-1004').reconciliation?.state).toBe('MATERIAL_DISAGREEMENT');
+  });
+});
+
+/**
+ * The Verifier must not appear to be filled in AFTER the outcome.
+ *
+ * Measured on the Hero A capture: the Investigator's brief lands at :44.201
+ * and the Verifier's at :57.603 — the Verifier reasons ALONE for 13.4s — after
+ * which reconciliation, disposition and consequence all land inside ~500ms.
+ *
+ * The backend order was never wrong. What was wrong is that the lane had no
+ * value to show during those 13.4s, so it rendered the em-dash that means
+ * "nothing is known" — visually identical to a stage that never ran. The
+ * screen therefore looked as though verification was back-filled once the
+ * disposition already existed, which inverts the product's central claim.
+ *
+ * VERIFIER_STARTED already establishes the missing fact, so the lane states
+ * it. These tests pin the three states apart.
+ */
+describe('the verifier lane is populated while it reasons, before disposition', () => {
+  const laneAt = (upTo: (name: string) => boolean) => {
+    const dto = heroA as EvaluateDTO;
+    const all = (dto.events ?? []) as LifecycleEventDTO[];
+    const cut: LifecycleEventDTO[] = [];
+    for (const e of all) {
+      cut.push(e);
+      if (upTo(String((e as Record<string, unknown>).event ?? ''))) break;
+    }
+    return project({
+      decisionRecordId: dto.decision_record_id,
+      lotId: 'LOT-1002',
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events: cut,
+      result: null,
+      running: true,
+    }).spine.find((n) => n.key === 'agents');
+  };
+
+  it('shows IN_PROGRESS while the verifier is running and no brief exists yet', () => {
+    const agents = laneAt((n) => n === 'VERIFIER_STARTED');
+    expect(agents?.verifierLane).toBe('IN_PROGRESS');
+    // And it is populated BEFORE any disposition exists — the whole point.
+    expect(agents?.reconciliationSeal).toBe('pending');
+  });
+
+  it('shows the em-dash state before the verifier has started at all', () => {
+    // Cut at the investigator's completion: the verifier has not started, so
+    // "reasoning" would be a claim nothing has established.
+    const agents = laneAt((n) => n === 'APPLICABILITY_BRIEF_COMPLETED');
+    expect(agents?.verifierLane ?? null).toBeNull();
+  });
+
+  it('stops claiming the verifier is reasoning once its brief lands', () => {
+    // This capture PREDATES the change that made both roles publish
+    // `sufficiency`: its VERIFIER_BRIEF_COMPLETED carries only `brief_hash`,
+    // and no record is passed here. The lane therefore returns to "not known
+    // yet" rather than to a finding — what must NOT survive is the claim that
+    // the agent is still working.
+    //
+    // Historical captures replaying this way is the reason `briefSufficiency`
+    // still exists. A live run resolves this lane from the event itself; see
+    // the "resolves before any record" suite below.
+    const agents = laneAt((n) => n === 'VERIFIER_BRIEF_COMPLETED');
+    expect(agents?.verifierLane ?? null).toBeNull();
+  });
+
+  it('never claims a halted verifier is reasoning', () => {
+    const agents = vmOf(hostile, 'LOT-1005').spine.find((n) => n.key === 'agents');
+    expect(agents?.verifierLane).toBe('NOT_STARTED');
+  });
+});
+
+/**
+ * The Verifier lane resolves from its OWN event, before any record exists.
+ *
+ * The ordering bug this pins: `VERIFIER_BRIEF_COMPLETED` used to carry only
+ * `brief_hash`, so the lane could not be answered from the event stream. Its
+ * only resolvable source was the stored DecisionRecord, which does not exist
+ * until the decision is terminal. Disposition and Consequence resolve from
+ * their own events, which land BEFORE that fetch — so the screen showed the
+ * outcome first and backfilled the verification that had actually preceded it.
+ *
+ * Events here are synthesized rather than captured because every capture on
+ * disk predates the backend change. `tests/v2/test_pipeline.py` is what pins
+ * the real payload; this pins what the projection does with it.
+ */
+describe('the verifier lane resolves before the terminal record', () => {
+  const at = (n: number) => new Date(Date.UTC(2026, 8, 10, 13, 16, n)).toISOString();
+
+  /** The causal event order the backend actually emits. */
+  const STREAM: LifecycleEventDTO[] = [
+    { event: 'EVIDENCE_SNAPSHOT_CREATED', at: at(18), claim_count: 2 },
+    { event: 'INVESTIGATOR_STARTED', at: at(18), model_id: 'us.amazon.nova-pro-v1:0' },
+    {
+      event: 'APPLICABILITY_BRIEF_COMPLETED',
+      at: at(26),
+      brief_hash: 'aaaa111122',
+      basis: 'SPEC-A7:C',
+      required_test_count: 2,
+      sufficiency: 'SUFFICIENT',
+    },
+    { event: 'VERIFIER_STARTED', at: at(26), model_id: 'us.amazon.nova-pro-v1:0' },
+    // The payload this change added.
+    { event: 'VERIFIER_BRIEF_COMPLETED', at: at(34), brief_hash: 'bbbb333344', sufficiency: 'SUFFICIENT' },
+    { event: 'RECONCILIATION_COMPLETED', at: at(34), outcome: 'MATCH', differing_fields: [] },
+    { event: 'DISPOSITION_COMPUTED', at: at(34), disposition: 'RELEASE', basis: 'SPEC-A7:C' },
+    { event: 'CONSEQUENCE_RECALCULATED', at: at(34), order_id: 'C-417' },
+  ] as unknown as LifecycleEventDTO[];
+
+  /** Project the stream truncated after `event`, with NO record — mid-run. */
+  const liveAt = (event: string) => {
+    const cut = STREAM.slice(0, STREAM.findIndex((e) => e.event === event) + 1);
+    return project({
+      decisionRecordId: 'DR-live',
+      lotId: 'LOT-1001',
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events: cut,
+      result: null,
+      running: true,
+    });
+  };
+
+  const agentsAt = (event: string) => liveAt(event).spine.find((n) => n.key === 'agents');
+
+  it('resolves the verifier from its own event with no record loaded', () => {
+    // The core assertion. Mid-run, nothing terminal has been fetched.
+    expect(agentsAt('VERIFIER_BRIEF_COMPLETED')?.verifierLane).toBe('SUFFICIENT');
+  });
+
+  it('still shows IN_PROGRESS while the verifier is genuinely running', () => {
+    expect(agentsAt('VERIFIER_STARTED')?.verifierLane).toBe('IN_PROGRESS');
+  });
+
+  it('leaves the verifier lane unstated before it starts', () => {
+    expect(agentsAt('APPLICABILITY_BRIEF_COMPLETED')?.verifierLane ?? null).toBeNull();
+    expect(agentsAt('APPLICABILITY_BRIEF_COMPLETED')?.investigatorLane).toBe('SUFFICIENT');
+  });
+
+  it('never lets the disposition resolve while the verifier is unresolved', () => {
+    // The regression stated directly: at every prefix of the stream, if a
+    // disposition is showing then the verifier must ALREADY have resolved.
+    // This is what "the outcome cannot visually beat verification" means, and
+    // it holds without any client-side stagger because the events are causal.
+    for (const e of STREAM) {
+      const vm = liveAt(String(e.event));
+      const agents = vm.spine.find((n) => n.key === 'agents');
+      const disposition = vm.spine.find((n) => n.key === 'disposition');
+      const consequence = vm.spine.find((n) => n.key === 'consequence');
+
+      if (disposition?.state === 'terminal') {
+        expect(agents?.verifierLane).toBe('SUFFICIENT');
+        expect(agents?.state).toBe('completed');
+      }
+      if (consequence?.state === 'completed') {
+        expect(agents?.verifierLane).toBe('SUFFICIENT');
+      }
+    }
+  });
+
+  it('orders the spine investigator -> verifier -> disposition -> consequence', () => {
+    // Each stage is still pending at the moment the one before it resolves.
+    const atVerifierStart = liveAt('VERIFIER_STARTED');
+    expect(atVerifierStart.spine.find((n) => n.key === 'disposition')?.state).toBe('pending');
+    expect(atVerifierStart.spine.find((n) => n.key === 'consequence')?.state).toBe('pending');
+
+    const atVerifierDone = liveAt('VERIFIER_BRIEF_COMPLETED');
+    expect(atVerifierDone.spine.find((n) => n.key === 'agents')?.state).toBe('completed');
+    expect(atVerifierDone.spine.find((n) => n.key === 'disposition')?.state).toBe('pending');
+
+    const atDisposition = liveAt('DISPOSITION_COMPUTED');
+    expect(atDisposition.spine.find((n) => n.key === 'disposition')?.state).toBe('terminal');
+    expect(atDisposition.spine.find((n) => n.key === 'consequence')?.state).toBe('pending');
+
+    expect(liveAt('CONSEQUENCE_RECALCULATED').spine.find((n) => n.key === 'consequence')?.state)
+      .toBe('completed');
+  });
+});
+
+/**
+ * THE CAUSAL INVARIANT.
+ *
+ * While the Verifier is visibly unresolved, nothing downstream of it may read
+ * as finished. A frame showing an unresolved verifier beside a committed
+ * RELEASE is causally impossible and reads as a broken product.
+ *
+ * Polling is what makes it reachable: events arrive in ~900ms batches, so a
+ * verifier completing 8s in lands alongside the reconciliation, disposition and
+ * consequence that followed it. When the verifier's own event cannot resolve
+ * the lane, the canvas would render the whole tail at once.
+ */
+describe('downstream never resolves past an unresolved verifier', () => {
+  const at = (n: number) => new Date(Date.UTC(2026, 8, 10, 13, 16, n)).toISOString();
+
+  const stream = (verifierPayload: Record<string, unknown>): LifecycleEventDTO[] =>
+    [
+      { event: 'EVIDENCE_SNAPSHOT_CREATED', at: at(18), claim_count: 2 },
+      { event: 'INVESTIGATOR_STARTED', at: at(18) },
+      {
+        event: 'APPLICABILITY_BRIEF_COMPLETED', at: at(26), brief_hash: 'a',
+        basis: 'SPEC-A7:C', required_test_count: 2, sufficiency: 'SUFFICIENT',
+      },
+      { event: 'VERIFIER_STARTED', at: at(26) },
+      { event: 'VERIFIER_BRIEF_COMPLETED', at: at(34), ...verifierPayload },
+      { event: 'RECONCILIATION_COMPLETED', at: at(34), outcome: 'MATCH', differing_fields: [] },
+      { event: 'DISPOSITION_COMPUTED', at: at(34), disposition: 'RELEASE' },
+      { event: 'CONSEQUENCE_RECALCULATED', at: at(34), order_id: 'C-417' },
+    ] as unknown as LifecycleEventDTO[];
+
+  /** The whole tail delivered at once, as a real poll batch delivers it. */
+  const wholeBatch = (events: LifecycleEventDTO[], result: unknown = null) =>
+    project({
+      decisionRecordId: 'DR-batch', lotId: 'LOT-1001', material: 'MAT-ALLOY-7',
+      receiptMeta: '', events, result: result as never, running: true,
+    });
+
+  const RESULT = {
+    ok: true, decision_record_id: 'DR-batch', disposition: 'RELEASE',
+    mutation: { action: 'release_lot', target: 'LOT-1001' },
+  };
+
+  // A verifier event carrying no `sufficiency` — a runtime deployed before the
+  // payload change, and every decision it already recorded.
+  const STALE = { brief_hash: 'b' };
+  const CURRENT = { brief_hash: 'b', sufficiency: 'SUFFICIENT' };
+
+  it('holds the whole downstream tail when the verifier cannot resolve', () => {
+    const vm = wholeBatch(stream(STALE), RESULT);
+    const agents = vm.spine.find((n) => n.key === 'agents');
+
+    // Unresolved verifier...
+    expect(agents?.verifierLane ?? null).toBeNull();
+    // ...therefore NOTHING downstream may claim to be done.
+    expect(agents?.reconciliationSeal).toBe('pending');
+    expect(vm.spine.find((n) => n.key === 'disposition')?.state).toBe('pending');
+    expect(vm.spine.find((n) => n.key === 'consequence')?.state).toBe('pending');
+    expect(vm.outcome.visible).toBe(false);
+    expect(vm.dispositionLabel).toBe('');
+  });
+
+  it('releases the entire tail as soon as the verifier resolves', () => {
+    const vm = wholeBatch(stream(CURRENT), RESULT);
+    const agents = vm.spine.find((n) => n.key === 'agents');
+
+    expect(agents?.verifierLane).toBe('SUFFICIENT');
+    expect(agents?.reconciliationSeal).toBe('match');
+    expect(vm.spine.find((n) => n.key === 'disposition')?.state).toBe('terminal');
+    expect(vm.spine.find((n) => n.key === 'consequence')?.state).toBe('completed');
+    expect(vm.outcome.visible).toBe(true);
+  });
+
+  it('resolves a stale stream once the stored brief arrives', () => {
+    // The gate is not a dead end: a historical decision resolves when the
+    // record loads, and the whole tail appears with it.
+    const vm = project({
+      decisionRecordId: 'DR-batch', lotId: 'LOT-1001', material: 'MAT-ALLOY-7',
+      receiptMeta: '', events: stream(STALE), result: RESULT as never, running: true,
+      record: { verifier: { brief: { sufficiency: 'SUFFICIENT' } } },
+    });
+    expect(vm.spine.find((n) => n.key === 'agents')?.verifierLane).toBe('SUFFICIENT');
+    expect(vm.spine.find((n) => n.key === 'disposition')?.state).toBe('terminal');
+    expect(vm.outcome.visible).toBe(true);
+  });
+
+  it('never shows a resolved downstream beside an unresolved verifier, at ANY prefix', () => {
+    const full = stream(STALE);
+    for (let i = 1; i <= full.length; i++) {
+      const vm = wholeBatch(full.slice(0, i), RESULT);
+      const agents = vm.spine.find((n) => n.key === 'agents');
+      // Only meaningful once the verifier is actually in play: before
+      // VERIFIER_STARTED the lane is null because the agent does not exist yet,
+      // and there is nothing downstream of it to hold.
+      const inPlay = full.slice(0, i).some((e) => e.event === 'VERIFIER_STARTED');
+      const verifierUnresolved =
+        (agents?.verifierLane ?? null) === null || agents?.verifierLane === 'IN_PROGRESS';
+      if (!inPlay || !verifierUnresolved) continue;
+      expect(agents?.reconciliationSeal).toBe('pending');
+      expect(vm.spine.find((n) => n.key === 'disposition')?.state).toBe('pending');
+      expect(vm.spine.find((n) => n.key === 'consequence')?.state).toBe('pending');
+      expect(vm.outcome.visible).toBe(false);
+    }
+  });
+
+  it('keeps the activity rail ungated — it is the audit chronology', () => {
+    // The canvas withholds presentation; the rail must still show real events
+    // as they arrive, or the audit surface would lie by omission.
+    const events = stream(STALE);
+    const vm = wholeBatch(events, RESULT);
+    expect(vm.activity).toHaveLength(events.length);
+    expect(vm.activity.map((a) => a.eventType)).toContain('DISPOSITION_COMPUTED');
+  });
+
+  it('never withholds a security halt behind a verifier that will never run', () => {
+    // A halt is not downstream of verification — it is why there is none.
+    const vm = vmOf(hostile, 'LOT-1005');
+    expect(vm.outcome.visible).toBe(true);
   });
 });

@@ -571,17 +571,24 @@ export function ConsequenceStage({
       </div>
 
       {vm.candidates.length > 0 && (
-        <>
-          <div
+        // `details` rather than component state: the grid is disclosure, not
+        // interaction, and the element already carries the keyboard and
+        // accessibility behaviour a hand-rolled toggle would have to restate.
+        // Open mid-run (watching candidates be evaluated IS the stage), closed
+        // at the terminal frame where it would compete with the outcome panel.
+        <details open={!vm.deferCandidates} data-testid="recovery-disclosure">
+          <summary
             style={{
               font: `700 10px ${MONO}`,
               letterSpacing: '.08em',
               color: INK.label,
               margin: '18px 0 10px',
+              cursor: 'pointer',
             }}
           >
             RECOVERY EVALUATED BEFORE THE PLAN MOVED
-          </div>
+            {vm.deferCandidates && ` · ${vm.candidates.length}`}
+          </summary>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             {vm.candidates.map((c, i) => (
               <div
@@ -665,7 +672,7 @@ export function ConsequenceStage({
               </div>
             ))}
           </div>
-        </>
+        </details>
       )}
 
       {vm.executed && (

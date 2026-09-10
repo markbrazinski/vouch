@@ -248,6 +248,18 @@ export interface ConsequenceVM {
   readinessChanges: { orderId: string; from: string; to: string }[];
   candidates: RecoveryCandidateVM[];
   executed: { tag: string; line: string; caveat?: string } | null;
+  /**
+   * The recovery grid opens closed rather than expanded.
+   *
+   * Set at the terminal frame only. The readiness cards ARE the consequence and
+   * stay visible; the candidate grid is the working that produced them, and at
+   * full size it competes with the outcome panel for the first read. Mid-run it
+   * stays open, because watching candidates be evaluated is the stage.
+   *
+   * A disclosure, not a removal: every verdict stays one click away, and the
+   * REFUSED candidate is the safety story that must never become unreachable.
+   */
+  deferCandidates: boolean;
 }
 
 /** D11. Structured, never prose-derived. */
@@ -314,15 +326,18 @@ export interface QualityAuthorityOptionVM {
   /** The action label for choosing THIS path. */
   actionLabel: string;
   /**
-   * What deterministic evaluation will conclude if this evidence is
-   * established — stated because the two paths lead to different dispositions
-   * and an operator must not have to infer that from a number and a limit.
+   * The requirement this measurement is judged against, e.g.
+   * "Requirement [200.0, 400.0] cP".
    *
-   * It is a PREDICTION from the frozen claim and the requirement, never a
-   * disposition: the engine still recomputes it after both agents re-derive.
+   * It deliberately does NOT state the disposition each path would produce.
+   * Pre-announcing RELEASE on one card and QUARANTINE on the other turned an
+   * authority question into two labelled outcomes: the operator is being asked
+   * which MEASUREMENT governs, and naming the result invites picking the result
+   * instead. The disposition follows deterministically from whichever evidence
+   * is established, and the engine recomputes it after both agents re-derive.
    */
   consequence: string;
-  /** Whether that consequence is a pass. Drives tone only. */
+  /** Whether this measurement is within its requirement. Drives tone only. */
   passes: boolean;
 }
 
@@ -346,9 +361,8 @@ export interface QualityAuthorityPanelVM {
  * The identity question, ready to answer — or null.
  *
  * Deliberately NOT folded into `QualityAuthorityPanelVM`. That panel is
- * measurement-shaped in every field (value, methodLine, threshold, passes,
- * would_disposition) because it asks which of two results controls a
- * requirement. This one asks whose lot a document describes. Sharing a type
+ * measurement-shaped in every field (value, methodLine, threshold, passes)
+ * because it asks which of two results controls a requirement. This one asks whose lot a document describes. Sharing a type
  * would mean a dozen fields that are meaningless in one case or the other,
  * and a reader could no longer tell from the type which question is being
  * asked.

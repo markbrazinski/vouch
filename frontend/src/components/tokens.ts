@@ -57,6 +57,10 @@ export const findingLabel: Record<string, string> = {
   VERIFIED: 'Independently verified',
   REJECTED: 'Independently rejected',
   NOT_STARTED: 'Not started',
+  // The agent is running and has not returned a brief. Distinct from
+  // NOT_STARTED (never will run) and from the em-dash (nothing known at all):
+  // this states the one fact the STARTED event actually establishes.
+  IN_PROGRESS: 'Reasoning independently',
 };
 
 export const findingTone: Record<string, SemanticTone> = {
@@ -65,6 +69,7 @@ export const findingTone: Record<string, SemanticTone> = {
   VERIFIED: 'released',
   REJECTED: 'refused',
   NOT_STARTED: 'progress',
+  IN_PROGRESS: 'progress',
 };
 
 /** Readiness maps onto the tone set; the textual label always ships with it. */

@@ -326,12 +326,22 @@ class BriefProducer:
             if self.role == "investigator"
             else EventType.VERIFIER_BRIEF_COMPLETED
         )
-        payload: dict[str, Any] = {"brief_hash": brief.brief_hash()}
+        # Sufficiency is published by BOTH roles. It is the agent's own
+        # assertion about its own brief, so an independent verifier stating it
+        # borrows nothing from the investigator. Emitting it here is what lets a
+        # live projection resolve the verifier the moment it finishes, instead
+        # of waiting for the terminal record — the verifier runs alone for as
+        # long as the model takes, and a lane that cannot resolve until the
+        # record loads reads as unfinished until after the outcome is already on
+        # screen.
+        payload: dict[str, Any] = {
+            "brief_hash": brief.brief_hash(),
+            "sufficiency": brief.sufficiency.value,
+        }
         if self.role == "investigator":
             payload.update(
                 basis=f"{brief.governing_basis.spec_id}:{brief.governing_basis.revision}",
                 required_test_count=len(brief.required_tests),
-                sufficiency=brief.sufficiency.value,
             )
         events.emit(completed_event, decision_record_id, **payload)
 

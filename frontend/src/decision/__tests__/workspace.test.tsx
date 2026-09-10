@@ -75,17 +75,52 @@ describe('the terminal Hero A workspace', () => {
     expect(first).toBeGreaterThan(last);
   });
 
+  it('keeps the consequence itself expanded, not folded away', () => {
+    render(<DecisionWorkspace vm={terminal()} />);
+    // Consequence is what the decision DID to the factory. It used to collapse
+    // into the reopenable stack the instant it became final, so the one answer
+    // the operator came for arrived and then hid itself.
+    expect(screen.queryByTestId('completed-consequence')).toBeNull();
+    expect(screen.getByText('PRODUCTION READINESS')).toBeTruthy();
+  });
+
   it('keeps the recovery grid out of the primary frame but reachable', () => {
     render(<DecisionWorkspace vm={terminal()} />);
     // Not in the 3-second read: the grid competes with OUTCOME / WHY / NEXT
-    // ACTION and the judge does not need it to understand the result.
-    expect(screen.queryByTestId('recovery-MAT-SUB-9')).toBeNull();
+    // ACTION and the judge does not need it to understand the result. It is a
+    // closed disclosure now rather than a collapsed stage — jsdom does not
+    // implement `details` visibility, so the `open` flag IS the assertion.
+    const disclosure = screen.getByTestId('recovery-disclosure') as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
 
     // Still one click away, with every verdict intact — the refusal is the
     // safety story and must never become unreachable.
-    fireEvent.click(screen.getByTestId('completed-consequence'));
+    fireEvent.click(screen.getByText(/RECOVERY EVALUATED/));
     expect(screen.getByTestId('recovery-MAT-SUB-9').textContent).toContain('REFUSED');
     expect(screen.getByTestId('recovery-C-418').textContent).toContain('ELIGIBLE');
+  });
+
+  it('leaves the recovery grid OPEN while the run is still live', () => {
+    // Mid-run, watching candidates be evaluated IS the stage. Only the settled
+    // frame defers them, so the disclosure must not close early.
+    // The capture predates both roles publishing `sufficiency`, so on a LIVE
+    // frame the causal gate would (correctly) withhold the consequence stage
+    // entirely and there would be no grid to assert about. Upgrading the
+    // verifier event to the shape a current runtime emits puts the frame in the
+    // state this test is actually about: verifier resolved, run still going.
+    const live = project({
+      decisionRecordId: dto.decision_record_id,
+      lotId: dto.lot_id!,
+      material: 'MAT-ALLOY-7',
+      receiptMeta: '',
+      events: events.map((e) =>
+        e.event === 'VERIFIER_BRIEF_COMPLETED' ? { ...e, sufficiency: 'SUFFICIENT' } : e,
+      ),
+      result: dto,
+      running: true,
+    });
+    render(<DecisionWorkspace vm={live} />);
+    expect((screen.getByTestId('recovery-disclosure') as HTMLDetailsElement).open).toBe(true);
   });
 
   it('drops the context column on the consequence stage', () => {

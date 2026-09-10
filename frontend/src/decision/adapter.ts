@@ -751,11 +751,15 @@ function agentFrom(
     // as "the lot is fine" on a lot that was about to be quarantined, so the
     // copy now names coverage explicitly and leaves the verdict to the
     // disposition, which is where it is actually decided.
-    // The Verifier's completion event carries ONLY a brief hash — no basis and
-    // no sufficiency — because the verifier is deliberately blind. Treating that
-    // silence as "not sufficient" printed a flat contradiction: its own lane
-    // read "Evidence covers the requirement" while this line said the opposite,
-    // on a lot that released. Unknown is stated as unknown.
+    // The empty-sufficiency branch is for a Verifier event that states no
+    // sufficiency. Live runs no longer produce one — both roles publish it —
+    // but decisions recorded earlier do, and they replay through here. Treating
+    // that silence as "not sufficient" printed a flat contradiction: its own
+    // lane read "Evidence covers the requirement" while this line said the
+    // opposite, on a lot that released. Unknown is stated as unknown.
+    //
+    // `basis` remains investigator-only: the verifier is deliberately blind, so
+    // resultBody still reports it as unresolved for that role.
     resultTitle: done
       ? sufficiency === ''
         ? 'Independent reconstruction complete'
@@ -785,12 +789,18 @@ function reconciliationFrom(events: LifecycleEventDTO[]): ReconciliationVM | nul
   // Only material dimensions, per D4.
   //
   // Live payloads settled a design question here: VERIFIER_BRIEF_COMPLETED
-  // carries ONLY a brief hash — no basis, no sufficiency. That is the
-  // verifier-blind architecture showing through the event surface, and it means
-  // a side-by-side value table would have to source the Verifier's column from
-  // somewhere it does not exist. Rather than fabricate one or borrow the
-  // Investigator's, the comparison is shown as what the backend actually
-  // computed: the reconciliation OUTCOME plus the fields it found differing.
+  // carries no `basis`. That is the verifier-blind architecture showing through
+  // the event surface, and it means a side-by-side value table would have to
+  // source the Verifier's basis column from somewhere it does not exist. Rather
+  // than fabricate one or borrow the Investigator's, the comparison is shown as
+  // what the backend actually computed: the reconciliation OUTCOME plus the
+  // fields it found differing.
+  //
+  // The event does now carry the verifier's own `sufficiency`, but this table
+  // deliberately still reports agrees/differs from `differing_fields` rather
+  // than printing the two values: the RECONCILIATION is the authority on
+  // whether they differ materially, and two equal strings would assert an
+  // agreement this projection did not compute.
   const dimensions: ReconciliationVM['dimensions'] = [];
   const iBasis = str(investigator?.basis);
   if (iBasis) {
@@ -1030,6 +1040,9 @@ function consequenceFrom(
     metrics,
     readinessChanges,
     candidates,
+    // Open by default; `project()` defers it at the terminal frame, which is
+    // the only place it competes with anything.
+    deferCandidates: false,
     executed: executed
       ? {
           tag: str(executed.order_id),
@@ -1290,10 +1303,22 @@ function truthFrom(
  * The sufficiency ONE agent asserted, from its own persisted brief.
  *
  * `record.<role>.brief` is the complete brief (`AgentSegment.brief`, added so a
- * reviewer sees what was asserted and not merely its hash). The verifier's
- * COMPLETION EVENT carries only `brief_hash` — `agents.py` puts `sufficiency`
- * in the payload for the investigator alone — so the event stream cannot answer
- * this for the verifier and the stored record can.
+ * reviewer sees what was asserted and not merely its hash).
+ *
+ * THIS IS A REPLAY FALLBACK, NOT THE LIVE PATH. Both completion events now
+ * publish `sufficiency` (`agents.py`), so a live run resolves either lane from
+ * the event stream the moment that agent finishes. This remains because it is
+ * the ONLY thing that can answer for a decision recorded BEFORE that change:
+ * every captured run in `__tests__` emits `VERIFIER_BRIEF_COMPLETED` carrying
+ * `brief_hash` alone, and Records/Today replay those through the same
+ * `project()`. Deleting it would blank the verifier lane on historical
+ * decisions.
+ *
+ * It must therefore stay BELOW the event in the lane's fallback order. Above
+ * it, a stored record would win over the live event and reintroduce the exact
+ * ordering bug this change fixed — a lane that cannot resolve until the
+ * terminal record loads reads as unfinished until after the outcome is on
+ * screen.
  *
  * Strictly per-role: the verifier's value comes from the verifier's own brief
  * or it stays null. A lane that borrowed the investigator's answer would make
@@ -1468,25 +1493,57 @@ function spineFrom(
             ? 'Independently reconciled'
             : 'Reasoning',
       note: halted ? 'no agent reasoning ran' : investigator ? str(investigator.basis) : '',
-      // Event payload first (it is live mid-run, before any record exists),
-      // then the agent's own stored brief. Null until one of them answers —
-      // the model documents these as null-until-known, never a placeholder.
+      // Priority: the specific evidence this agent SELECTED, then its own
+      // completion EVENT, then its stored brief, then a progress state. Null
+      // until one of them answers — the model documents these as
+      // null-until-known, never a placeholder.
+      //
       // On a disagreement the lane states what this agent SELECTED, because
-      // that is what differs; otherwise it states sufficiency as before.
+      // that is what differs; otherwise it states sufficiency.
+      //
+      // The EVENT tier must stay above the record tier. Both completion events
+      // now publish `sufficiency`, so each lane resolves the moment its own
+      // agent finishes — mid-run, with no record in existence. `briefSufficiency`
+      // sits below it purely to replay decisions recorded before that was true;
+      // see its doc comment. Promoting the record above the event would restore
+      // the bug where a lane stayed unresolved until the terminal fetch and so
+      // appeared to fill in AFTER the disposition it actually preceded.
       //
       // On a halt both lanes state NOT_STARTED rather than the em-dash the
       // model uses for "not known yet". The two are different facts: one is
       // still coming, the other never will.
+      //
+      // The final fallback is IN_PROGRESS once the agent's STARTED event has
+      // landed. The Verifier runs ALONE for as long as the model takes — a
+      // measured 13.4s on the Hero A capture — and until its brief arrives the
+      // lane read as the em-dash "nothing known", identical to a stage that
+      // never ran. Then the brief, the reconciliation, the disposition and the
+      // consequence all landed inside ~500ms, so verification appeared to be
+      // filled in after the outcome rather than before it.
+      //
+      // This asserts nothing about the finding: it states only that the agent
+      // is running, which is exactly what VERIFIER_STARTED establishes. The
+      // em-dash still shows before the agent starts, and NOT_STARTED still
+      // shows on a halt.
+      //
+      // The `&& !verifier` guard is load-bearing and was caught by test: the
+      // COMPLETED event must veto this, or a FINISHED agent whose brief simply
+      // has not been fetched yet (a stored record still loading, as in the
+      // hero-b run-1 fixture) reads "Reasoning independently" — claiming a
+      // completed agent is still working. Started-and-not-completed is the
+      // only state this may describe.
       investigatorLane: halted
         ? 'NOT_STARTED'
         : briefSelection(record, 'investigator', reconciliation) ||
           (investigator ? str(investigator.sufficiency) : '') ||
-          briefSufficiency(record, 'investigator'),
+          briefSufficiency(record, 'investigator') ||
+          (last(events, 'INVESTIGATOR_STARTED') && !investigator ? 'IN_PROGRESS' : null),
       verifierLane: halted
         ? 'NOT_STARTED'
         : briefSelection(record, 'verifier', reconciliation) ||
           (verifier ? str(verifier.sufficiency) : '') ||
-          briefSufficiency(record, 'verifier'),
+          briefSufficiency(record, 'verifier') ||
+          (last(events, 'VERIFIER_STARTED') && !verifier ? 'IN_PROGRESS' : null),
       tone: halted ? 'quarantine' : undefined,
       reconciliationSeal: halted
         ? 'halted'
@@ -1574,17 +1631,6 @@ function completedFrom(
     disposition: DispositionVM | null;
     consequence: ConsequenceVM | null;
   },
-  /**
-   * The run has reached its authoritative end.
-   *
-   * Consequence is the LAST stage, so `index < activeIndex` can never collapse
-   * it and the terminal frame kept it expanded — the full-bleed recovery grid,
-   * the per-order readiness cards and the substitute reasoning, all competing
-   * with the three questions the frame actually owes the operator. Once the
-   * decision is final there is no live stage to watch, so it folds into the
-   * reopenable stack with everything else.
-   */
-  terminal = false,
 ): CompletedStageVM[] {
   if (!active) return [];
   const activeIndex = STAGE_ORDER.indexOf(active);
@@ -1598,9 +1644,8 @@ function completedFrom(
     pill: { label: string; tone: SemanticTone },
     runNumber?: number,
   ) => {
-    const collapsed =
-      STAGE_ORDER.indexOf(stageKey) < activeIndex || (terminal && stageKey === active);
-    if (collapsed) out.push({ stageKey, title, oneLine, pill, runNumber });
+    if (STAGE_ORDER.indexOf(stageKey) < activeIndex)
+      out.push({ stageKey, title, oneLine, pill, runNumber });
   };
 
   add(
@@ -1766,14 +1811,20 @@ export function qualityPanelFrom(
       // two buttons different lengths and invited reading one as the primary
       // action; the choice is between the cards, not between the buttons.
       actionLabel: 'Establish this evidence',
-      // Named, not implied. The operator is choosing between two dispositions,
-      // so the card says which one — the arithmetic behind it is on the
-      // threshold line above.
-      consequence: str(o.would_disposition)
-        ? `If established: deterministic result = ${str(o.would_disposition)}`
-        : threshold
-          ? `Requirement ${threshold}`
-          : '',
+      // The requirement, NOT the disposition it would produce.
+      //
+      // The card used to read "If established: deterministic result = RELEASE"
+      // (and QUARANTINE on the other). That pre-announced the outcome of a
+      // choice the human has not made yet, which turns an authority question
+      // into a pair of labelled buttons: an operator reads RELEASE vs
+      // QUARANTINE and picks the outcome they want, rather than deciding which
+      // MEASUREMENT actually governs — the only question they are being asked.
+      //
+      // The measurement, its method, its route and the requirement it is judged
+      // against are all still on the card. The disposition follows
+      // deterministically from whichever evidence is established, so stating it
+      // here adds nothing the gate does not already compute.
+      consequence: threshold ? `Requirement ${threshold}` : '',
       passes,
     };
   });
@@ -1966,11 +2017,111 @@ function qualityQuestionText(decision: HumanAuthorityDecisionDTO): string {
   );
 }
 
+/**
+ * Events the MAIN CANVAS may project from.
+ *
+ * The causal invariant: while the Verifier is visibly still reasoning, nothing
+ * downstream of it may read as resolved — not the reconciliation seal, not the
+ * disposition, not the consequence, not the terminal outcome. A frame showing
+ * "Reasoning independently" beside a committed RELEASE is causally impossible
+ * and reads as a broken product.
+ *
+ * Polling is what makes this reachable. Events arrive in ~900ms batches, and a
+ * verifier that finishes 8s into a batch lands its completion event alongside
+ * the reconciliation, disposition and consequence that followed it. If the
+ * verifier's own event cannot RESOLVE the lane, the canvas renders an
+ * unresolved verifier beside a finished decision.
+ *
+ * Both roles now publish `sufficiency`, so a current runtime resolves the lane
+ * from that event and this gate never fires. It exists for the case the payload
+ * cannot cover: a runtime deployed before that change, and the stored records
+ * it already wrote. There the lane resolves only when the terminal record
+ * loads, which is strictly after the outcome.
+ *
+ * This withholds PRESENTATION of events that genuinely happened; it invents
+ * nothing, delays nothing on a timer, and reorders nothing. The moment the
+ * verifier becomes resolvable the full stream projects. The activity rail is
+ * deliberately NOT gated — it is the audit chronology and must show real events
+ * as they arrive.
+ */
+const DOWNSTREAM_OF_VERIFIER = new Set([
+  'RECONCILIATION_COMPLETED',
+  'DISPOSITION_COMPUTED',
+  'QUALITY_DECISION_REQUIRED',
+  'POLICY_EVALUATED',
+  'CAPABILITY_ISSUED',
+  'MUTATION_COMPLETED',
+  'CONSEQUENCE_RECALCULATED',
+  'READINESS_TRANSITIONED',
+  'RECOVERY_EVALUATED',
+  'RECOVERY_EXECUTED',
+]);
+
+/**
+ * The Verifier has finished AND the canvas can say what it found.
+ *
+ * `VERIFIER_BRIEF_COMPLETED` alone is not enough: an event that states no
+ * `sufficiency` leaves the lane unresolved, which is the whole failure this
+ * gate exists to prevent. Resolvable means the lane can render a finding — from
+ * the event itself, or from a stored brief that has already landed.
+ *
+ * True when the verifier has not started, because then there is nothing
+ * downstream of it to hold.
+ */
+function verifierResolved(
+  events: LifecycleEventDTO[],
+  record: Record<string, unknown> | null | undefined,
+): boolean {
+  if (securityHalted(events)) return true; // no verification will ever run
+  const started = last(events, 'VERIFIER_STARTED');
+  if (!started) return true;
+  const done = last(events, 'VERIFIER_BRIEF_COMPLETED');
+  if (!done) return false;
+  return Boolean(str(done.sufficiency) || briefSufficiency(record, 'verifier'));
+}
+
+/**
+ * Whether the causal gate applies to THIS frame.
+ *
+ * Only while the decision is being watched. The gate protects the ORDER events
+ * appear in as they stream, and a settled decision has no order left to
+ * protect — every stage is already known.
+ *
+ * This distinction is load-bearing, and testing found it. Most captured runs
+ * carry a verifier event with no `sufficiency` AND no stored verifier brief, so
+ * a gate that also applied at rest would blank the disposition and outcome on
+ * every historical decision, permanently — Records and Today would render a
+ * finished, released lot as though nothing had been decided. That trades a
+ * transient live-frame glitch for durable loss of the audit surface.
+ *
+ * So: live runs get causal ordering, settled records get completeness.
+ */
+function gateApplies(input: ProjectInput): boolean {
+  return Boolean(input.running);
+}
+
+function canvasEvents(events: LifecycleEventDTO[]): LifecycleEventDTO[] {
+  return events.filter((e) => !DOWNSTREAM_OF_VERIFIER.has(String(e.event)));
+}
+
 export function project(input: ProjectInput): DecisionWorkspaceVM {
-  const events = [...input.events].sort(
+  const all = [...input.events].sort(
     (a, b) => (num(a.sequence) ?? 0) - (num(b.sequence) ?? 0),
   );
-  const result = input.result ?? null;
+  // The canvas projects from the causally-gated view; the rail uses `all`.
+  const gate = gateApplies(input) && !verifierResolved(all, input.record);
+  const events = gate ? canvasEvents(all) : all;
+  /**
+   * The authoritative response carries the disposition and mutation DIRECTLY,
+   * so it walks straight past an event-list gate: the outcome panel and header
+   * would announce RELEASE while the verifier still read as unresolved. It is
+   * withheld on exactly the same condition, and for the same reason.
+   *
+   * A FAILURE is never withheld. A technical failure, a security halt or an
+   * abstention is not downstream of the verifier — it is the reason there is no
+   * verification to wait for, and hiding it would leave the frame silent.
+   */
+  const result = gate ? null : (input.result ?? null);
   const failure = input.failure ?? null;
 
   const active = activeStageFrom(events);
@@ -2004,12 +2155,21 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
    * result and no run in flight IS the terminal frame. A quality decision
    * still awaiting a human is deliberately excluded — that frame has an open
    * question and must keep its stage visible.
+   *
+   * This no longer collapses the stage. Consequence is what the decision DID to
+   * the factory, and folding it into the reopenable stack the instant it became
+   * final meant the one answer the operator came for arrived and then hid
+   * itself. It stays expanded; only the recovery grid inside it defers, which
+   * is the part that actually competed with the outcome panel.
    */
   const terminal =
     active === 'consequence' &&
     Boolean(result) &&
     !input.running &&
     !disposition?.qualityDecisionRequired;
+  const consequenceVM =
+    consequence && terminal ? { ...consequence, deferCandidates: true } : consequence;
+
   // Claims live on the durable record, not on `get_source`. Joining here keeps
   // the itemization in one place rather than in each component that shows one.
   const joinedClaims = claimsByArtifact(input.record);
@@ -2028,18 +2188,18 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     durable: input.durable ?? true,
     spine: spineFrom(events, active, reconciliation, input.record, consequence),
     outcome: outcomeFrom(events, result, failure),
-    activeStage: terminal ? null : active,
-    // Still full-bleed at the terminal frame. The stage collapsed, but the
-    // case-context column has nothing left to add once the decision is final,
-    // and remounting it duplicated the lot identity the header already
-    // carries. The frame keeps the full inner width.
+    activeStage: active,
+    // Still full-bleed at the terminal frame: the case-context column has
+    // nothing left to add once the decision is final, and remounting it
+    // duplicated the lot identity the header already carries.
     fullBleed: active ? FULL_BLEED.includes(active) : false,
-    completed: completedFrom(
-      events,
-      active,
-      { investigator, verifier, reconciliation, disposition, consequence },
-      terminal,
-    ),
+    completed: completedFrom(events, active, {
+      investigator,
+      verifier,
+      reconciliation,
+      disposition,
+      consequence,
+    }),
     sources: (input.sources ?? []).map((a) => toSource(a, joinedClaims.get(str(a.artifact_id)))),
     /**
      * Whether an artifact is KNOWN to exist but has not been fetched yet.
@@ -2063,8 +2223,11 @@ export function project(input: ProjectInput): DecisionWorkspaceVM {
     verifier,
     reconciliation,
     disposition,
-    consequence,
-    activity: toActivity(events).reverse(), // newest first (D7)
+    consequence: consequenceVM,
+    // `all`, never the gated view: the rail is the audit chronology and must
+    // show real events as they arrive. The gate withholds CANVAS presentation
+    // only — an audit surface that hid events would lie by omission.
+    activity: toActivity(all).reverse(), // newest first (D7)
     failure,
     // One or the other, never both: an answered question has no panel, and an
     // unanswered one has no record. The control cannot outlive its decision.
