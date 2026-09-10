@@ -174,7 +174,7 @@ def test_record_stores_consequences_and_recovery(vouch):
 def test_escalated_decisions_are_persisted_too(vouch, store):
     """The abstention is exactly the record an auditor will want."""
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
 
     loaded = store.load(outcome.decision_record_id)
     assert loaded is not None
@@ -183,7 +183,7 @@ def test_escalated_decisions_are_persisted_too(vouch, store):
 
 def test_security_quarantine_is_persisted(vouch, store):
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1004", documents=[{"raw": COA_HOSTILE}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_HOSTILE}])
 
     loaded = store.load(outcome.decision_record_id)
     assert loaded["failure_category"] == "SECURITY_QUARANTINE"
@@ -207,7 +207,7 @@ def test_disagreement_records_the_actual_differing_values(vouch):
     class DivergentSufficiency(IndependentVerifier):
         """Contract-valid and divergent.
 
-        LOT-1005's viscosity claim was measured by ASTM-D445 at 40C where
+        LOT-1007's viscosity claim was measured by ASTM-D445 at 40C where
         SPEC-R3:A asks for ASTM-D2196 at 25C, and the only equivalence on
         record is scoped to 25C. Whether that evidence still establishes the
         requirement is a judgment the validator may not make, so this verifier
@@ -235,7 +235,7 @@ def test_disagreement_records_the_actual_differing_values(vouch):
     v = VouchV2(
         corpus, verifier=DivergentSufficiency(corpus), record_store=InMemoryRecordStore()
     )
-    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
 
     assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason
     reconciliation = outcome.record.reconciliation
@@ -321,7 +321,7 @@ def test_persisted_events_carry_no_chain_of_thought(vouch, store):
 
 def test_quality_decision_event_is_persisted(vouch, store):
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
     emitted = {row["event"] for row in store.events_for(outcome.decision_record_id)}
     assert "QUALITY_DECISION_REQUIRED" in emitted
 

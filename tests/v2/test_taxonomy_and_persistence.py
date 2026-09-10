@@ -163,7 +163,7 @@ def test_security_quarantine_is_not_insufficiency(vouch):
     from vouch.v2.fixtures import COA_HOSTILE
 
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1004", documents=[{"raw": COA_HOSTILE}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_HOSTILE}])
     assert outcome.failure_category == "SECURITY_QUARANTINE"
     assert outcome.failure_category != "DOMAIN_INSUFFICIENT_EVIDENCE"
 

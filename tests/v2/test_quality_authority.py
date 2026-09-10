@@ -11,7 +11,7 @@ The case this file proves is the one Vouch could not previously make:
       -> deterministic disposition runs for the first time
       -> RELEASE
 
-The disagreement is NOT manufactured. LOT-1006's snapshot carries two real
+The disagreement is NOT manufactured. LOT-1003's snapshot carries two real
 viscosity results — one by the method SPEC-R3:A names, one by a method an
 authoritative equivalence genuinely covers — and the corpus states no
 precedence between them. Both briefs survive every deterministic check. That
@@ -47,7 +47,7 @@ def vouch(corpus):
 def disagreed(vouch):
     """A case sitting at MATERIAL_DISAGREEMENT, awaiting a human."""
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason
     return corpus, v, outcome
 
@@ -126,7 +126,7 @@ def test_both_selected_claims_are_real_and_applicable(disagreed):
     for option in question.options:
         claim = claims.get(option["claim_id"])
         assert claim is not None, option
-        assert claim.lot_id == "LOT-1006"
+        assert claim.lot_id == "LOT-1003"
         assert claim.characteristic == "viscosity"
 
 
@@ -139,9 +139,9 @@ def test_run_one_does_not_disposition_or_mutate(disagreed):
     assert record.disposition.disposition == ""
     assert record.mutation.action == ""
     assert record.capability.capability_id == ""
-    assert corpus.lot("LOT-1006").status == "RECEIVED"
-    assert corpus.get("inventory", "LOT-1006").usable is False
-    assert corpus.lot("LOT-1006").state_version == 1
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
+    assert corpus.get("inventory", "LOT-1003").usable is False
+    assert corpus.lot("LOT-1003").state_version == 1
 
 
 def test_run_one_raises_exactly_one_answerable_question(disagreed):
@@ -194,8 +194,8 @@ def test_establishing_the_equivalence_path_resumes_and_releases(disagreed):
         "MATCH", "NON_MATERIAL_DIFFERENCE"
     )
     assert outcome.disposition == "RELEASE"
-    assert corpus.lot("LOT-1006").status == "RELEASED"
-    assert corpus.get("inventory", "LOT-1006").usable is True
+    assert corpus.lot("LOT-1003").status == "RELEASED"
+    assert corpus.get("inventory", "LOT-1003").usable is True
     assert outcome.record.mutation.action == "release_lot"
     assert outcome.record.mutation.inventory_delta == 200.0
 
@@ -230,7 +230,7 @@ def test_authority_is_bound_to_the_snapshot_it_answered(disagreed):
     assert authority.evidence_snapshot_id == snapshot_id
     assert authority.claim_set_hash == claim_set_hash
     assert authority.source_run == 1
-    assert authority.lot_id == "LOT-1006"
+    assert authority.lot_id == "LOT-1003"
     assert authority.accountable_actor == ACTOR
     assert authority.authority_source == SOURCE
     assert authority.created_at
@@ -314,8 +314,8 @@ def test_keep_held_settles_without_a_second_run(disagreed):
     assert outcome.record.quality_authority.held
     assert outcome.disposition == ""
     assert outcome.record.mutation.action == ""
-    assert corpus.lot("LOT-1006").status == "RECEIVED"
-    assert corpus.get("inventory", "LOT-1006").usable is False
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
+    assert corpus.get("inventory", "LOT-1003").usable is False
 
 
 def test_keep_held_is_durably_recorded(disagreed):
@@ -343,14 +343,14 @@ def test_keep_held_is_durably_recorded(disagreed):
 def test_duplicate_authorize_is_idempotent(disagreed):
     corpus, v, first = disagreed
     authorize(v, first)
-    version_after = corpus.lot("LOT-1006").state_version
+    version_after = corpus.lot("LOT-1003").state_version
 
     again = authorize(v, first)
     record = v.resume(first.decision_record_id)
 
     assert len(record.quality_authority.decisions) == 1
     assert record.run_count == 2, "a replay must not create a third run"
-    assert corpus.lot("LOT-1006").state_version == version_after
+    assert corpus.lot("LOT-1003").state_version == version_after
     assert "already recorded" in again.reason
 
 
@@ -393,7 +393,7 @@ def test_invalid_authority_submissions_fail_closed(disagreed, overrides, categor
         authorize(v, first, **overrides)
 
     assert raised.value.category is category
-    assert corpus.lot("LOT-1006").status == "RECEIVED"
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
     assert v.resume(first.decision_record_id).quality_authority.decisions == []
 
 
@@ -404,7 +404,7 @@ def test_a_release_enum_cannot_be_smuggled_through_the_decision_field(disagreed)
                     "AUTHORIZE_APPLICABILITY"):
         with pytest.raises(VouchFailure):
             authorize(v, first, decision=attempt)
-    assert corpus.lot("LOT-1006").status == "RECEIVED"
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
 
 
 def test_authority_cannot_be_recorded_on_a_record_with_no_question(vouch):
@@ -440,11 +440,11 @@ def test_authority_does_not_mutate_the_global_equivalence_catalog(disagreed):
 def test_authority_does_not_leak_to_another_decision(corpus):
     """A second decision on the same lot starts with no authority at all."""
     v = VouchV2(corpus, record_store=InMemoryRecordStore())
-    first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    first = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     authorize(v, first)
 
     second = VouchV2(build_corpus(), record_store=InMemoryRecordStore())
-    fresh = second.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    fresh = second.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
 
     assert fresh.failure_category == "MATERIAL_DISAGREEMENT"
     assert fresh.record.quality_authority.decisions == []
@@ -456,7 +456,7 @@ def test_authority_alone_moves_no_inventory(disagreed):
     corpus, v, first = disagreed
     others = {
         lot_id: corpus.get("inventory", lot_id).usable
-        for lot_id in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004", "LOT-1005")
+        for lot_id in ("LOT-1001", "LOT-1002", "LOT-1004", "LOT-1005", "LOT-1007")
     }
     authorize(v, first)
 
@@ -469,7 +469,7 @@ def test_authority_survives_a_restart_and_still_resumes(corpus, tmp_path):
     still continue the case."""
     store = JsonRecordStore(tmp_path / "records")
     first = VouchV2(corpus, record_store=store)
-    outcome = first.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    outcome = first.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
 
     second = VouchV2(corpus, record_store=JsonRecordStore(tmp_path / "records"))
     resumed = second.submit_quality_authority(
@@ -509,14 +509,14 @@ def test_lot_1006_recovers_c419_and_leaves_c417_c418_alone(vouch):
     """The consequence is real, and it lands where it belongs.
 
     C-419 needs 800 kg of MAT-RESIN-3 against 600 usable, with the missing 200
-    queued against LOT-1006 — so it starts AT_RISK. LOT-1006 is exactly that
+    queued against LOT-1003 — so it starts AT_RISK. LOT-1003 is exactly that
     200. Releasing it closes the gap and nothing else: the alloy orders belong
     to the LOT-1001/LOT-1002 story and must not move.
     """
     corpus, v = vouch
     assert corpus.get("production_order", "C-419").status == "AT_RISK"
 
-    first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    first = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     # Run 1 changes nothing — the disagreement stopped before any mutation.
     assert corpus.get("production_order", "C-419").status == "AT_RISK"
 
@@ -536,7 +536,7 @@ def test_lot_1006_recovers_c419_and_leaves_c417_c418_alone(vouch):
 
 def test_the_c417_recovery_story_is_unchanged_by_lot_1006(corpus):
     """The canonical LOT-1001 -> LOT-1002 sequence must reach exactly the same
-    place whether or not LOT-1006 was decided first."""
+    place whether or not LOT-1003 was decided first."""
 
     def sequence(with_1006: bool):
         from vouch.v2.fixtures import COA_HERO
@@ -544,7 +544,7 @@ def test_the_c417_recovery_story_is_unchanged_by_lot_1006(corpus):
         world = build_corpus()
         v = VouchV2(world, record_store=InMemoryRecordStore())
         if with_1006:
-            first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+            first = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
             authorize(v, first)
         v.evaluate_lot("LOT-1001", documents=[{"raw": COA_CLEAN}])
         outcome = v.evaluate_lot("LOT-1002", documents=[{"raw": COA_HERO}])
@@ -563,7 +563,7 @@ def test_the_c417_recovery_story_is_unchanged_by_lot_1006(corpus):
 
 
 # ==========================================================================
-# reasoner independence — a general property, not a LOT-1006 branch
+# reasoner independence — a general property, not a LOT-1003 branch
 # ==========================================================================
 
 
@@ -579,7 +579,7 @@ def _tools_for(corpus, lot_id, claims, agent):
 
 def _claim(
     claim_id, characteristic, value, method, condition,
-    trust="UNTRUSTED_SUPPLIER", lot_id="LOT-1006", material_id="MAT-RESIN-3",
+    trust="UNTRUSTED_SUPPLIER", lot_id="LOT-1003", material_id="MAT-RESIN-3",
 ):
     """A real CanonicalEvidenceClaim, so the reasoners run against the same
     typed objects the pipeline gives them."""
@@ -619,7 +619,7 @@ def test_the_two_reasoners_agree_when_only_one_path_applies(corpus):
     path, the two derivations must reach the SAME answer — otherwise they
     would manufacture disputes on ordinary lots."""
     claims = [_claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C")]
-    investigator, verifier = _briefs(corpus, "LOT-1006", claims)
+    investigator, verifier = _briefs(corpus, "LOT-1003", claims)
 
     assert investigator.material_fingerprint() == verifier.material_fingerprint()
 
@@ -627,7 +627,7 @@ def test_the_two_reasoners_agree_when_only_one_path_applies(corpus):
 def test_the_two_reasoners_agree_when_no_evidence_applies(corpus):
     """A method nothing covers is uncovered for both of them."""
     claims = [_claim("CLM-a", "viscosity", 285.0, "ASTM-XX", "25C")]
-    investigator, verifier = _briefs(corpus, "LOT-1006", claims)
+    investigator, verifier = _briefs(corpus, "LOT-1003", claims)
 
     assert investigator.material_fingerprint() == verifier.material_fingerprint()
     assert investigator.sufficiency.value == "INSUFFICIENT_EVIDENCE"
@@ -642,10 +642,10 @@ def test_the_reasoners_diverge_only_when_several_paths_are_authorized(corpus):
         _claim("CLM-b", "viscosity", 312.0, "ASTM-D445", "25C"),
     ]
 
-    same = _briefs(corpus, "LOT-1006", one_path)
+    same = _briefs(corpus, "LOT-1003", one_path)
     assert same[0].material_fingerprint() == same[1].material_fingerprint()
 
-    differ = _briefs(corpus, "LOT-1006", two_paths)
+    differ = _briefs(corpus, "LOT-1003", two_paths)
     assert differ[0].material_fingerprint() != differ[1].material_fingerprint()
 
 
@@ -656,7 +656,7 @@ def test_the_verifier_prefers_the_direct_method_when_it_is_the_latest(corpus):
         _claim("CLM-a", "viscosity", 312.0, "ASTM-D445", "25C"),
         _claim("CLM-b", "viscosity", 285.0, "ASTM-D2196", "25C"),
     ]
-    _, verifier = _briefs(corpus, "LOT-1006", claims)
+    _, verifier = _briefs(corpus, "LOT-1003", claims)
     row = {c.test: c for c in verifier.coverage}["viscosity"]
 
     assert row.evidence_ref == "CLM-b"
@@ -669,11 +669,11 @@ def test_a_scoped_authority_converges_the_two_reasoners(corpus):
         _claim("CLM-a", "viscosity", 285.0, "ASTM-D2196", "25C"),
         _claim("CLM-b", "viscosity", 312.0, "ASTM-D445", "25C"),
     ]
-    before = _briefs(corpus, "LOT-1006", claims)
+    before = _briefs(corpus, "LOT-1003", claims)
     assert before[0].material_fingerprint() != before[1].material_fingerprint()
 
     after = _briefs(
-        corpus, "LOT-1006", claims,
+        corpus, "LOT-1003", claims,
         context={"authorized_evidence_refs": ["CLM-b"]},
     )
     assert after[0].material_fingerprint() == after[1].material_fingerprint()
@@ -691,7 +691,7 @@ def test_higher_trust_evidence_still_wins_for_both(corpus):
             trust="HUMAN_AUTHORIZED",
         ),
     ]
-    investigator, verifier = _briefs(corpus, "LOT-1006", claims)
+    investigator, verifier = _briefs(corpus, "LOT-1003", claims)
 
     for brief in (investigator, verifier):
         row = {c.test: c for c in brief.coverage}["viscosity"]
@@ -732,8 +732,8 @@ def test_establishing_the_direct_path_quarantines_instead(disagreed):
         "MATCH", "NON_MATERIAL_DIFFERENCE"
     )
     assert outcome.disposition == "QUARANTINE"
-    assert corpus.lot("LOT-1006").status == "QUARANTINED"
-    assert corpus.get("inventory", "LOT-1006").usable is False
+    assert corpus.lot("LOT-1003").status == "QUARANTINED"
+    assert corpus.get("inventory", "LOT-1003").usable is False
     assert outcome.record.mutation.action == "quarantine_lot"
 
 
@@ -743,7 +743,7 @@ def test_the_two_answers_lead_to_opposite_dispositions(corpus):
     for equivalence in (True, False):
         world = build_corpus()
         v = VouchV2(world, record_store=InMemoryRecordStore())
-        first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+        first = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
         chosen = option_for(first, equivalence=equivalence)
         outcome = v.submit_quality_authority(
             decision_record_id=first.decision_record_id,
@@ -754,7 +754,7 @@ def test_the_two_answers_lead_to_opposite_dispositions(corpus):
         )
         outcomes[equivalence] = (
             outcome.disposition,
-            world.lot("LOT-1006").status,
+            world.lot("LOT-1003").status,
             world.get("production_order", "C-419").status,
         )
 
@@ -803,7 +803,7 @@ def test_the_human_cannot_establish_evidence_the_question_did_not_offer(disagree
             authority_source=SOURCE,
         )
     assert raised.value.category is FailureCategory.POLICY_REFUSAL
-    assert corpus.lot("LOT-1006").status == "RECEIVED"
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
 
 
 def test_the_scoped_authority_reaches_the_model_prompt():
@@ -819,7 +819,7 @@ def test_the_scoped_authority_reaches_the_model_prompt():
 
     corpus = build_corpus()
     context = {
-        "lot_id": "LOT-1006",
+        "lot_id": "LOT-1003",
         "material_id": "MAT-RESIN-3",
         "received_at": "2026-03-08",
         "authorized_evidence_refs": ["CLM-established-01"],
@@ -864,7 +864,7 @@ def test_duplicate_coverage_for_one_requirement_is_rejected(corpus):
 
     `compute_disposition` keys coverage by characteristic, so a second row for
     the same requirement silently replaced the first and the disposition became
-    a function of brief ORDERING. A live Nova run returned both LOT-1006
+    a function of brief ORDERING. A live Nova run returned both LOT-1003
     results for its single viscosity requirement and the failing one was
     overwritten.
     """
@@ -876,7 +876,7 @@ def test_duplicate_coverage_for_one_requirement_is_rejected(corpus):
             {"test": "viscosity", "evidence_ref": "CLM-b",
              "method_match": False, "equivalence_record_id": "EQV-1"},
         ]),
-        corpus, lot_id="LOT-1006", claims_by_id={},
+        corpus, lot_id="LOT-1003", claims_by_id={},
     )
 
     assert not checks.passed
@@ -890,7 +890,7 @@ def test_a_single_coverage_row_is_still_accepted(corpus, vouch):
 
     checks = run_basis_checks(
         _brief([{"test": "viscosity", "evidence_ref": "CLM-a", "method_match": True}]),
-        corpus, lot_id="LOT-1006", claims_by_id={},
+        corpus, lot_id="LOT-1003", claims_by_id={},
     )
     assert not any("coverage rows" in f for f in checks.failures)
 
@@ -910,10 +910,10 @@ def test_reversing_duplicate_row_order_cannot_change_the_outcome(corpus):
          "method_match": False, "equivalence_record_id": "EQV-1"},
     ]
     forward = run_basis_checks(
-        _brief(rows), corpus, lot_id="LOT-1006", claims_by_id={}
+        _brief(rows), corpus, lot_id="LOT-1003", claims_by_id={}
     )
     reversed_ = run_basis_checks(
-        _brief(list(reversed(rows))), corpus, lot_id="LOT-1006", claims_by_id={}
+        _brief(list(reversed(rows))), corpus, lot_id="LOT-1003", claims_by_id={}
     )
 
     # Both orderings are refused. The message lists the claims in brief order,
@@ -949,11 +949,11 @@ def test_a_duplicate_brief_never_reaches_disposition(vouch):
     v = VouchV2(
         corpus, investigator=Duplicating(corpus), record_store=InMemoryRecordStore()
     )
-    outcome = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
 
     assert outcome.disposition == "", "a duplicated brief must not disposition"
     assert outcome.record.mutation.action == ""
-    assert corpus.lot("LOT-1006").status == "RECEIVED"
+    assert corpus.lot("LOT-1003").status == "RECEIVED"
 
 
 # ==========================================================================
@@ -975,7 +975,7 @@ def test_run_two_must_cite_the_established_evidence(disagreed):
 
     def errors(rows):
         return v._brief_contract_errors(
-            _brief(rows), "LOT-1006", claims_by_id, [established]
+            _brief(rows), "LOT-1003", claims_by_id, [established]
         )
 
     # Citing the established evidence alone: accepted.
@@ -1083,6 +1083,6 @@ def test_local_and_model_paths_enforce_the_same_contract(disagreed):
 
     offending = v._brief_contract_errors(
         _brief([{"test": "viscosity", "evidence_ref": None}]),
-        "LOT-1006", claims_by_id, [established],
+        "LOT-1003", claims_by_id, [established],
     )
     assert any("Quality established" in e for e in offending)

@@ -355,7 +355,7 @@ export interface QualityAuthorityPanelVM {
  */
 export interface IdentityBindingPanelVM {
   questionId: string;
-  /** "Does supplier batch WP-26-0317-B correspond to internal LOT-1003?" */
+  /** "Does supplier batch WP-26-0317-B correspond to internal LOT-1004?" */
   question: string;
   /** Why a human is here, in one sentence. */
   reason: string;

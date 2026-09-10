@@ -1,5 +1,26 @@
 # Canonical Supplier Evidence — Manifest
 
+> **RENUMBER IN PROGRESS — two documents print a stale lot id.**
+>
+> The canonical film map is now LOT-1001 … LOT-1005 (see
+> `contracts/demo/VOUCH_V2_CANONICAL_SUPPLIER_DOCUMENT_BRIEF.md`). Fixtures,
+> tests, reset tooling and the frontend have all migrated. Two PDFs have not,
+> because their printed identity — not merely their filename — is now false:
+>
+> | File | Prints | Must print | Scenario |
+> |---|---|---|---|
+> | `central-forgeworks-coa-lot-1004.pdf` | `LOT-1004` | **`LOT-1005`** | prompt injection |
+> | `western-polymers-coa-lot-1006.pdf` | `LOT-1006` | **`LOT-1003`** | disagreement |
+>
+> Both need a Design re-export. Filenames are deliberately NOT renamed ahead of
+> that: a file called `…-lot-1005.pdf` that prints `LOT-1004` inside would hide
+> the very mismatch these documents exist to test. Ten backend tests fail
+> against these two files until the re-export lands, and that is the honest
+> state — no assertion was weakened to make them pass.
+>
+> The binding case (`northern-alloys-coa-batch-wp-26-0317-b.pdf`) needed no
+> re-export: it prints no lot id at all, which is the whole point of it.
+
 The five synthetic supplier documents the Vouch demo runs on. They are the
 **exact bytes** that were qualified: each one was run through the real evidence
 pipeline (real `pypdf` extraction, real deterministic parser, real security
@@ -61,20 +82,20 @@ receipt is what changes the answer.
 | | |
 |---|---|
 | Supplier | Northern Alloys (`SUP-NORTH`), site `SITE-N1` |
-| Internal lot | `LOT-1003` · `MAT-ALLOY-7` · PO-82 · 450 kg |
+| Internal lot | `LOT-1004` · `MAT-ALLOY-7` · PO-82 · 450 kg |
 | **Supplier batch (printed)** | **`WP-26-0317-B`** |
 | Document type | Certificate of Analysis |
 | Cites | `SPEC-A7` **Revision C** (the governing revision) |
 | Measurements | tensile_strength 512 MPa (ASTM-E8, room_temp) · hardness 31 HRC (HRC, as_received) |
 | SHA-256 | `326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242` |
 | Intended path | **ordinary extraction** — Textract NOT required |
-| Qualified outcome | 2 claims @ confidence 1.0 → `UNRESOLVED_SUPPLIER_BATCH` → identity question → human confirms `WP-26-0317-B` = `LOT-1003` → **same record, run 2** → both agents → `RELEASE` → `release_lot` → 450 kg usable |
+| Qualified outcome | 2 claims @ confidence 1.0 → `UNRESOLVED_SUPPLIER_BATCH` → identity question → human confirms `WP-26-0317-B` = `LOT-1004` → **same record, run 2** → both agents → `RELEASE` → `release_lot` → 450 kg usable |
 
 The human-resolvable case. The certificate is legitimate, parses cleanly,
 clears security and extracts both measurements at full confidence. Supplier,
 site, material and PO all agree with the receipt. The one thing it does not do
 is name a Vouch lot — it names the supplier's own consignment, and nothing
-authoritative maps `WP-26-0317-B` to `LOT-1003` until Quality establishes it.
+authoritative maps `WP-26-0317-B` to `LOT-1004` until Quality establishes it.
 
 > **The document must not name a Vouch lot.** Any `LOT-####` string on the page
 > binds the certificate immediately and the human is never asked anything. This
@@ -93,21 +114,21 @@ authoritative maps `WP-26-0317-B` to `LOT-1003` until Quality establishes it.
 
 Its 450 kg is deliberately too little to change the readiness of `C-417`,
 `C-418` or `C-419`, so this case tells its own story without disturbing Hero A
-or the LOT-1006 disagreement.
+or the LOT-1003 disagreement.
 
 ## central-forgeworks-coa-lot-1004.pdf
 
 | | |
 |---|---|
 | Supplier | Central Forgeworks (`SUP-CENTRAL`), site `SITE-C1` |
-| Lot | `LOT-1004` · `MAT-ALLOY-7` · PO-80 · 200 kg |
+| Lot | `LOT-1005` · `MAT-ALLOY-7` · PO-80 · 200 kg |
 | Document type | Certificate of Analysis (**hostile**) |
 | Cites | `SPEC-A7` Revision C |
 | Measurements | tensile_strength 402 MPa (ASTM-E8, room_temp) |
 | Payload | prompt-injection text in SUPPLEMENTAL REMARKS, as real selectable PDF text |
 | SHA-256 | `5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947` |
 | Intended path | **security quarantine before any agent runs** |
-| Qualified outcome | injection `DETECTED` → `SECURITY_QUARANTINE` → artifact retained and `excluded_from_decision_use` → neither agent started → zero mutation → `LOT-1004` stays `RECEIVED` |
+| Qualified outcome | injection `DETECTED` → `SECURITY_QUARANTINE` → artifact retained and `excluded_from_decision_use` → neither agent started → zero mutation → `LOT-1005` stays `RECEIVED` |
 
 The 402 MPa value would fail Revision C anyway. That is deliberate: the security
 control fires **before** the quality question is reached, so the demonstrated
@@ -118,7 +139,7 @@ outcome can never be mistaken for a quality verdict.
 | | |
 |---|---|
 | Supplier | Western Polymers (`SUP-WEST`), site `SITE-W1` |
-| Lot | `LOT-1006` · `MAT-RESIN-3` · PO-86 · 200 kg |
+| Lot | `LOT-1003` · `MAT-RESIN-3` · PO-86 · 200 kg |
 | Document type | Certificate of Analysis |
 | Cites | `SPEC-R3` **Revision A** (the governing revision) |
 | Measurements | viscosity **178 cP** (ASTM-D2196, 25C) · viscosity 312 cP (ASTM-D445, 25C) |
@@ -152,6 +173,6 @@ controlling; the deterministic engine draws the conclusion.
 > applicability, which is exactly the question a human is asked to settle.
 > `test_pdf4_states_both_viscosity_paths_and_neither_precedence` pins this.
 
-> Note `EQV-1` is the **same** record that does NOT cover `LOT-1005`'s 40C
+> Note `EQV-1` is the **same** record that does NOT cover `LOT-1007`'s 40C
 > result. One equivalence, two lots, opposite outcomes, decided entirely by
 > condition scope — the scoping field doing real work in both directions.

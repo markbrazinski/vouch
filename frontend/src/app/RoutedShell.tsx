@@ -141,7 +141,7 @@ export function RoutedShell({
   }, []);
 
   /**
-   * Shift+R resets the LOT-1006 scenario while filming. DEV-only: the hook
+   * Shift+R resets the LOT-1003 scenario while filming. DEV-only: the hook
    * registers no listener in a production build.
    *
    * After a reset the shell routes to Incoming, which re-reads authoritative

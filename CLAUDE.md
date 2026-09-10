@@ -587,7 +587,7 @@ Must cover the canonical Vouch paths:
 
 - LOT-1001 — RELEASE
 - LOT-1002 — QUARANTINE + C-417/C-418 recovery
-- LOT-1006 — disagreement → human authority → same-record Run 2
+- LOT-1003 — disagreement → human authority → same-record Run 2
 - EVIDENCE_UNBOUND fail-closed
 - prompt-injection/security halt
 - Today/readiness causal state

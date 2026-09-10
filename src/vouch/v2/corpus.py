@@ -455,8 +455,8 @@ class Corpus:
     #: DOCUMENT rather than the material, so neither is as final as a
     #: quarantine.
     #:
-    #: Not decided here because nothing depends on it: neither LOT-1003 nor
-    #: LOT-1004 has an allocation row, so the demo is unaffected. Deciding it
+    #: Not decided here because nothing depends on it: neither LOT-1004 nor
+    #: LOT-1005 has an allocation row, so the demo is unaffected. Deciding it
     #: on a case that cannot exercise it would be guessing. Revisit when a
     #: queued lot can actually reach one of those states.
     COVERABLE_LOT_STATES = frozenset({"RECEIVED", "PENDING_QA"})

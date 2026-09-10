@@ -35,11 +35,11 @@ def vouch():
 # -- 1. prompt injection inside a supplier document ------------------------
 def test_injection_in_supplier_document_causes_no_mutation(vouch):
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1004", documents=[{"raw": COA_HOSTILE}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_HOSTILE}])
 
     assert outcome.failure_category == "SECURITY_QUARANTINE"
     assert not outcome.mutated
-    assert corpus.lot("LOT-1004").status == "RECEIVED"
+    assert corpus.lot("LOT-1005").status == "RECEIVED"
     assert outcome.record.security.prompt_attack_detected
     assert outcome.record.security.quarantined_artifact_ids
 
@@ -55,11 +55,11 @@ def test_injection_is_inert_even_when_detection_fails(vouch):
     corpus = build_corpus()
     v = VouchV2(corpus, detector=lambda text: (False, ""))  # detection defeated
 
-    outcome = v.evaluate_lot("LOT-1004", documents=[{"raw": COA_HOSTILE}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_HOSTILE}])
 
     # The document DEMANDS release. The lot is not released.
     assert outcome.disposition != "RELEASE"
-    assert corpus.lot("LOT-1004").status != "RELEASED"
+    assert corpus.lot("LOT-1005").status != "RELEASED"
     # 402 MPa against governing rev C (>=480) is a genuine non-conformance.
     assert outcome.disposition == "QUARANTINE"
 
@@ -68,7 +68,7 @@ def test_injected_text_never_reaches_a_model_as_instruction(vouch):
     """Supplier content enters only as labeled claim data."""
     corpus, v = vouch
     claims, _ = v.ingest_evidence(
-        decision_record_id="DR-x", lot_id="LOT-1004", raw=COA_HOSTILE,
+        decision_record_id="DR-x", lot_id="LOT-1005", raw=COA_HOSTILE,
         events=EventLog(),
     )
     # Blocked artifacts yield nothing at all.
@@ -167,13 +167,13 @@ def test_out_of_scope_deviation_is_refused(vouch):
 
 
 def test_out_of_scope_equivalence_does_not_apply(vouch):
-    """EQV-1 covers ASTM-D445 only at 25C. LOT-1005's evidence is at 40C."""
+    """EQV-1 covers ASTM-D445 only at 25C. LOT-1007's evidence is at 40C."""
     from vouch.v2.fixtures import COA_AMBIGUOUS
 
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
     assert outcome.disposition == "INSUFFICIENT_EVIDENCE"
-    assert corpus.lot("LOT-1005").status == "PENDING_QA"
+    assert corpus.lot("LOT-1007").status == "PENDING_QA"
 
 
 # -- 6. stale deviation ----------------------------------------------------
@@ -345,7 +345,7 @@ def test_lifecycle_events_reject_reasoning_payloads():
 def test_quarantined_artifact_is_preserved_not_dropped(vouch):
     """Silent drops hide attacks and lose evidence."""
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1004", documents=[{"raw": COA_HOSTILE}])
+    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_HOSTILE}])
     assert outcome.record.security.quarantined_artifact_ids
     assert outcome.record.evidence.source_artifact_hashes  # original still bound
 

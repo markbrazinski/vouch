@@ -39,7 +39,7 @@ def test_the_requirement_is_still_coverable():
     corpus = build_corpus()
     total = sum(
         corpus.get("inventory", lot).quantity
-        for lot in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004")
+        for lot in ("LOT-1001", "LOT-1002", "LOT-1004", "LOT-1005")
     )
     required = build_corpus().order("C-417").requirements[0].quantity
     assert total == 1550.0
@@ -53,7 +53,7 @@ def test_no_alloy_stock_is_usable_before_a_release():
     """
     corpus = build_corpus()
     assert corpus.usable_inventory("LOT-1001") == 0
-    for lot in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004"):
+    for lot in ("LOT-1001", "LOT-1002", "LOT-1004", "LOT-1005"):
         assert corpus.get("inventory", lot).usable is False
 
 
@@ -84,7 +84,7 @@ def test_canonical_orders_and_slots():
 
     Each order's seeded status is its OWN correct starting state, not a blanket
     READY. C-419 needs 800 kg of MAT-RESIN-3 against 600 usable, with the
-    missing 200 queued against LOT-1006 by PC-2 — that is AT_RISK, and seeding
+    missing 200 queued against LOT-1003 by PC-2 — that is AT_RISK, and seeding
     it READY would be a stale value the coverage arithmetic contradicts. The
     seed is still fixed and reseed still repeatable; it is simply not uniform.
     """

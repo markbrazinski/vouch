@@ -32,14 +32,14 @@ const show = (capture: unknown, lotId: string) => {
 
 describe('Hero B run 2 renders as a continuation, not a fresh release', () => {
   it('marks the reasoning stages as run 2', () => {
-    show(run2, 'LOT-1003');
+    show(run2, 'LOT-1004');
     const badges = screen.getAllByTestId(/^completed-run-/);
     expect(badges.length).toBeGreaterThan(0);
     badges.forEach((b) => expect(b.textContent).toBe('RUN 2'));
   });
 
   it('still shows the release it reached', () => {
-    show(run2, 'LOT-1003');
+    show(run2, 'LOT-1004');
     expect(screen.getAllByText(/RELEASE/i).length).toBeGreaterThan(0);
   });
 });
@@ -66,30 +66,30 @@ describe('Hero A is a single run and says nothing about runs', () => {
 
 describe('the hostile page renders no fabricated panel', () => {
   it('shows no Disposition stage card over empty content', () => {
-    show(hostile, 'LOT-1004');
+    show(hostile, 'LOT-1005');
     expect(screen.queryByText(/deterministic — computed from established truth/)).toBeNull();
   });
 
   it('says no stage ran, rather than implying one is coming', () => {
-    show(hostile, 'LOT-1004');
+    show(hostile, 'LOT-1005');
     expect(screen.getByText(/No stage ran/)).toBeTruthy();
     expect(screen.queryByText('No stage yet.')).toBeNull();
   });
 
   it('shows the bound lot, not the word BOUND, as the bound fact', () => {
-    show(hostile, 'LOT-1004');
-    expect(screen.getAllByText('LOT-1004').length).toBeGreaterThan(0);
+    show(hostile, 'LOT-1005');
+    expect(screen.getAllByText('LOT-1005').length).toBeGreaterThan(0);
   });
 
   it('renders the security outcome', () => {
-    show(hostile, 'LOT-1004');
+    show(hostile, 'LOT-1005');
     expect(screen.getByTestId('outcome-summary').textContent).toMatch(/quarantined/i);
   });
 });
 
 describe('Hero B run 1 renders the abstention as a product outcome', () => {
   it('names the quality decision without a disposition pill', () => {
-    show(run1, 'LOT-1003');
+    show(run1, 'LOT-1004');
     expect(screen.getByTestId('outcome-summary').textContent).toMatch(/Quality decision/i);
   });
 });

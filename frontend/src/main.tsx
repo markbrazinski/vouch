@@ -54,7 +54,7 @@ const HERO_A: HeroAEntry = {
  * Every canonical arrival and the certificate that came with it.
  *
  * One entry per lot Incoming lists. Each document is attached ONLY to the lot
- * its supplier issued it for — sending Northern Alloys' report with LOT-1004
+ * its supplier issued it for — sending Northern Alloys' report with LOT-1005
  * would assert they certified Central Forgeworks' material — and a lot with no
  * entry here simply starts from the evidence already on its record, which is
  * what the backend does when no document is supplied.
@@ -72,24 +72,24 @@ const ARRIVALS: ArrivalDocuments = {
     documentName: 'northern-alloys-coa-lot-1001.pdf',
   },
   'LOT-1002': HERO_A,
-  'LOT-1003': {
-    lotId: 'LOT-1003',
+  'LOT-1004': {
+    lotId: 'LOT-1004',
     material: 'MAT-ALLOY-7',
     receiptMeta: 'SUP-NORTH · site SITE-N1 · 450 kg',
     contentType: 'application/pdf',
     documentUrl: COA_BATCH_WP,
     documentName: 'northern-alloys-coa-batch-wp-26-0317-b.pdf',
   },
-  'LOT-1004': {
-    lotId: 'LOT-1004',
+  'LOT-1005': {
+    lotId: 'LOT-1005',
     material: 'MAT-ALLOY-7',
     receiptMeta: 'SUP-CENTRAL · site SITE-C1 · 200 kg',
     contentType: 'application/pdf',
     documentUrl: COA_1004,
     documentName: 'central-forgeworks-coa-lot-1004.pdf',
   },
-  'LOT-1006': {
-    lotId: 'LOT-1006',
+  'LOT-1003': {
+    lotId: 'LOT-1003',
     material: 'MAT-RESIN-3',
     receiptMeta: 'SUP-WEST · site SITE-W1 · 200 kg',
     contentType: 'application/pdf',

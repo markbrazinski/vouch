@@ -33,7 +33,7 @@ const vmOf = (capture: unknown, prior: unknown[] = []) => {
   );
   return project({
     decisionRecordId: dto.decision_record_id,
-    lotId: 'LOT-1003',
+    lotId: 'LOT-1004',
     material: 'MAT-ALLOY-7',
     receiptMeta: 'SUP-NORTH · site SITE-N1 · 450 kg',
     events: [...earlier, ...((dto.events ?? []) as LifecycleEventDTO[])],
@@ -56,7 +56,7 @@ describe('run 1 asks an identity question, not an extraction one', () => {
   it('asks the exact question, naming both identifiers', () => {
     const vm = vmOf(run1);
     expect(vm.identityBindingPanel!.question).toBe(
-      'Does supplier batch WP-26-0317-B correspond to internal LOT-1003 for this evidence?',
+      'Does supplier batch WP-26-0317-B correspond to internal LOT-1004 for this evidence?',
     );
   });
 
@@ -73,7 +73,7 @@ describe('run 1 asks an identity question, not an extraction one', () => {
     expect(screen.getByTestId('identity-side-supplier').textContent).toContain(
       'WP-26-0317-B',
     );
-    expect(screen.getByTestId('identity-side-vouch').textContent).toContain('LOT-1003');
+    expect(screen.getByTestId('identity-side-vouch').textContent).toContain('LOT-1004');
     expect(screen.getByTestId('identity-mapping-status').textContent).toMatch(
       /MAPPING NOT ESTABLISHED/,
     );
@@ -120,7 +120,7 @@ describe('run 1 asks an identity question, not an extraction one', () => {
     );
     expect(raised).toBeDefined();
     expect(raised!.resultSummary).toContain('WP-26-0317-B');
-    expect(raised!.resultSummary).toContain('LOT-1003');
+    expect(raised!.resultSummary).toContain('LOT-1004');
   });
 });
 
@@ -131,7 +131,7 @@ describe('run 2 is the same record continuing', () => {
     expect(vm.qualityAuthority).not.toBeNull();
     expect(vm.qualityAuthority!.headline).toBe('Identity authority');
     expect(vm.qualityAuthority!.answer).toBe(
-      'Supplier batch WP-26-0317-B confirmed as LOT-1003',
+      'Supplier batch WP-26-0317-B confirmed as LOT-1004',
     );
     expect(vm.qualityAuthority!.stageLabel).toBe('Identity authority');
   });

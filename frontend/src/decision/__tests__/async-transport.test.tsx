@@ -161,7 +161,7 @@ describe('B1 — evaluation is started, never awaited', () => {
 
     const { result } = renderHook(() => useDecisionRun('DR-abc123'));
     await act(async () => {
-      await result.current.start({ lotId: 'LOT-1003', document: 'x' });
+      await result.current.start({ lotId: 'LOT-1004', document: 'x' });
     });
 
     await waitFor(() => expect(result.current.running).toBe(false), { timeout: 5000 });
@@ -199,7 +199,7 @@ describe('B1 — evaluation is started, never awaited', () => {
 
     const { result } = renderHook(() => useDecisionRun('DR-abc123'));
     await act(async () => {
-      await result.current.resume({ lotId: 'LOT-1003', authoritySource: 'QA-LEAD', document: 'x' });
+      await result.current.resume({ lotId: 'LOT-1004', authoritySource: 'QA-LEAD', document: 'x' });
     });
 
     const evidence = calls().filter((u) => u.includes('/api/evidence'));
@@ -236,7 +236,7 @@ describe('B2 — Incoming reads the real decision list', () => {
           rows: [
             {
               decision_record_id: 'DR-aa96520371ae',
-              lot_id: 'LOT-1004',
+              lot_id: 'LOT-1005',
               material_id: 'MAT-ALLOY-7',
               material_name: 'Alloy 7 billet',
               supplier_id: 'SUP-CENTRAL',

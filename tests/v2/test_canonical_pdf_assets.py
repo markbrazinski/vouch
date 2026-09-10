@@ -108,7 +108,7 @@ def test_the_manifest_records_every_asset_and_hash() -> None:
     "path,lot_id",
     [
         (PDF0, "LOT-1001"), (PDF1, "LOT-1002"),
-        (PDF3, "LOT-1004"), (PDF4, "LOT-1006"),
+        (PDF3, "LOT-1005"), (PDF4, "LOT-1003"),
     ],
 )
 def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus) -> None:
@@ -131,8 +131,8 @@ def test_each_document_states_its_own_lot_facts(path: Path, lot_id: str, corpus)
     [
         (PDF0, "LOT-1001", "MAT-ALLOY-7", "SUP-NORTH", "SITE-N1"),
         (PDF1, "LOT-1002", "MAT-ALLOY-7", "SUP-EAST", "SITE-E1"),
-        (PDF3, "LOT-1004", "MAT-ALLOY-7", "SUP-CENTRAL", "SITE-C1"),
-        (PDF4, "LOT-1006", "MAT-RESIN-3", "SUP-WEST", "SITE-W1"),
+        (PDF3, "LOT-1005", "MAT-ALLOY-7", "SUP-CENTRAL", "SITE-C1"),
+        (PDF4, "LOT-1003", "MAT-RESIN-3", "SUP-WEST", "SITE-W1"),
     ],
 )
 def test_every_document_binds_to_its_lot(

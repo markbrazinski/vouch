@@ -425,7 +425,7 @@ def run_basis_checks(
     # for the same requirement silently replaced the first and the disposition
     # became a function of brief ORDERING. A live Nova run returned both the
     # 178 cP direct result and the 312 cP equivalence-covered one for
-    # LOT-1006's single viscosity requirement; the failing row was overwritten
+    # LOT-1003's single viscosity requirement; the failing row was overwritten
     # and the lot released. Both agents did that, so they reconciled to MATCH
     # and nothing downstream had reason to look.
     #

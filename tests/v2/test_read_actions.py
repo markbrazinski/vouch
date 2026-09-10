@@ -222,7 +222,7 @@ def test_events_stay_gapless_across_a_resumed_run(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1005",
+        "action": "evaluate_lot", "lot_id": "LOT-1007",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
@@ -231,7 +231,7 @@ def test_events_stay_gapless_across_a_resumed_run(runtime):
 
     resumed = runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1007", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
     assert resumed["decision_record_id"] == record_id
@@ -294,13 +294,13 @@ def test_get_decision_carries_both_runs_after_a_resume(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1005",
+        "action": "evaluate_lot", "lot_id": "LOT-1007",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
     runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1007", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
 
@@ -374,13 +374,13 @@ def test_an_identity_halt_needs_no_binding_specific_incoming_rule(runtime):
         b"hardness: 31 HRC (HRC, as_received)\n"
     )
     outcome = runtime._VOUCH.evaluate_lot(
-        "LOT-1003", documents=[{"raw": batch_only, "document_identity": "COA"}]
+        "LOT-1004", documents=[{"raw": batch_only, "document_identity": "COA"}]
     )
     assert outcome.failure_category == "EVIDENCE_IDENTITY_UNRESOLVED"
 
     row = next(
         r for r in runtime.invoke({"action": "list_decisions", "limit": 50})["rows"]
-        if r["lot_id"] == "LOT-1003"
+        if r["lot_id"] == "LOT-1004"
     )
     assert row["row_state"] == "QUALITY_DECISION_REQUIRED"
     assert row["attention_required"] is True
@@ -413,10 +413,10 @@ def test_incoming_lists_arrivals_that_have_no_decision_yet(runtime):
     assert response["ok"]
 
     by_lot = {row["lot_id"]: row for row in response["rows"]}
-    for lot_id in ("LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004", "LOT-1005", "LOT-1006"):
+    for lot_id in ("LOT-1001", "LOT-1002", "LOT-1004", "LOT-1005", "LOT-1007", "LOT-1003"):
         assert lot_id in by_lot, f"{lot_id} has arrived and must be listed"
 
-    arrival = by_lot["LOT-1006"]
+    arrival = by_lot["LOT-1003"]
     # No decision exists, so no record is claimed — but every fact about the
     # lot is real and comes from the authoritative corpus.
     assert arrival["decision_record_id"] == ""
@@ -455,7 +455,7 @@ def test_incoming_survives_a_malformed_lot_and_hides_test_debris(runtime):
     assert response["ok"], response
 
     listed = {row["lot_id"] for row in response["rows"]}
-    assert "LOT-1006" in listed, "the real arrivals must still be listed"
+    assert "LOT-1003" in listed, "the real arrivals must still be listed"
     # Test litter is filtered by name; a genuinely malformed real lot is
     # skipped rather than crashing the surface.
     assert "PYTEST-deadbeef01" not in listed
@@ -467,7 +467,7 @@ def test_a_resolved_disagreement_stops_asking_for_a_decision(runtime):
 
     `failure_category` is the LAST failure a record saw, and on a resumed case
     run 1's MATERIAL_DISAGREEMENT stays on the document after run 2 released
-    the lot. Reading it alone made a reseeded LOT-1006 sit in Incoming asking
+    the lot. Reading it alone made a reseeded LOT-1003 sit in Incoming asking
     for a quality decision that had already been given — work nobody owed.
     """
     import base64
@@ -477,14 +477,14 @@ def test_a_resolved_disagreement_stops_asking_for_a_decision(runtime):
         "western-polymers-coa-lot-1006.pdf"
     )
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1006",
+        "action": "evaluate_lot", "lot_id": "LOT-1003",
         "document_b64": base64.b64encode(pdf.read_bytes()).decode(),
         "content_type": "application/pdf",
     })
     assert first["failure_category"] == "MATERIAL_DISAGREEMENT"
 
     rows = runtime.invoke({"action": "list_decisions"})["rows"]
-    open_row = next(r for r in rows if r["lot_id"] == "LOT-1006")
+    open_row = next(r for r in rows if r["lot_id"] == "LOT-1003")
     assert open_row["row_state"] == "QUALITY_DECISION_REQUIRED"
     assert open_row["attention_required"] is True
 
@@ -500,29 +500,29 @@ def test_a_resolved_disagreement_stops_asking_for_a_decision(runtime):
 
     # Now roll the lot back the way a reseed does, leaving the record behind.
     # The runtime fixture is module-scoped, so the corpus is restored
-    # afterwards — this test borrows LOT-1006's state and must give it back.
+    # afterwards — this test borrows LOT-1003's state and must give it back.
     from dataclasses import replace
 
     corpus = runtime._CORPUS
-    released = corpus.lot("LOT-1006")
-    corpus.put("lot", "LOT-1006", replace(released, status="RECEIVED"))
+    released = corpus.lot("LOT-1003")
+    corpus.put("lot", "LOT-1003", replace(released, status="RECEIVED"))
     try:
         rows = runtime.invoke({"action": "list_decisions"})["rows"]
-        settled = next(r for r in rows if r["lot_id"] == "LOT-1006")
+        settled = next(r for r in rows if r["lot_id"] == "LOT-1003")
 
         assert settled["row_state"] == "EVIDENCE_RECEIVED"
         assert settled["attention_required"] is False
     finally:
-        # Hand LOT-1006 back UNDECIDED, not released. This test drove it all
+        # Hand LOT-1003 back UNDECIDED, not released. This test drove it all
         # the way to RELEASE, and the module-scoped fixture would carry that
         # into every later test — one of which needs a fresh disagreement on
         # this same lot. Restoring the released row would leak this test's
         # effect into its neighbours.
-        corpus.put("lot", "LOT-1006", replace(released, status="RECEIVED"))
-        inventory = corpus.get("inventory", "LOT-1006")
+        corpus.put("lot", "LOT-1003", replace(released, status="RECEIVED"))
+        inventory = corpus.get("inventory", "LOT-1003")
         if inventory is not None:
             corpus.put(
-                "inventory", "LOT-1006", replace(inventory, usable=False)
+                "inventory", "LOT-1003", replace(inventory, usable=False)
             )
 
 
@@ -535,14 +535,14 @@ def test_a_decided_lot_is_not_duplicated_by_its_arrival(runtime):
         "western-polymers-coa-lot-1006.pdf"
     )
     outcome = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1006",
+        "action": "evaluate_lot", "lot_id": "LOT-1003",
         "document_b64": base64.b64encode(pdf.read_bytes()).decode(),
         "content_type": "application/pdf",
     })
     assert outcome["failure_category"] == "MATERIAL_DISAGREEMENT"
 
     rows = runtime.invoke({"action": "list_decisions"})["rows"]
-    mine = [r for r in rows if r["lot_id"] == "LOT-1006"]
+    mine = [r for r in rows if r["lot_id"] == "LOT-1003"]
 
     # Every row for this lot is a REAL DecisionRecord. The ledger legitimately
     # holds one per evaluation — Incoming collapses them to the newest — and
@@ -579,7 +579,7 @@ def test_a_security_quarantine_row_asks_for_attention(runtime):
     from vouch.v2.fixtures import COA_HOSTILE
 
     outcome = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1004",
+        "action": "evaluate_lot", "lot_id": "LOT-1005",
         "document": COA_HOSTILE.decode(),
     })
     record_id = outcome["decision_record_id"]
@@ -625,7 +625,7 @@ def test_a_quarantined_artifact_is_returned_and_marked_excluded(runtime):
     from vouch.v2.fixtures import COA_HOSTILE
 
     outcome = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1004",
+        "action": "evaluate_lot", "lot_id": "LOT-1005",
         "document": COA_HOSTILE.decode(),
     })
     response = runtime.invoke({
@@ -666,13 +666,13 @@ def test_human_authorized_evidence_is_labeled_as_such(runtime):
     from vouch.v2.fixtures import COA_AMBIGUOUS, QA_RETEST
 
     first = runtime.invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1005",
+        "action": "evaluate_lot", "lot_id": "LOT-1007",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first["decision_record_id"]
     runtime.invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1007", "document": QA_RETEST.decode(),
         "authority_source": "PLANT-QA-LAB",
     })
 

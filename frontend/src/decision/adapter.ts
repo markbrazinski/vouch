@@ -306,7 +306,7 @@ function labelFor(e: LifecycleEventDTO): { short: string; summary?: string } {
       }
       return {
         // The rail row the gate asks for: "QUALITY · Applicability authorized",
-        // then "EQV-1 · LOT-1006 · QA-LEAD" underneath it.
+        // then "EQV-1 · LOT-1003 · QA-LEAD" underneath it.
         short: verb === 'ESTABLISH_EVIDENCE'
           ? 'Controlling evidence established'
           : 'Kept held',

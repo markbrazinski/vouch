@@ -66,7 +66,7 @@ def main() -> int:
 
     print("HERO B run 1: ambiguous evidence")
     first = invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1005",
+        "action": "evaluate_lot", "lot_id": "LOT-1007",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first.get("decision_record_id", "")
@@ -77,7 +77,7 @@ def main() -> int:
     print("HERO B run 2: human evidence resumes the same record")
     second = invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1007", "document": QA_RETEST.decode(),
         "authority_source": "QA-LEAD",
     })
     print(f"  record={second.get('decision_record_id')} "
@@ -87,7 +87,7 @@ def main() -> int:
 
     print("HOSTILE: injection payload in an authentic-looking COA")
     hostile = invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1004",
+        "action": "evaluate_lot", "lot_id": "LOT-1005",
         "document": COA_HOSTILE.decode(),
     })
     print(f"  disposition={hostile.get('disposition') or '(none)'} "

@@ -11,20 +11,20 @@
   "reasoners": "LOCAL_SCRIPTED_REASONERS",
   "durable": false
  },
- "decision_record_id": "DR-ff3ea0e9e315",
- "lot_id": "LOT-1003",
+ "decision_record_id": "DR-a51d64c4fb88",
+ "lot_id": "LOT-1004",
  "disposition": "RELEASE",
  "failure_category": "",
  "quality_decision_required": false,
  "reason": "tensile_strength: 512.0MPa within >= 480.0 MPa; hardness: 31.0HRC within [28.0, 36.0] HRC",
  "mutation": {
   "sequence": 1,
-  "capability_id": "CAP-f4a306fce2be45dc",
-  "decision_record_id": "DR-ff3ea0e9e315",
+  "capability_id": "CAP-f4841771d0264f42",
+  "decision_record_id": "DR-a51d64c4fb88",
   "issuer_identity": "vouch.policy-engine",
   "action": "release_lot",
   "target_type": "lot",
-  "target_id": "LOT-1003",
+  "target_id": "LOT-1004",
   "parameters": {},
   "before_version": 1,
   "after_version": 2,
@@ -40,7 +40,7 @@
    "inventory_usable": true,
    "inventory_quantity": 450.0
   },
-  "result": "lot LOT-1003 RELEASED",
+  "result": "lot LOT-1004 RELEASED",
   "inventory_delta": 450.0,
   "inventory_before": {
    "usable": false,
@@ -51,7 +51,7 @@
    "quantity": 450.0
   },
   "side_effects": {},
-  "at": "2026-09-09T23:09:47.040884+00:00"
+  "at": "2026-09-10T00:34:21.210324+00:00"
  },
  "consequences": {
   "coverage_changes": [
@@ -105,32 +105,32 @@
   "caused_by": [
    {
     "cause": "lot_disposition",
-    "lot_id": "LOT-1003",
+    "lot_id": "LOT-1004",
     "inventory_delta": 450.0,
     "material_id": "MAT-ALLOY-7",
     "effect": "order_readiness",
     "order_id": "C-417",
     "from": "READY",
     "to": "AWAITING_QUALITY",
-    "decision_record_id": "DR-ff3ea0e9e315"
+    "decision_record_id": "DR-a51d64c4fb88"
    },
    {
     "cause": "lot_disposition",
-    "lot_id": "LOT-1003",
+    "lot_id": "LOT-1004",
     "inventory_delta": 450.0,
     "material_id": "MAT-ALLOY-7",
     "effect": "order_readiness",
     "order_id": "C-418",
     "from": "READY",
     "to": "AWAITING_QUALITY",
-    "decision_record_id": "DR-ff3ea0e9e315"
+    "decision_record_id": "DR-a51d64c4fb88"
    }
   ],
   "persisted": false
  },
  "decision_record": {
-  "record_id": "DR-ff3ea0e9e315",
-  "lot_id": "LOT-1003",
+  "record_id": "DR-a51d64c4fb88",
+  "lot_id": "LOT-1004",
   "run_count": 2,
   "security": {
    "inspection_performed": true,
@@ -139,10 +139,10 @@
    "identity_unresolved_artifact_ids": [],
    "unresolved_batch_identities": [
     {
-     "artifact_id": "ART-3e29472df546",
+     "artifact_id": "ART-d9022b4e3f93",
      "supplier_batch": "WP-26-0317-B",
-     "internal_lot_id": "LOT-1003",
-     "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+     "internal_lot_id": "LOT-1004",
+     "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
      "supplier_id": "SUP-NORTH",
      "supplier_site": "SITE-N1",
      "material_id": "MAT-ALLOY-7",
@@ -152,30 +152,30 @@
    ],
    "held_claim_count": 0
   },
-  "snapshot_hash": "64a596ad1c4648d77b078b72bc860501e98b18a7600f6338e2bc896a7d319fc3",
+  "snapshot_hash": "3e258e44ece9ae7259df81bd3ea233046191baead2fab789250deffa8d5827ed",
   "investigator": {
    "model_id": "us.amazon.nova-pro-v1:0",
    "prompt_version": "investigator-v2.2",
-   "brief_hash": "6db43f1d01228c6222b4b37677d3fb5a682da27733670720d0f6c97d7eeb722a",
+   "brief_hash": "abea2d34e0499280c63643b076eab54ea5612156c5d8eb6e7f8eedeb41147021",
    "tool_calls": 4
   },
   "verifier": {
    "model_id": "us.amazon.nova-pro-v1:0",
    "prompt_version": "verifier-v2.2",
-   "brief_hash": "6db43f1d01228c6222b4b37677d3fb5a682da27733670720d0f6c97d7eeb722a",
+   "brief_hash": "abea2d34e0499280c63643b076eab54ea5612156c5d8eb6e7f8eedeb41147021",
    "tool_calls": 4
   },
   "reconciliation": "NON_MATERIAL_DIFFERENCE",
   "quality_authority": {
    "question": {
-    "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+    "question_id": "QQ-DR-a51d64c4fb88-IDENTITY",
     "question_type": "IDENTITY_BINDING",
     "characteristic": "",
     "options": [
      {
       "decision": "CONFIRM_BINDING",
-      "label": "Confirm supplier batch WP-26-0317-B is LOT-1003",
-      "establishes": "WP-26-0317-B -> LOT-1003"
+      "label": "Confirm supplier batch WP-26-0317-B is LOT-1004",
+      "establishes": "WP-26-0317-B -> LOT-1004"
      },
      {
       "decision": "KEEP_UNBOUND",
@@ -191,9 +191,9 @@
     "condition": "",
     "status": "RESOLVED",
     "supplier_batch": "WP-26-0317-B",
-    "internal_lot_id": "LOT-1003",
-    "artifact_id": "ART-3e29472df546",
-    "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+    "internal_lot_id": "LOT-1004",
+    "artifact_id": "ART-d9022b4e3f93",
+    "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
     "supplier_id": "SUP-NORTH",
     "supplier_site": "SITE-N1",
     "material_id": "MAT-ALLOY-7",
@@ -201,14 +201,14 @@
    },
    "decisions": [
     {
-     "authority_decision_id": "HAD-74b56dc13430",
-     "decision_record_id": "DR-ff3ea0e9e315",
-     "lot_id": "LOT-1003",
+     "authority_decision_id": "HAD-a6ebb0618258",
+     "decision_record_id": "DR-a51d64c4fb88",
+     "lot_id": "LOT-1004",
      "source_run": 1,
      "evidence_snapshot_id": "",
      "claim_set_hash": "",
      "lot_state_version": 1,
-     "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+     "question_id": "QQ-DR-a51d64c4fb88-IDENTITY",
      "question_type": "IDENTITY_BINDING",
      "characteristic": "",
      "authorized_evidence_refs": [],
@@ -223,14 +223,14 @@
      "established_condition": "",
      "established_via_equivalence": "",
      "supplier_batch": "WP-26-0317-B",
-     "bound_lot_id": "LOT-1003",
-     "artifact_id": "ART-3e29472df546",
-     "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
-     "binding_ref": "BATCH:WP-26-0317-B->LOT-1003",
+     "bound_lot_id": "LOT-1004",
+     "artifact_id": "ART-d9022b4e3f93",
+     "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
+     "binding_ref": "BATCH:WP-26-0317-B->LOT-1004",
      "decision": "CONFIRM_BINDING",
      "accountable_actor": "QA-LEAD",
      "authority_source": "Plant Quality Authority",
-     "created_at": "2026-09-09T23:09:47.038419+00:00"
+     "created_at": "2026-09-10T00:34:21.207991+00:00"
     }
    ]
   },
@@ -244,7 +244,7 @@
    "gate_decision": "ALLOWED"
   },
   "capability": {
-   "id": "CAP-f4a306fce2be45dc",
+   "id": "CAP-f4841771d0264f42",
    "consumed": true
   },
   "mutation": {
@@ -258,77 +258,77 @@
   "caused_by": [
    {
     "cause": "lot_disposition",
-    "lot_id": "LOT-1003",
+    "lot_id": "LOT-1004",
     "inventory_delta": 450.0,
     "material_id": "MAT-ALLOY-7",
     "effect": "order_readiness",
     "order_id": "C-417",
     "from": "READY",
     "to": "AWAITING_QUALITY",
-    "decision_record_id": "DR-ff3ea0e9e315"
+    "decision_record_id": "DR-a51d64c4fb88"
    },
    {
     "cause": "lot_disposition",
-    "lot_id": "LOT-1003",
+    "lot_id": "LOT-1004",
     "inventory_delta": 450.0,
     "material_id": "MAT-ALLOY-7",
     "effect": "order_readiness",
     "order_id": "C-418",
     "from": "READY",
     "to": "AWAITING_QUALITY",
-    "decision_record_id": "DR-ff3ea0e9e315"
+    "decision_record_id": "DR-a51d64c4fb88"
    }
   ]
  },
  "events": [
   {
    "event": "QUALITY_AUTHORITY_RECORDED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.038425+00:00",
-   "authority_decision_id": "HAD-74b56dc13430",
-   "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.207995+00:00",
+   "authority_decision_id": "HAD-a6ebb0618258",
+   "question_id": "QQ-DR-a51d64c4fb88-IDENTITY",
    "question_type": "IDENTITY_BINDING",
    "decision": "CONFIRM_BINDING",
    "accountable_actor": "QA-LEAD",
    "authority_source": "Plant Quality Authority",
    "supplier_batch": "WP-26-0317-B",
-   "internal_lot_id": "LOT-1003",
-   "artifact_id": "ART-3e29472df546",
-   "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91"
+   "internal_lot_id": "LOT-1004",
+   "artifact_id": "ART-d9022b4e3f93",
+   "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242"
   },
   {
    "event": "EVIDENCE_IDENTITY_ESTABLISHED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.038479+00:00",
-   "authority_decision_id": "HAD-74b56dc13430",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208028+00:00",
+   "authority_decision_id": "HAD-a6ebb0618258",
    "supplier_batch": "WP-26-0317-B",
-   "internal_lot_id": "LOT-1003",
-   "artifact_id": "ART-3e29472df546",
-   "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
-   "binding_ref": "BATCH:WP-26-0317-B->LOT-1003",
+   "internal_lot_id": "LOT-1004",
+   "artifact_id": "ART-d9022b4e3f93",
+   "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
+   "binding_ref": "BATCH:WP-26-0317-B->LOT-1004",
    "accountable_actor": "QA-LEAD",
    "authority_source": "Plant Quality Authority",
    "scope": "THIS_DECISION_RECORD_AND_ARTIFACT_ONLY"
   },
   {
    "event": "DECISION_RESUMED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039009+00:00",
-   "lot_id": "LOT-1003",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208477+00:00",
+   "lot_id": "LOT-1004",
    "run_count": 2,
    "resumed_run_ids": [
-    "DR-ff3ea0e9e315#run2"
+    "DR-a51d64c4fb88#run2"
    ],
    "trigger": "IDENTITY_BINDING",
-   "authority_decision_id": "HAD-74b56dc13430"
+   "authority_decision_id": "HAD-a6ebb0618258"
   },
   {
    "event": "EVIDENCE_SNAPSHOT_CREATED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039087+00:00",
-   "snapshot_id": "SNAP-f2dbcf8d99f2",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208556+00:00",
+   "snapshot_id": "SNAP-c4d53f09fa7a",
    "claim_count": 2,
-   "snapshot_hash": "64a596ad1c4648d77b078b72bc860501e98b18a7600f6338e2bc896a7d319fc3",
+   "snapshot_hash": "3e258e44ece9ae7259df81bd3ea233046191baead2fab789250deffa8d5827ed",
    "state_versions": {
     "lot": 1,
     "C-417": 1,
@@ -337,16 +337,16 @@
   },
   {
    "event": "INVESTIGATOR_STARTED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039160+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208626+00:00",
    "model_id": "us.amazon.nova-pro-v1:0",
    "prompt_version": "investigator-v2.2",
    "temperature": 0.0
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039214+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208676+00:00",
    "agent": "investigator",
    "tool": "get_evidence_snapshot",
    "category": "evidence",
@@ -354,21 +354,21 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039255+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208715+00:00",
    "agent": "investigator",
    "tool": "get_evidence_snapshot",
    "result_count": 2,
    "object_refs": [
-    "CLM-3e29472df546-00",
-    "CLM-3e29472df546-01"
+    "CLM-d9022b4e3f93-00",
+    "CLM-d9022b4e3f93-01"
    ],
    "elapsed_ms": 0.0
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039310+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208773+00:00",
    "agent": "investigator",
    "tool": "list_candidate_specs",
    "category": "specification",
@@ -376,8 +376,8 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039354+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208816+00:00",
    "agent": "investigator",
    "tool": "list_candidate_specs",
    "result_count": 2,
@@ -389,8 +389,8 @@
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039411+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208876+00:00",
    "agent": "investigator",
    "tool": "get_spec_requirement",
    "category": "specification",
@@ -398,20 +398,20 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039458+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208923+00:00",
    "agent": "investigator",
    "tool": "get_spec_requirement",
    "result_count": 2,
    "object_refs": [
     "SPEC-A7:C"
    ],
-   "elapsed_ms": 0.0
+   "elapsed_ms": 0.01
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039510+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.208976+00:00",
    "agent": "investigator",
    "tool": "list_equivalence_records",
    "category": "equivalence",
@@ -419,8 +419,8 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039560+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209022+00:00",
    "agent": "investigator",
    "tool": "list_equivalence_records",
    "result_count": 0,
@@ -429,25 +429,25 @@
   },
   {
    "event": "APPLICABILITY_BRIEF_COMPLETED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039643+00:00",
-   "brief_hash": "6db43f1d01228c6222b4b37677d3fb5a682da27733670720d0f6c97d7eeb722a",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209102+00:00",
+   "brief_hash": "abea2d34e0499280c63643b076eab54ea5612156c5d8eb6e7f8eedeb41147021",
    "basis": "SPEC-A7:C",
    "required_test_count": 2,
    "sufficiency": "SUFFICIENT"
   },
   {
    "event": "VERIFIER_STARTED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039754+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209209+00:00",
    "model_id": "us.amazon.nova-pro-v1:0",
    "prompt_version": "verifier-v2.2",
    "temperature": 0.0
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039821+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209272+00:00",
    "agent": "verifier",
    "tool": "get_evidence_snapshot",
    "category": "evidence",
@@ -455,21 +455,21 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039881+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209326+00:00",
    "agent": "verifier",
    "tool": "get_evidence_snapshot",
    "result_count": 2,
    "object_refs": [
-    "CLM-3e29472df546-00",
-    "CLM-3e29472df546-01"
+    "CLM-d9022b4e3f93-00",
+    "CLM-d9022b4e3f93-01"
    ],
    "elapsed_ms": 0.0
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.039949+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209390+00:00",
    "agent": "verifier",
    "tool": "list_candidate_specs",
    "category": "specification",
@@ -477,8 +477,8 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040009+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209447+00:00",
    "agent": "verifier",
    "tool": "list_candidate_specs",
    "result_count": 2,
@@ -490,8 +490,8 @@
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040082+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209520+00:00",
    "agent": "verifier",
    "tool": "get_spec_requirement",
    "category": "specification",
@@ -499,8 +499,8 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040146+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209586+00:00",
    "agent": "verifier",
    "tool": "get_spec_requirement",
    "result_count": 2,
@@ -511,8 +511,8 @@
   },
   {
    "event": "TOOL_CALLED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040215+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209652+00:00",
    "agent": "verifier",
    "tool": "list_equivalence_records",
    "category": "equivalence",
@@ -520,8 +520,8 @@
   },
   {
    "event": "TOOL_RESULT_BOUND",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040283+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209720+00:00",
    "agent": "verifier",
    "tool": "list_equivalence_records",
    "result_count": 0,
@@ -530,21 +530,21 @@
   },
   {
    "event": "VERIFIER_BRIEF_COMPLETED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040371+00:00",
-   "brief_hash": "6db43f1d01228c6222b4b37677d3fb5a682da27733670720d0f6c97d7eeb722a"
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209812+00:00",
+   "brief_hash": "abea2d34e0499280c63643b076eab54ea5612156c5d8eb6e7f8eedeb41147021"
   },
   {
    "event": "RECONCILIATION_COMPLETED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040477+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.209926+00:00",
    "outcome": "NON_MATERIAL_DIFFERENCE",
    "differing_fields": []
   },
   {
    "event": "DISPOSITION_COMPUTED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040576+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210025+00:00",
    "disposition": "RELEASE",
    "basis": "SPEC-A7:C",
    "failing_test_count": 0,
@@ -553,43 +553,43 @@
   },
   {
    "event": "POLICY_EVALUATED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040702+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210150+00:00",
    "policy_version": "vouch-policy-2.1",
    "gate_decision": "ALLOWED",
    "action": "release_lot"
   },
   {
    "event": "CAPABILITY_ISSUED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040780+00:00",
-   "capability_id": "CAP-f4a306fce2be45dc",
-   "target": "LOT-1003",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210223+00:00",
+   "capability_id": "CAP-f4841771d0264f42",
+   "target": "LOT-1004",
    "action": "release_lot",
-   "expiry": "2026-09-09T23:14:47.040661+00:00"
+   "expiry": "2026-09-10T00:39:21.210109+00:00"
   },
   {
    "event": "MUTATION_COMPLETED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040886+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210326+00:00",
    "before_version": 1,
    "after_version": 2,
    "ledger_seq": 1,
    "action": "release_lot",
-   "target": "LOT-1003"
+   "target": "LOT-1004"
   },
   {
    "event": "POLICY_EVALUATED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.040999+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210434+00:00",
    "policy_version": "vouch-policy-2.1",
    "gate_decision": "REFUSED",
    "reason": "'AWAITING_QUALITY' is not a readiness state"
   },
   {
    "event": "CONSEQUENCE_RECALCULATED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.041083+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210521+00:00",
    "order_id": "C-417",
    "order_readiness": "AWAITING_QUALITY",
    "coverage_delta": 450.0,
@@ -601,16 +601,16 @@
   },
   {
    "event": "POLICY_EVALUATED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.041185+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210624+00:00",
    "policy_version": "vouch-policy-2.1",
    "gate_decision": "REFUSED",
    "reason": "'AWAITING_QUALITY' is not a readiness state"
   },
   {
    "event": "CONSEQUENCE_RECALCULATED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.041273+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.210714+00:00",
    "order_id": "C-418",
    "order_readiness": "AWAITING_QUALITY",
    "coverage_delta": 450.0,

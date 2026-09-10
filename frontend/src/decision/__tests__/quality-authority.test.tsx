@@ -27,7 +27,7 @@ import held from './quality-held-capture.json';
 
 const capture = (c: { record: unknown; events: unknown }) => ({
   decisionRecordId: (c.record as { record_id: string }).record_id,
-  lotId: 'LOT-1006',
+  lotId: 'LOT-1003',
   events: c.events as never[],
   record: c.record as Record<string, unknown>,
 });

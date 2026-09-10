@@ -55,7 +55,7 @@ describe('the captures are the runs we think they are', () => {
 });
 
 describe('Hero B run 1 — Vouch asks a human', () => {
-  const vm = () => vmOf(run1, 'LOT-1003');
+  const vm = () => vmOf(run1, 'LOT-1004');
 
   it('renders quality-decision-required, not a crash', () => {
     expect(vm().outcome.kind).toBe('quality_decision_required');
@@ -81,7 +81,7 @@ describe('Hero B run 1 — Vouch asks a human', () => {
 });
 
 describe('Hero B run 2 — the human evidence resumes the same record', () => {
-  const vm = () => vmOf(run2, 'LOT-1003');
+  const vm = () => vmOf(run2, 'LOT-1004');
 
   it('reaches RELEASE with a real mutation', () => {
     expect(vm().dispositionLabel).toBe('RELEASE');
@@ -156,7 +156,7 @@ describe('the full record history, as get_events returns it', () => {
 });
 
 describe('Hostile — security halts the spine before any agent starts', () => {
-  const vm = () => vmOf(hostile, 'LOT-1004');
+  const vm = () => vmOf(hostile, 'LOT-1005');
 
   it('renders the security hold as its own outcome', () => {
     expect(vm().outcome.kind).toBe('evidence_quarantined');
@@ -186,6 +186,11 @@ describe('Hostile — security halts the spine before any agent starts', () => {
     // Pre-existing: `binding_status` under a "BOUND FACT" label rendered
     // "BOUND FACT: BOUND". Hero A's terminal frame is full-bleed so its case
     // column is hidden; the hostile path keeps the column and exposed it.
+    //
+    // LOT-1004, not LOT-1005: this reads the id out of the FROZEN capture,
+    // which recorded a real execution back when the hostile fixture was
+    // LOT-1004. The canonical renumber moved the scenario to LOT-1005; it did
+    // not, and must not, rewrite what that run actually observed.
     expect(vm().truth.boundFact?.value).toBe('LOT-1004');
   });
 
@@ -198,7 +203,7 @@ describe('Hostile — security halts the spine before any agent starts', () => {
 });
 
 describe('the halted spine reads as stopped, not as still-coming', () => {
-  const vm = () => vmOf(hostile, 'LOT-1004');
+  const vm = () => vmOf(hostile, 'LOT-1005');
 
   it('marks the disposition node halted rather than pending', () => {
     expect(vm().spine.find((n) => n.key === 'disposition')?.state).toBe('halted');
@@ -250,7 +255,7 @@ describe('the halted spine reads as stopped, not as still-coming', () => {
 });
 
 describe('the detection is attributed to Amazon Bedrock Guardrails', () => {
-  const vm = () => vmOf(hostile, 'LOT-1004');
+  const vm = () => vmOf(hostile, 'LOT-1005');
   const rail = () =>
     toActivity(((hostile as EvaluateDTO).events ?? []) as LifecycleEventDTO[]);
 
@@ -331,6 +336,10 @@ describe('Hero A is unaffected by the halted-path changes', () => {
   it('still resolves a real bound identity', () => {
     const dto = run2 as EvaluateDTO;
     const events = (dto.events ?? []) as LifecycleEventDTO[];
+    // LOT-1003 is what this FROZEN capture observed: the disagreement run was
+    // recorded under that id and the renumber left the bytes alone. It happens
+    // to be the scenario's final canonical id too, but the reason to write it
+    // here is the capture, not the map.
     const projected = project({
       decisionRecordId: dto.decision_record_id,
       lotId: 'LOT-1003',
@@ -369,7 +378,7 @@ describe('the verifier lane reads the VERIFIER\'s own brief', () => {
     const dto = run1 as EvaluateDTO;
     return project({
       decisionRecordId: dto.decision_record_id,
-      lotId: 'LOT-1003',
+      lotId: 'LOT-1004',
       material: 'MAT-POLY-3',
       receiptMeta: '',
       events: (dto.events ?? []) as LifecycleEventDTO[],
@@ -401,6 +410,6 @@ describe('the verifier lane reads the VERIFIER\'s own brief', () => {
   });
 
   it('still proves independence through reconciliation, which IS populated', () => {
-    expect(vmOf(run1, 'LOT-1003').reconciliation?.state).toBe('MATERIAL_DISAGREEMENT');
+    expect(vmOf(run1, 'LOT-1004').reconciliation?.state).toBe('MATERIAL_DISAGREEMENT');
   });
 });

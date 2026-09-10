@@ -63,22 +63,22 @@ def test_hero_lot_quarantines_on_governing_basis(vouch):
 
 def test_ambiguous_evidence_abstains_without_marking_defective(vouch):
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
 
     assert outcome.disposition == "INSUFFICIENT_EVIDENCE"
     assert outcome.quality_decision_required
     # Absence of evidence is NOT a defect finding.
-    assert corpus.lot("LOT-1005").status == "PENDING_QA"
-    assert corpus.lot("LOT-1005").status != "QUARANTINED"
+    assert corpus.lot("LOT-1007").status == "PENDING_QA"
+    assert corpus.lot("LOT-1007").status != "QUARANTINED"
 
 
 def test_human_evidence_resumes_the_same_record(vouch):
     corpus, v = vouch
-    first = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    first = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = first.decision_record_id
 
     second = v.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1005",
+        decision_record_id=record_id, lot_id="LOT-1007",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 
@@ -86,20 +86,20 @@ def test_human_evidence_resumes_the_same_record(vouch):
     assert second.record.run_count == 2
     assert second.disposition == "RELEASE"
     assert second.record.human.review_status == "RESOLVED"
-    assert corpus.lot("LOT-1005").status == "RELEASED"
+    assert corpus.lot("LOT-1007").status == "RELEASED"
 
 
 def test_human_evidence_attach_is_idempotent(vouch):
     corpus, v = vouch
-    first = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    first = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = first.decision_record_id
 
     v.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1005",
+        decision_record_id=record_id, lot_id="LOT-1007",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
     again = v.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1005",
+        decision_record_id=record_id, lot_id="LOT-1007",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
     assert again.record.run_count == 2  # no third run
@@ -109,7 +109,7 @@ def test_human_evidence_attach_is_idempotent(vouch):
 def test_human_evidence_is_labeled_human_authorized(vouch):
     corpus, v = vouch
     claims, _ = v.ingest_evidence(
-        decision_record_id="DR-x", lot_id="LOT-1005", raw=QA_RETEST,
+        decision_record_id="DR-x", lot_id="LOT-1007", raw=QA_RETEST,
         events=EventLog(), trust_label=TrustLabel.HUMAN_AUTHORIZED,
     )
     assert all(c.trust_label is TrustLabel.HUMAN_AUTHORIZED for c in claims)
@@ -221,7 +221,7 @@ def test_a_brief_citing_a_superseded_revision_blocks_mutation(vouch):
 def test_genuine_disagreement_between_valid_briefs_still_fails_closed(vouch):
     """Category C must survive the repair.
 
-    LOT-1005's only viscosity claim was measured by ASTM-D445 at 40C where
+    LOT-1007's only viscosity claim was measured by ASTM-D445 at 40C where
     SPEC-R3:A requires ASTM-D2196 at 25C, and the single equivalence on record
     is scoped to 25C so it cannot be cited. Whether that evidence nonetheless
     establishes the requirement is precisely the fuzzy question reserved for
@@ -253,11 +253,11 @@ def test_genuine_disagreement_between_valid_briefs_still_fails_closed(vouch):
             return AgentRun(brief, "m", "v", "h", [], True)
 
     v = VouchV2(corpus, verifier=Divergent(corpus))
-    outcome = v.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    outcome = v.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
 
     assert outcome.failure_category == "MATERIAL_DISAGREEMENT", outcome.reason
     assert not outcome.mutated
-    assert corpus.lot("LOT-1005").status == "RECEIVED"
+    assert corpus.lot("LOT-1007").status == "RECEIVED"
 
 
 # -- consequences ----------------------------------------------------------

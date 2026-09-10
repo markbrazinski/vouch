@@ -34,7 +34,7 @@ def vouch(corpus):
 
 
 def test_only_whitelisted_lots_can_be_reset(corpus):
-    for lot_id in ("LOT-1001", "LOT-1002", "LOT-1004", "LOT-1005", "C-417"):
+    for lot_id in ("LOT-1001", "LOT-1002", "LOT-1005", "LOT-1007", "C-417"):
         with pytest.raises(NotResettable):
             reset_lot(corpus, lot_id)
 
@@ -71,14 +71,14 @@ def _advance(corpus, kind, key, **changes):
 
 
 def test_reset_restores_lot_1006_to_pre_decision_state(corpus):
-    _advance(corpus, "lot", "LOT-1006", status="RELEASED")
-    _advance(corpus, "inventory", "LOT-1006", usable=True)
+    _advance(corpus, "lot", "LOT-1003", status="RELEASED")
+    _advance(corpus, "inventory", "LOT-1003", usable=True)
     _advance(corpus, "production_order", "C-419", status="READY")
 
-    result = reset_lot(corpus, "LOT-1006")
+    result = reset_lot(corpus, "LOT-1003")
 
-    assert corpus.get("lot", "LOT-1006").status == "RECEIVED"
-    assert corpus.get("inventory", "LOT-1006").usable is False
+    assert corpus.get("lot", "LOT-1003").status == "RECEIVED"
+    assert corpus.get("inventory", "LOT-1003").usable is False
     assert corpus.get("production_order", "C-419").status == "AT_RISK"
     assert result["lot_status"] == "RECEIVED"
     assert result["inventory_usable"] is False
@@ -91,7 +91,7 @@ def test_reset_restores_the_planned_coverage_row(corpus):
     canonical = corpus.get("planned_coverage", "PC-2")
     corpus.put("planned_coverage", "PC-2", None)
 
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
 
     restored = corpus.get("planned_coverage", "PC-2")
     assert restored is not None
@@ -100,8 +100,8 @@ def test_reset_restores_the_planned_coverage_row(corpus):
 
 
 def test_reset_is_idempotent(corpus):
-    first = reset_lot(corpus, "LOT-1006")
-    second = reset_lot(corpus, "LOT-1006")
+    first = reset_lot(corpus, "LOT-1003")
+    second = reset_lot(corpus, "LOT-1003")
     assert first["lot_status"] == second["lot_status"] == "RECEIVED"
     assert corpus.get("production_order", "C-419").status == "AT_RISK"
 
@@ -115,21 +115,21 @@ def test_state_version_advances_rather_than_rewinding(corpus):
     """A capability binds to an observed state_version and refuses when it
     moves. Rewinding to 1 would re-validate a capability issued before the
     reset, which is exactly the replay the authority model exists to stop."""
-    _advance(corpus, "lot", "LOT-1006", status="RELEASED")  # -> version 2
-    before = corpus.get("lot", "LOT-1006").state_version
+    _advance(corpus, "lot", "LOT-1003", status="RELEASED")  # -> version 2
+    before = corpus.get("lot", "LOT-1003").state_version
 
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
 
-    after = corpus.get("lot", "LOT-1006").state_version
+    after = corpus.get("lot", "LOT-1003").state_version
     assert after > before
-    assert corpus.get("lot", "LOT-1006").status == "RECEIVED"
+    assert corpus.get("lot", "LOT-1003").status == "RECEIVED"
 
 
 def test_repeated_resets_keep_advancing(corpus):
     versions = []
     for _ in range(3):
-        reset_lot(corpus, "LOT-1006")
-        versions.append(corpus.get("lot", "LOT-1006").state_version)
+        reset_lot(corpus, "LOT-1003")
+        versions.append(corpus.get("lot", "LOT-1003").state_version)
     assert versions == sorted(versions)
     assert len(set(versions)) == len(versions)
 
@@ -140,11 +140,11 @@ def test_repeated_resets_keep_advancing(corpus):
 
 
 def test_reset_leaves_every_other_canonical_lot_alone(corpus):
-    others = ["LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004", "LOT-1005", "LOT-8001"]
+    others = ["LOT-1001", "LOT-1002", "LOT-1004", "LOT-1005", "LOT-1007", "LOT-8001"]
     before = {k: corpus.get("lot", k) for k in others}
     inv_before = {k: corpus.get("inventory", k) for k in others}
 
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
 
     for k in others:
         assert corpus.get("lot", k) == before[k], k
@@ -155,14 +155,14 @@ def test_reset_leaves_c417_and_c418_alone(corpus):
     before = {
         k: corpus.get("production_order", k) for k in ("C-417", "C-418")
     }
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
     for k, was in before.items():
         assert corpus.get("production_order", k) == was, k
 
 
 def test_reset_does_not_touch_unrelated_schedule_or_inventory(corpus):
     before = {p.order_id: p.planned_slot for p in corpus.all("production_order")}
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
     after = {p.order_id: p.planned_slot for p in corpus.all("production_order")}
     assert after == before
 
@@ -176,11 +176,11 @@ def test_previous_decision_records_survive_a_reset(vouch):
     """The acceptance criterion that matters most. A demo reset rolls back the
     plant, never the ledger."""
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     record_id = outcome.decision_record_id
     assert v.record_store.load(record_id) is not None
 
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
 
     stored = v.record_store.load(record_id)
     assert stored is not None, "a reset deleted a DecisionRecord"
@@ -189,10 +189,10 @@ def test_previous_decision_records_survive_a_reset(vouch):
 
 def test_the_old_record_is_not_rewritten_to_look_tidy(vouch):
     corpus, v = vouch
-    outcome = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    outcome = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     before = v.record_store.load(outcome.decision_record_id)
 
-    reset_lot(corpus, "LOT-1006")
+    reset_lot(corpus, "LOT-1003")
 
     after = v.record_store.load(outcome.decision_record_id)
     assert after == before, "a reset mutated an existing decision record"
@@ -200,9 +200,9 @@ def test_the_old_record_is_not_rewritten_to_look_tidy(vouch):
 
 def test_a_fresh_evaluation_after_reset_creates_a_new_record(vouch):
     corpus, v = vouch
-    first = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
-    reset_lot(corpus, "LOT-1006")
-    second = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    first = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
+    reset_lot(corpus, "LOT-1003")
+    second = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
 
     assert second.decision_record_id != first.decision_record_id
     # Both remain readable: the ledger grew, it did not get overwritten.
@@ -213,9 +213,9 @@ def test_a_fresh_evaluation_after_reset_creates_a_new_record(vouch):
 def test_the_lot_can_actually_be_evaluated_again(vouch):
     """A reset that left the lot un-evaluatable would be useless for filming."""
     corpus, v = vouch
-    v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
-    reset_lot(corpus, "LOT-1006")
+    v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
+    reset_lot(corpus, "LOT-1003")
 
-    again = v.evaluate_lot("LOT-1006", documents=[{"raw": COA_DISPUTED}])
+    again = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     assert again.decision_record_id
     assert again.failure_category or again.disposition

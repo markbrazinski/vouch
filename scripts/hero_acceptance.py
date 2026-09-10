@@ -131,7 +131,7 @@ def hero_b() -> dict:
     """abstain / disagree -> human evidence -> same-record resume -> RELEASE."""
     seed()
     first = invoke({
-        "action": "evaluate_lot", "lot_id": "LOT-1005",
+        "action": "evaluate_lot", "lot_id": "LOT-1007",
         "document": COA_AMBIGUOUS.decode(),
     })
     record_id = first.get("decision_record_id", "")
@@ -156,7 +156,7 @@ def hero_b() -> dict:
 
     second = invoke({
         "action": "supply_evidence", "decision_record_id": record_id,
-        "lot_id": "LOT-1005", "document": QA_RETEST.decode(),
+        "lot_id": "LOT-1007", "document": QA_RETEST.decode(),
         "authority_source": "QA-LEAD",
     })
     record = second.get("decision_record") or {}

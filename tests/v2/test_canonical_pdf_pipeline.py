@@ -125,7 +125,7 @@ def test_pdf2_reads_and_extracts_and_still_refuses_to_bind(runtime):
     it cannot prove these results describe THIS lot. That separation is the
     product: a valid result for Lot A must never release Lot B.
     """
-    outcome = _evaluate(runtime, PDF2, "LOT-1003", "COA")
+    outcome = _evaluate(runtime, PDF2, "LOT-1004", "COA")
     assert outcome["ok"]
     assert outcome["failure_category"] == "EVIDENCE_IDENTITY_UNRESOLVED"
     assert outcome["disposition"] == ""
@@ -143,27 +143,27 @@ def test_pdf2_reads_and_extracts_and_still_refuses_to_bind(runtime):
     events = _events(outcome)
     assert "MUTATION_COMPLETED" not in events
     assert "INVESTIGATOR_STARTED" not in events
-    assert runtime._CORPUS.lot("LOT-1003").status == "RECEIVED"
+    assert runtime._CORPUS.lot("LOT-1004").status == "RECEIVED"
 
 
 def test_pdf2_asks_a_question_naming_both_identifiers(runtime):
-    outcome = _evaluate(runtime, PDF2, "LOT-1003", "COA")
+    outcome = _evaluate(runtime, PDF2, "LOT-1004", "COA")
     question = outcome["decision_record"]["quality_authority"]["question"]
     assert question["question_type"] == "IDENTITY_BINDING"
     assert question["supplier_batch"] == "WP-26-0317-B"
-    assert question["internal_lot_id"] == "LOT-1003"
+    assert question["internal_lot_id"] == "LOT-1004"
 
 
 def test_pdf2_is_not_treated_as_defective_for_being_unattributable(runtime):
     """An unbindable document says nothing about the material's quality."""
-    outcome = _evaluate(runtime, PDF2, "LOT-1003", "COA")
+    outcome = _evaluate(runtime, PDF2, "LOT-1004", "COA")
     assert outcome["disposition"] != "QUARANTINE"
-    assert runtime._CORPUS.lot("LOT-1003").status != "QUARANTINED"
+    assert runtime._CORPUS.lot("LOT-1004").status != "QUARANTINED"
 
 
 def test_pdf2_releases_once_a_human_establishes_the_identity(runtime):
     """The whole chain on the real PDF: same record, agents run, RELEASE."""
-    first = _evaluate(runtime, PDF2, "LOT-1003", "COA")
+    first = _evaluate(runtime, PDF2, "LOT-1004", "COA")
     question = first["decision_record"]["quality_authority"]["question"]
 
     resumed = runtime.invoke({
@@ -186,8 +186,8 @@ def test_pdf2_releases_once_a_human_establishes_the_identity(runtime):
     assert resumed["decision_record"]["investigator"]["brief_hash"]
     assert resumed["decision_record"]["verifier"]["brief_hash"]
 
-    assert runtime._CORPUS.lot("LOT-1003").status == "RELEASED"
-    inventory = runtime._CORPUS.get("inventory", "LOT-1003")
+    assert runtime._CORPUS.lot("LOT-1004").status == "RELEASED"
+    inventory = runtime._CORPUS.get("inventory", "LOT-1004")
     assert (inventory.usable, inventory.quantity) == (True, 450.0)
 
 
@@ -197,7 +197,7 @@ def test_pdf2_releases_once_a_human_establishes_the_identity(runtime):
 
 
 def test_pdf3_is_quarantined_before_a_single_agent_starts(runtime):
-    outcome = _evaluate(runtime, PDF3, "LOT-1004", "COA")
+    outcome = _evaluate(runtime, PDF3, "LOT-1005", "COA")
     assert outcome["failure_category"] == "SECURITY_QUARANTINE"
     assert outcome["disposition"] == ""
     assert outcome["mutation"] == {}
@@ -208,12 +208,12 @@ def test_pdf3_is_quarantined_before_a_single_agent_starts(runtime):
     assert "VERIFIER_STARTED" not in events
     assert "CAPABILITY_ISSUED" not in events
     assert "MUTATION_COMPLETED" not in events
-    assert runtime._CORPUS.lot("LOT-1004").status == "RECEIVED"
+    assert runtime._CORPUS.lot("LOT-1005").status == "RECEIVED"
 
 
 def test_pdf3_retains_the_artifact_but_excludes_it_from_use(runtime):
     """Evidence is never destroyed; it is quarantined and marked unusable."""
-    outcome = _evaluate(runtime, PDF3, "LOT-1004", "COA")
+    outcome = _evaluate(runtime, PDF3, "LOT-1005", "COA")
     sources = runtime.invoke({
         "action": "get_source", "decision_record_id": outcome["decision_record_id"],
     })["sources"]
@@ -232,7 +232,7 @@ def test_pdf3_payload_never_reaches_the_audit_record(runtime):
     Not a cosmetic rule: a lifecycle payload is replayed into other surfaces,
     so an injection quoted there would be re-delivered by the audit trail.
     """
-    outcome = _evaluate(runtime, PDF3, "LOT-1004", "COA")
+    outcome = _evaluate(runtime, PDF3, "LOT-1005", "COA")
     record = runtime.invoke({
         "action": "get_decision", "decision_record_id": outcome["decision_record_id"],
     })
@@ -248,7 +248,7 @@ def test_the_hostile_lot_is_not_refused_for_being_unqualified(runtime):
     every other alloy source, so a passing test here cannot be an accident of
     the supplier being disqualified.
     """
-    lot = runtime._CORPUS.lot("LOT-1004")
+    lot = runtime._CORPUS.lot("LOT-1005")
     qualification = runtime._CORPUS.qualification(lot.supplier_id, lot.material_id)
     assert qualification.covers(when=lot.received_at, site_id=lot.supplier_site)
 
@@ -317,7 +317,7 @@ def test_pdf4_reaches_material_disagreement_from_real_pdf_bytes(runtime):
     model exists for: two applicable readings, no rule ranking them, so the
     autonomous path halts rather than picking one.
     """
-    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    outcome = _evaluate(runtime, PDF4, "LOT-1003", "COA")
     assert outcome["ok"]
     assert outcome["failure_category"] == "MATERIAL_DISAGREEMENT"
     assert outcome["disposition"] == ""
@@ -351,7 +351,7 @@ def test_pdf4_reaches_material_disagreement_from_real_pdf_bytes(runtime):
 
 
 def test_pdf4_raises_one_answerable_question_about_the_equivalence(runtime):
-    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    outcome = _evaluate(runtime, PDF4, "LOT-1003", "COA")
     record = runtime.invoke({
         "action": "get_decision", "decision_record_id": outcome["decision_record_id"],
     })["record"]
@@ -380,7 +380,7 @@ def test_pdf4_raises_one_answerable_question_about_the_equivalence(runtime):
 
 def test_pdf4_releases_and_recovers_c419_once_quality_answers(runtime):
     """The whole vertical, from real PDF bytes to a factory consequence."""
-    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    outcome = _evaluate(runtime, PDF4, "LOT-1003", "COA")
     record_id = outcome["decision_record_id"]
 
     resumed = runtime.invoke({
@@ -426,7 +426,7 @@ def test_pdf4_releases_and_recovers_c419_once_quality_answers(runtime):
 
 
 def test_pdf4_never_needs_a_structured_extractor(runtime):
-    outcome = _evaluate(runtime, PDF4, "LOT-1006", "COA")
+    outcome = _evaluate(runtime, PDF4, "LOT-1003", "COA")
     extracted = next(
         e for e in outcome["events"] if e["event"] == "EVIDENCE_EXTRACTED"
     )

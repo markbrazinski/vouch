@@ -5,10 +5,10 @@
 
 > **Rev 2 — Four-Lot Ladder gate.** The demo now runs an intentional
 > increasing-complexity ladder: `LOT-1001` RELEASE, `LOT-1002` QUARANTINE,
-> `LOT-1003` EVIDENCE_IDENTITY_UNRESOLVED, `LOT-1004` SECURITY_QUARANTINE. A fourth
+> `LOT-1004` EVIDENCE_IDENTITY_UNRESOLVED, `LOT-1005` SECURITY_QUARANTINE. A fourth
 > document (§2b, the clean Northern Alloys COA) was added, the structured MTR
-> moved from `LOT-1001` to a new alloy `LOT-1003`, and the MAT-RESIN-3 polymer
-> vertical moved intact to `LOT-1005` (§9). §2 and §4 are unchanged in content;
+> moved from `LOT-1001` to a new alloy `LOT-1004`, and the MAT-RESIN-3 polymer
+> vertical moved intact to `LOT-1007` (§9). §2 and §4 are unchanged in content;
 > both were re-exported, so their hashes moved and are re-pinned in
 > `demo/evidence/MANIFEST.md`.
 
@@ -171,7 +171,7 @@ human-resolvable case.
 | Supplier | **Northern Alloys** (`SUP-NORTH`) |
 | Site | `SITE-N1` |
 | Material | `MAT-ALLOY-7` — Alloy 7 billet |
-| Internal lot (Vouch) | `LOT-1003` |
+| Internal lot (Vouch) | `LOT-1004` |
 | **Supplier batch (printed)** | **`WP-26-0317-B`** |
 | PO reference | `PO-82` |
 | Quantity | 450 kg |
@@ -197,10 +197,10 @@ The document prints:
 Supplier Batch: WP-26-0317-B
 ```
 
-Vouch is evaluating `LOT-1003`. No authoritative object states
+Vouch is evaluating `LOT-1004`. No authoritative object states
 
 ```
-WP-26-0317-B  →  LOT-1003
+WP-26-0317-B  →  LOT-1004
 ```
 
 so binding resolves to `UNRESOLVED_SUPPLIER_BATCH` and the case halts at
@@ -213,7 +213,7 @@ proximity, and deliberately does not try.
 - Every field above must be **real selectable PDF text**, not an image. The
   supplier batch identifier especially: the scenario turns on it being read
   perfectly.
-- The document **must NOT print `LOT-1003`, or any `LOT-####` string, anywhere.**
+- The document **must NOT print `LOT-1004`, or any `LOT-####` string, anywhere.**
   A lot id on the page binds the document immediately and the case evaporates.
 - Measurements in flat `key: value (method, condition)` lines. This document is
   on the ordinary extraction path; a table would route it through structure
@@ -235,10 +235,10 @@ The terminal reason after run 2 is effectively:
 
 ### Production consequence
 
-Releasing `LOT-1003` makes its **450 kg of held inventory usable**. That is the
+Releasing `LOT-1004` makes its **450 kg of held inventory usable**. That is the
 whole consequence, and it is deliberate: 450 kg is not enough to change the
 readiness of `C-417`, `C-418` or `C-419`, so this case neither borrows from nor
-disturbs the Hero A and LOT-1006 stories. Pinned by
+disturbs the Hero A and LOT-1003 stories. Pinned by
 `test_it_does_not_touch_the_other_demo_stories`.
 
 ## 4. Supplier C — hostile / adversarial · security quarantine
@@ -248,7 +248,7 @@ disturbs the Hero A and LOT-1006 stories. Pinned by
 | Supplier | **Central Forgeworks** (`SUP-CENTRAL`) |
 | Site | `SITE-C1` |
 | Material | `MAT-ALLOY-7` — Alloy 7 billet |
-| Lot | `LOT-1004` |
+| Lot | `LOT-1005` |
 | PO reference | `PO-80` |
 | Quantity | 200 kg |
 | Manufactured | 2026-02-12 |
@@ -257,7 +257,7 @@ disturbs the Hero A and LOT-1006 stories. Pinned by
 | Specification cited | `SPEC-A7` Revision C |
 | Intended behaviour | **security quarantine before any agent runs** |
 
-> **On the supplier identity.** `LOT-1004` was reassigned from `SUP-EAST` to
+> **On the supplier identity.** `LOT-1005` was reassigned from `SUP-EAST` to
 > `SUP-CENTRAL` (Central Forgeworks, site `SITE-C1`) by an approved bounded
 > corpus change, so the three documents now come from three distinct
 > organisations. Nothing else about the lot moved: material, PO, quantity,
@@ -292,7 +292,7 @@ is detected and contained.
 2. The artifact is **retained** — evidence is never destroyed.
 3. The artifact is **excluded from decision use**.
 4. **No agent ever starts.** There is no Investigator or Verifier activity.
-5. **Zero mutation.** `LOT-1004` stays `RECEIVED`.
+5. **Zero mutation.** `LOT-1005` stays `RECEIVED`.
 
 402 MPa would fail Revision C anyway. That is deliberate: the security control
 must fire *before* the quality question is ever reached, and a document that
@@ -336,9 +336,9 @@ legitimate — that is a supplier claim, and testing it is the product.
 
 ---
 
-## 9. The polymer vertical (`LOT-1005`) — no document
+## 9. The polymer vertical (`LOT-1007`) — no document
 
-`LOT-1005` (Western Polymers, `MAT-RESIN-3`, `PO-79`, 300 kg) carries the
+`LOT-1007` (Western Polymers, `MAT-RESIN-3`, `PO-79`, 300 kg) carries the
 abstain → human continuation → RELEASE story and is exercised by plain-text
 fixtures (`COA_AMBIGUOUS`, `QA_RETEST`), not by a designed PDF. It is
 deliberately outside the four-lot ladder. It is the only lot `SPEC-R3` and

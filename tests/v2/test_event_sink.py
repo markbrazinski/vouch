@@ -196,14 +196,14 @@ def test_a_resumed_case_extends_history_rather_than_colliding(tmp_path):
     store = JsonRecordStore(tmp_path / "records")
     vouch = VouchV2(build_corpus(), record_store=store)
 
-    first = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    first = vouch.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = first.decision_record_id
     run_one = _identities(store, record_id)
     assert first.quality_decision_required
 
     vouch.supply_human_evidence(
         decision_record_id=record_id,
-        lot_id="LOT-1005",
+        lot_id="LOT-1007",
         raw=QA_RETEST,
         authority_source="PLANT-QA-LAB",
     )
@@ -224,16 +224,16 @@ def test_replayed_evidence_adds_no_events(tmp_path):
     store = JsonRecordStore(tmp_path / "records")
     vouch = VouchV2(build_corpus(), record_store=store)
 
-    first = vouch.evaluate_lot("LOT-1005", documents=[{"raw": COA_AMBIGUOUS}])
+    first = vouch.evaluate_lot("LOT-1007", documents=[{"raw": COA_AMBIGUOUS}])
     record_id = first.decision_record_id
     vouch.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1005",
+        decision_record_id=record_id, lot_id="LOT-1007",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
     settled = _identities(store, record_id)
 
     replay = vouch.supply_human_evidence(
-        decision_record_id=record_id, lot_id="LOT-1005",
+        decision_record_id=record_id, lot_id="LOT-1007",
         raw=QA_RETEST, authority_source="PLANT-QA-LAB",
     )
 

@@ -1,7 +1,7 @@
 /**
- * Shift+R — reset the LOT-1006 demo scenario. Dev/film only.
+ * Shift+R — reset the LOT-1003 demo scenario. Dev/film only.
  *
- * Filming a live LOT-1006 run means running it repeatedly: model inference is
+ * Filming a live LOT-1003 run means running it repeatedly: model inference is
  * non-deterministic, so a take that lands on MATERIAL_DISAGREEMENT may take
  * several attempts. This resets that ONE scenario between takes.
  *
@@ -58,7 +58,7 @@ export function useFilmReset(onReset?: () => void): FilmResetState {
           const response = await fetch('/api/dev/reset-lot', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ lot_id: 'LOT-1006' }),
+            body: JSON.stringify({ lot_id: 'LOT-1003' }),
           });
           const body = await response.json().catch(() => ({}));
           if (!response.ok || !body.ok) {
@@ -67,7 +67,7 @@ export function useFilmReset(onReset?: () => void): FilmResetState {
             setToast(`reset failed · ${body.error ?? response.status}`);
             return;
           }
-          setToast('LOT-1006 reset · ready for another run');
+          setToast('LOT-1003 reset · ready for another run');
           onReset?.();
         } catch {
           setToast('reset failed · is the local BFF running?');

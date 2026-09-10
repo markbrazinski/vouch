@@ -207,21 +207,21 @@ const BASELINE_ROUTES: Record<
 > = {
   '/dev/baseline/hero-b-run1': {
     state: 'QUALITY_DECISION_REQUIRED',
-    lotId: 'LOT-1003',
+    lotId: 'LOT-1004',
     material: 'MAT-POLY-3',
     receiptMeta: 'SUP-WEST · site SITE-W1 · 200 kg',
     load: () => import('./fixtures/hero-b-run1.json'),
   },
   '/dev/baseline/hero-b-run2': {
     state: 'RELEASE',
-    lotId: 'LOT-1003',
+    lotId: 'LOT-1004',
     material: 'MAT-POLY-3',
     receiptMeta: 'SUP-WEST · site SITE-W1 · 200 kg',
     load: () => import('./fixtures/hero-b-run2.json'),
   },
   '/dev/baseline/hostile': {
     state: 'SECURITY_QUARANTINE',
-    lotId: 'LOT-1004',
+    lotId: 'LOT-1005',
     material: 'MAT-ALLOY-7',
     receiptMeta: 'SUP-EAST · site SITE-E1 · 300 kg',
     load: () => import('./fixtures/hostile.json'),

@@ -557,7 +557,7 @@ def _record_superseded_by_reset(summary: dict, lot) -> bool:
         # live lot at version 1 is pristine-and-never-reset and the record is
         # still current; anything above 1 means the lot has been written since,
         # which for a RECEIVED lot only a reset does. Treating 0 as unknown
-        # left LOT-1004 pinned to SECURITY_HOLD through every reseed — the
+        # left LOT-1005 pinned to SECURITY_HOLD through every reseed — the
         # exact defect the pre-renumber gate found.
         return current > 1
     return observed < current

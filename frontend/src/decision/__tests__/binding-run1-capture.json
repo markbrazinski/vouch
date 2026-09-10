@@ -11,31 +11,31 @@
   "reasoners": "LOCAL_SCRIPTED_REASONERS",
   "durable": false
  },
- "decision_record_id": "DR-ff3ea0e9e315",
- "lot_id": "LOT-1003",
+ "decision_record_id": "DR-a51d64c4fb88",
+ "lot_id": "LOT-1004",
  "disposition": "",
  "failure_category": "EVIDENCE_IDENTITY_UNRESOLVED",
  "quality_decision_required": true,
- "reason": "supplier batch WP-26-0317-B is not authoritatively linked to internal lot LOT-1003; identity confirmation required",
+ "reason": "supplier batch WP-26-0317-B is not authoritatively linked to internal lot LOT-1004; identity confirmation required",
  "mutation": {},
  "consequences": {},
  "decision_record": {
-  "record_id": "DR-ff3ea0e9e315",
-  "lot_id": "LOT-1003",
+  "record_id": "DR-a51d64c4fb88",
+  "lot_id": "LOT-1004",
   "run_count": 1,
   "security": {
    "inspection_performed": true,
    "prompt_attack_detected": false,
    "blocked": false,
    "identity_unresolved_artifact_ids": [
-    "ART-3e29472df546"
+    "ART-d9022b4e3f93"
    ],
    "unresolved_batch_identities": [
     {
-     "artifact_id": "ART-3e29472df546",
+     "artifact_id": "ART-d9022b4e3f93",
      "supplier_batch": "WP-26-0317-B",
-     "internal_lot_id": "LOT-1003",
-     "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+     "internal_lot_id": "LOT-1004",
+     "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
      "supplier_id": "SUP-NORTH",
      "supplier_site": "SITE-N1",
      "material_id": "MAT-ALLOY-7",
@@ -61,14 +61,14 @@
   "reconciliation": "",
   "quality_authority": {
    "question": {
-    "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+    "question_id": "QQ-DR-a51d64c4fb88-IDENTITY",
     "question_type": "IDENTITY_BINDING",
     "characteristic": "",
     "options": [
      {
       "decision": "CONFIRM_BINDING",
-      "label": "Confirm supplier batch WP-26-0317-B is LOT-1003",
-      "establishes": "WP-26-0317-B -> LOT-1003"
+      "label": "Confirm supplier batch WP-26-0317-B is LOT-1004",
+      "establishes": "WP-26-0317-B -> LOT-1004"
      },
      {
       "decision": "KEEP_UNBOUND",
@@ -84,9 +84,9 @@
     "condition": "",
     "status": "OPEN",
     "supplier_batch": "WP-26-0317-B",
-    "internal_lot_id": "LOT-1003",
-    "artifact_id": "ART-3e29472df546",
-    "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+    "internal_lot_id": "LOT-1004",
+    "artifact_id": "ART-d9022b4e3f93",
+    "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
     "supplier_id": "SUP-NORTH",
     "supplier_site": "SITE-N1",
     "material_id": "MAT-ALLOY-7",
@@ -120,25 +120,25 @@
  "events": [
   {
    "event": "EVIDENCE_RECEIVED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037035+00:00",
-   "artifact_id": "ART-3e29472df546",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.131732+00:00",
+   "artifact_id": "ART-d9022b4e3f93",
    "source": "supplier-portal",
-   "content_type": "text/plain",
-   "requested_lot": "LOT-1003",
+   "content_type": "application/pdf",
+   "requested_lot": "LOT-1004",
    "requested_material": "MAT-ALLOY-7",
-   "storage_ref": "local://evidence/LOT-1003/ART-3e29472df546",
-   "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+   "storage_ref": "local://evidence/LOT-1004/ART-d9022b4e3f93",
+   "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
    "object_version": "sim-v1",
    "store_kind": "LOCAL_SIMULATION",
    "trust_label": "UNTRUSTED_SUPPLIER",
-   "byte_length": 265
+   "byte_length": 174965
   },
   {
    "event": "EVIDENCE_SECURITY_COMPLETED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037378+00:00",
-   "artifact_id": "ART-3e29472df546",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.206919+00:00",
+   "artifact_id": "ART-d9022b4e3f93",
    "detection_ran": true,
    "result": "EVIDENCE_IDENTITY_UNRESOLVED",
    "guardrail_outcome": "CLEAN",
@@ -152,16 +152,14 @@
    "claimed_identity": {
     "claimed_lot": "",
     "claimed_material": "MAT-ALLOY-7",
-    "claimed_supplier": "SUP-NORTH",
+    "claimed_supplier": "",
     "claimed_supplier_site": "SITE-N1",
     "claimed_supplier_batch": "WP-26-0317-B",
     "claimed_lots": [],
     "claimed_materials": [
      "MAT-ALLOY-7"
     ],
-    "claimed_suppliers": [
-     "SUP-NORTH"
-    ],
+    "claimed_suppliers": [],
     "claimed_supplier_sites": [
      "SITE-N1"
     ],
@@ -173,26 +171,24 @@
   },
   {
    "event": "EVIDENCE_BINDING_COMPLETED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037407+00:00",
-   "artifact_id": "ART-3e29472df546",
-   "requested_lot": "LOT-1003",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.206962+00:00",
+   "artifact_id": "ART-d9022b4e3f93",
+   "requested_lot": "LOT-1004",
    "requested_material": "MAT-ALLOY-7",
    "binding_status": "UNRESOLVED_SUPPLIER_BATCH",
    "bound": false,
    "claimed_identity": {
     "claimed_lot": "",
     "claimed_material": "MAT-ALLOY-7",
-    "claimed_supplier": "SUP-NORTH",
+    "claimed_supplier": "",
     "claimed_supplier_site": "SITE-N1",
     "claimed_supplier_batch": "WP-26-0317-B",
     "claimed_lots": [],
     "claimed_materials": [
      "MAT-ALLOY-7"
     ],
-    "claimed_suppliers": [
-     "SUP-NORTH"
-    ],
+    "claimed_suppliers": [],
     "claimed_supplier_sites": [
      "SITE-N1"
     ],
@@ -202,46 +198,15 @@
    },
    "identity_stated": true,
    "reasons": [
-    "document identifies itself as supplier batch WP-26-0317-B, which is not authoritatively linked to internal lot LOT-1003"
+    "document identifies itself as supplier batch WP-26-0317-B, which is not authoritatively linked to internal lot LOT-1004"
    ],
    "result": "EVIDENCE_IDENTITY_UNRESOLVED"
   },
   {
-   "event": "EVIDENCE_BINDING_MISMATCH",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037430+00:00",
-   "artifact_id": "ART-3e29472df546",
-   "requested_lot": "LOT-1003",
-   "binding_status": "UNRESOLVED_SUPPLIER_BATCH",
-   "claimed_identity": {
-    "claimed_lot": "",
-    "claimed_material": "MAT-ALLOY-7",
-    "claimed_supplier": "SUP-NORTH",
-    "claimed_supplier_site": "SITE-N1",
-    "claimed_supplier_batch": "WP-26-0317-B",
-    "claimed_lots": [],
-    "claimed_materials": [
-     "MAT-ALLOY-7"
-    ],
-    "claimed_suppliers": [
-     "SUP-NORTH"
-    ],
-    "claimed_supplier_sites": [
-     "SITE-N1"
-    ],
-    "claimed_supplier_batches": [
-     "WP-26-0317-B"
-    ]
-   },
-   "mismatches": [
-    "document identifies itself as supplier batch WP-26-0317-B, which is not authoritatively linked to internal lot LOT-1003"
-   ]
-  },
-  {
    "event": "EVIDENCE_EXTRACTED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037483+00:00",
-   "artifact_id": "ART-3e29472df546",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.207037+00:00",
+   "artifact_id": "ART-d9022b4e3f93",
    "method": "DETERMINISTIC_PARSER",
    "confidence": 1.0,
    "claim_count": 2,
@@ -251,24 +216,24 @@
   },
   {
    "event": "QUALITY_QUESTION_RAISED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037562+00:00",
-   "question_id": "QQ-DR-ff3ea0e9e315-IDENTITY",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.207119+00:00",
+   "question_id": "QQ-DR-a51d64c4fb88-IDENTITY",
    "question_type": "IDENTITY_BINDING",
    "supplier_batch": "WP-26-0317-B",
-   "internal_lot_id": "LOT-1003",
-   "artifact_id": "ART-3e29472df546",
-   "content_hash": "d883c59d1b2ea44ed38f05c96bb35d64c829975f44bcd0a43bd1fdf23df48a91",
+   "internal_lot_id": "LOT-1004",
+   "artifact_id": "ART-d9022b4e3f93",
+   "content_hash": "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
    "document_parsed": true,
    "security_clean": true,
    "extracted_claim_count": 2
   },
   {
    "event": "QUALITY_DECISION_REQUIRED",
-   "decision_record_id": "DR-ff3ea0e9e315",
-   "at": "2026-09-09T23:09:47.037592+00:00",
+   "decision_record_id": "DR-a51d64c4fb88",
+   "at": "2026-09-10T00:34:21.207149+00:00",
    "reason": "IDENTITY_UNRESOLVED",
-   "lot_id": "LOT-1003",
+   "lot_id": "LOT-1004",
    "category": "EVIDENCE_IDENTITY_UNRESOLVED"
   }
  ]

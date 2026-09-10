@@ -172,7 +172,7 @@ describe('failure rendering', () => {
   it('renders an abstention as an outcome, not as a crash', () => {
     const vm = project({
       decisionRecordId: 'DR-x',
-      lotId: 'LOT-1003',
+      lotId: 'LOT-1004',
       events: events.slice(0, 4),
       failure: {
         kind: 'DOMAIN_ABSTENTION',

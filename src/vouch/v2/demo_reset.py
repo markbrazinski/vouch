@@ -1,6 +1,6 @@
 """Demo state reset, at LOT granularity. Dev/film use only.
 
-Filming a live LOT-1006 run means running it repeatedly: model inference is
+Filming a live LOT-1003 run means running it repeatedly: model inference is
 non-deterministic, so a take that lands on MATERIAL_DISAGREEMENT may need
 several attempts. Re-seeding the whole corpus between takes would roll back
 LOT-1001, LOT-1002 and the C-417/C-418 recovery story too, which is both wrong
@@ -42,11 +42,11 @@ from .fixtures import build_corpus
 #: own" is a claim that must be reviewable. A derived version would quietly
 #: widen when the fixture grows.
 RESETTABLE: dict[str, tuple[tuple[str, str], ...]] = {
-    "LOT-1006": (
-        ("lot", "LOT-1006"),
-        ("inventory", "LOT-1006"),
-        # C-419 is LOT-1006's consequence and nothing else's: it is short by
-        # exactly LOT-1006's 200 kg. C-417 / C-418 belong to the alloy story
+    "LOT-1003": (
+        ("lot", "LOT-1003"),
+        ("inventory", "LOT-1003"),
+        # C-419 is LOT-1003's consequence and nothing else's: it is short by
+        # exactly LOT-1003's 200 kg. C-417 / C-418 belong to the alloy story
         # and are deliberately absent.
         ("production_order", "C-419"),
         # The queued coverage that makes C-419 read AT_RISK rather than

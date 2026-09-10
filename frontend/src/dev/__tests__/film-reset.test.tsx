@@ -29,7 +29,7 @@ function Harness({ onReset }: { onReset?: () => void }) {
 const ok = (_url?: unknown, _init?: RequestInit) =>
   Promise.resolve({
     ok: true,
-    json: () => Promise.resolve({ ok: true, lot_id: 'LOT-1006', lot_status: 'RECEIVED' }),
+    json: () => Promise.resolve({ ok: true, lot_id: 'LOT-1003', lot_status: 'RECEIVED' }),
   } as Response);
 
 function press(target: Element | Window, init: Partial<KeyboardEventInit> = {}) {
@@ -49,7 +49,7 @@ beforeEach(() => {
 });
 
 describe('the shortcut fires on Shift+R', () => {
-  it('calls the bounded dev reset route for LOT-1006', async () => {
+  it('calls the bounded dev reset route for LOT-1003', async () => {
     const fetchMock = vi.fn(ok);
     vi.stubGlobal('fetch', fetchMock);
     render(<Harness />);
@@ -60,7 +60,7 @@ describe('the shortcut fires on Shift+R', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/dev/reset-lot');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(String(init.body))).toEqual({ lot_id: 'LOT-1006' });
+    expect(JSON.parse(String(init.body))).toEqual({ lot_id: 'LOT-1003' });
   });
 
   it('shows the transient confirmation', async () => {
@@ -68,7 +68,7 @@ describe('the shortcut fires on Shift+R', () => {
     render(<Harness />);
     press(screen.getByTestId('plain'));
     expect((await screen.findByTestId('toast')).textContent).toBe(
-      'LOT-1006 reset · ready for another run',
+      'LOT-1003 reset · ready for another run',
     );
   });
 

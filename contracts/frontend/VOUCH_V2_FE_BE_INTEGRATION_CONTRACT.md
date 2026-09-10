@@ -296,7 +296,7 @@ scan already produces.
 |---|---|---|
 | Hero A | **AWS_LIVE_VERIFIED** | `DR-f30c8cb193d9`, 43.4s, `QUARANTINE` → C-417 `READY→BLOCKED` → C-418 resequenced. 9/9 checks, re-run after the 900.0 correction |
 | Hero B | **AWS_LIVE_VERIFIED** | 49.2s, abstain → human evidence → same record, `run_count 2` → `RELEASE`. 10/10 checks |
-| Hostile | **AWS_LIVE_VERIFIED** | Guardrail `DETECTED` → `QUARANTINED_SECURITY`, agents never invoked, zero mutation, LOT-1004 `RECEIVED` |
+| Hostile | **AWS_LIVE_VERIFIED** | Guardrail `DETECTED` → `QUARANTINED_SECURITY`, agents never invoked, zero mutation, LOT-1005 `RECEIVED` |
 | `get_today` | **AWS_LIVE_VERIFIED** | `MAT-ALLOY-7 short by 900.0 (need 900.0, have 0)` — the corrected canonical figure, captured from v24 |
 | Canonical reseed | **AWS_LIVE_VERIFIED** | 35 rows; every lot `RECEIVED`, every order `READY`, zero usable inventory |
 | Observability | **AWS_LIVE_VERIFIED** | 63 spans, Investigator 8.62s / Verifier 6.42s, token usage preserved, **0 content leaks** |
@@ -367,7 +367,7 @@ returned `TEXTRACT_TABLES`, `structuredExtraction` was `true`, and
 confidence exactly as specified. **No contract change was needed** — the
 predicted risk (column-header naming) did not materialise.
 
-One canonical-data change landed alongside: `LOT-1004` now belongs to
+One canonical-data change landed alongside: `LOT-1005` now belongs to
 `SUP-CENTRAL` / Central Forgeworks / `SITE-C1`, so the three demo documents come
 from three organisations. Live `list_decisions` and `get_decision` both reflect
 it. No decision semantics moved; the supplier is qualified on the same terms as

@@ -3,7 +3,7 @@
 A supplier certificate that is entirely legitimate: it parses, it clears
 security, and its measurements extract cleanly. What it does NOT do is name a
 Vouch lot. It names the supplier's own batch — `WP-26-0317-B` — and nothing
-authoritative maps that identifier to `LOT-1003`.
+authoritative maps that identifier to `LOT-1004`.
 
 The distinction this file exists to pin is:
 
@@ -24,7 +24,7 @@ from vouch.v2.fixtures import build_corpus
 from vouch.v2.lifecycle import EventLog, EventType
 from vouch.v2.workflow import VouchV2, VouchFailure
 
-# LOT-1003 in the fixture corpus: MAT-ALLOY-7, SUP-NORTH, SITE-N1, PO-82.
+# LOT-1004 in the fixture corpus: MAT-ALLOY-7, SUP-NORTH, SITE-N1, PO-82.
 # The document agrees with every one of those. The only thing it does not say
 # is which internal lot it is about — it says which SUPPLIER BATCH it is about.
 BATCH_ONLY = b"""Certificate of Analysis
@@ -49,7 +49,7 @@ def vouch():
     return corpus, VouchV2(corpus)
 
 
-def _run1(vouch, payload=BATCH_ONLY, lot="LOT-1003"):
+def _run1(vouch, payload=BATCH_ONLY, lot="LOT-1004"):
     corpus, v = vouch
     events = EventLog()
     outcome = v.evaluate_lot(
@@ -94,11 +94,11 @@ def test_batch_without_a_confirmed_binding_is_unresolved_not_unbound():
     identity = extract_document_identity(BATCH_ONLY.decode())
     status, reasons = validate_binding(
         identity,
-        target_lot_id="LOT-1003", target_material_id="MAT-ALLOY-7",
+        target_lot_id="LOT-1004", target_material_id="MAT-ALLOY-7",
         target_supplier_id="SUP-NORTH", target_supplier_site="SITE-N1",
     )
     assert status is BindingStatus.UNRESOLVED_SUPPLIER_BATCH
-    assert "WP-26-0317-B" in reasons[0] and "LOT-1003" in reasons[0]
+    assert "WP-26-0317-B" in reasons[0] and "LOT-1004" in reasons[0]
 
 
 def test_a_truly_anonymous_document_is_still_unbound_not_unresolved():
@@ -108,7 +108,7 @@ def test_a_truly_anonymous_document_is_still_unbound_not_unresolved():
     )
     status, _ = validate_binding(
         identity,
-        target_lot_id="LOT-1003", target_material_id="MAT-ALLOY-7",
+        target_lot_id="LOT-1004", target_material_id="MAT-ALLOY-7",
         target_supplier_id="SUP-NORTH", target_supplier_site="SITE-N1",
     )
     assert status is BindingStatus.UNBOUND_NO_IDENTITY
@@ -117,10 +117,10 @@ def test_a_truly_anonymous_document_is_still_unbound_not_unresolved():
 def test_binding_requires_an_exact_confirmed_reference():
     """No fuzzy match, no case games, no near-miss."""
     identity = extract_document_identity(BATCH_ONLY.decode())
-    for wrong in ({"BATCH:WP-26-0317-A->LOT-1003"}, {"BATCH:WP-26-0317-B->LOT-1002"}):
+    for wrong in ({"BATCH:WP-26-0317-A->LOT-1004"}, {"BATCH:WP-26-0317-B->LOT-1002"}):
         status, _ = validate_binding(
             identity,
-            target_lot_id="LOT-1003", target_material_id="MAT-ALLOY-7",
+            target_lot_id="LOT-1004", target_material_id="MAT-ALLOY-7",
             target_supplier_id="SUP-NORTH", target_supplier_site="SITE-N1",
             confirmed_batch_bindings=wrong,
         )
@@ -166,15 +166,15 @@ def test_run1_mutates_nothing(vouch):
     corpus, _ = vouch
     outcome, _ = _run1(vouch)
     assert outcome.mutated is False
-    assert corpus.lot("LOT-1003").status == "RECEIVED"
-    assert corpus.get("inventory", "LOT-1003").usable is False
+    assert corpus.lot("LOT-1004").status == "RECEIVED"
+    assert corpus.get("inventory", "LOT-1004").usable is False
 
 
 def test_run1_is_not_a_defect_finding(vouch):
     """Absence of attribution says nothing about the material's quality."""
     corpus, _ = vouch
     _run1(vouch)
-    assert corpus.lot("LOT-1003").status != "QUARANTINED"
+    assert corpus.lot("LOT-1004").status != "QUARANTINED"
 
 
 def test_run1_asks_a_concrete_structured_question(vouch):
@@ -182,7 +182,7 @@ def test_run1_asks_a_concrete_structured_question(vouch):
     q = outcome.record.quality_authority.question
     assert q.question_type == "IDENTITY_BINDING"
     assert q.supplier_batch == "WP-26-0317-B"
-    assert q.internal_lot_id == "LOT-1003"
+    assert q.internal_lot_id == "LOT-1004"
     assert q.status == "OPEN"
     # Both answers are identity answers. Neither is a disposition.
     assert [o["decision"] for o in q.options] == ["CONFIRM_BINDING", "KEEP_UNBOUND"]
@@ -215,8 +215,8 @@ def test_confirm_binding_resumes_the_same_record_and_releases(vouch):
     assert resumed.decision_record_id == outcome.decision_record_id, "SAME record"
     assert resumed.record.run_count == 2
     assert resumed.disposition == "RELEASE"
-    assert corpus.lot("LOT-1003").status == "RELEASED"
-    assert corpus.get("inventory", "LOT-1003").usable is True
+    assert corpus.lot("LOT-1004").status == "RELEASED"
+    assert corpus.get("inventory", "LOT-1004").usable is True
 
 
 def test_run2_is_where_the_agents_run_for_the_first_time(vouch):
@@ -271,7 +271,7 @@ def test_the_authority_records_what_was_established(vouch):
     resumed = _confirm(v, outcome)
     auth = resumed.record.quality_authority.decisions[0]
     assert auth.decision == "CONFIRM_BINDING"
-    assert (auth.supplier_batch, auth.bound_lot_id) == ("WP-26-0317-B", "LOT-1003")
+    assert (auth.supplier_batch, auth.bound_lot_id) == ("WP-26-0317-B", "LOT-1004")
     assert auth.accountable_actor == ACTOR and auth.authority_source == SOURCE
     assert auth.content_hash and auth.artifact_id
     assert auth.created_at
@@ -313,7 +313,7 @@ def test_keep_unbound_does_not_rerun_and_does_not_mutate(vouch):
     assert held.record.run_count == 1, "no second run"
     assert held.record.investigator.brief_hash == ""
     assert held.mutated is False
-    assert corpus.lot("LOT-1003").status == "RECEIVED"
+    assert corpus.lot("LOT-1004").status == "RECEIVED"
     assert held.record.quality_authority.question.status == "HELD"
     assert held.record.quality_authority.unbound is True
 
@@ -370,7 +370,7 @@ def test_binding_is_scoped_to_this_record_only(vouch):
     # again. The authority did not create a global alias.
     corpus.put(
         "lot", "LOT-7777",
-        type(corpus.lot("LOT-1003"))(
+        type(corpus.lot("LOT-1004"))(
             "LOT-7777", "SUP-NORTH", "MAT-ALLOY-7", "PO-82", 100.0,
             supplier_site="SITE-N1",
         ),
@@ -385,13 +385,13 @@ def test_duplicate_confirmation_is_idempotent(vouch):
     corpus, v = vouch
     outcome, _ = _run1(vouch)
     first = _confirm(v, outcome)
-    version = corpus.version_of("lot", "LOT-1003")
+    version = corpus.version_of("lot", "LOT-1004")
 
     second = _confirm(v, outcome)
     assert second.decision_record_id == first.decision_record_id
     assert second.record.run_count == 2, "no third run"
     assert len(second.record.quality_authority.decisions) == 1
-    assert corpus.version_of("lot", "LOT-1003") == version, "no second mutation"
+    assert corpus.version_of("lot", "LOT-1004") == version, "no second mutation"
 
 
 def test_confirmation_cannot_answer_with_a_disposition(vouch):
@@ -440,17 +440,17 @@ def test_the_consequence_is_held_inventory_becoming_usable(vouch):
     """The truthful consequence, and the whole of it."""
     corpus, v = vouch
     outcome, _ = _run1(vouch)
-    before = corpus.get("inventory", "LOT-1003")
+    before = corpus.get("inventory", "LOT-1004")
     assert (before.usable, before.quantity) == (False, 450.0)
 
     resumed = _confirm(v, outcome)
-    after = corpus.get("inventory", "LOT-1003")
+    after = corpus.get("inventory", "LOT-1004")
     assert (after.usable, after.quantity) == (True, 450.0)
     assert resumed.mutation["inventory_delta"] == 450.0
 
 
 def test_it_does_not_touch_the_other_demo_stories(vouch):
-    """C-417/C-418 (Hero A) and C-419 (LOT-1006) must not move because of this.
+    """C-417/C-418 (Hero A) and C-419 (LOT-1003) must not move because of this.
 
     450 kg is deliberately not enough to change any order's readiness, so this
     case tells its own story without borrowing or disturbing another's.

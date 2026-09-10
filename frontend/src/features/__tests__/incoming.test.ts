@@ -136,7 +136,7 @@ describe('Suppliers stays inside what the backend owns', () => {
     row({ decision_record_id: 'DR-1', lot_id: 'LOT-1002' }),
     row({
       decision_record_id: 'DR-2',
-      lot_id: 'LOT-1003',
+      lot_id: 'LOT-1004',
       supplier_id: 'SUP-WEST',
       supplier_name: 'Western Resins',
       supplier_site: 'SITE-W1',
@@ -213,13 +213,13 @@ describe('CONTRACT_VERIFIED — current arrivals collapse to one row per lot', (
   });
 
   it('never drops a lot, however many records it has', () => {
-    const rows = ['LOT-1001', 'LOT-1002', 'LOT-1003', 'LOT-1004'].flatMap((lot, i) =>
+    const rows = ['LOT-1001', 'LOT-1002', 'LOT-1004', 'LOT-1005'].flatMap((lot, i) =>
       Array.from({ length: i + 1 }, (_, n) =>
         at(lot, `DR-${lot}-${n}`, `2026-09-0${n + 1}T00:00:00Z`),
       ),
     );
     const vm = toCurrentArrivals({ ok: true, rows } as ListDecisionsDTO);
-    expect(vm.rows.map((r) => r.lotId)).toEqual(['LOT-1001', 'LOT-1002', 'LOT-1003', 'LOT-1004']);
+    expect(vm.rows.map((r) => r.lotId)).toEqual(['LOT-1001', 'LOT-1002', 'LOT-1004', 'LOT-1005']);
   });
 
   it('a row with no timestamp never displaces one that has a real one', () => {

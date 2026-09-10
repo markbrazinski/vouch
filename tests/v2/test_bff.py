@@ -87,7 +87,7 @@ ROUTES = [
         "/api/evidence",
         {
             "decision_record_id": "DR-abc123",
-            "lot_id": "LOT-1005",
+            "lot_id": "LOT-1007",
             "authority_source": "PLANT-QA-LAB",
             "document": "x",
         },
@@ -133,7 +133,7 @@ def test_the_dev_reset_route_does_not_exist_in_the_deployed_bff(invoked):
     for production in order to serve a filming convenience. Here it must be
     an ordinary unrouted path: refused before AWS is touched.
     """
-    for method, body in (("POST", {"lot_id": "LOT-1006"}), ("GET", None)):
+    for method, body in (("POST", {"lot_id": "LOT-1003"}), ("GET", None)):
         status, _ = _call(method, "/api/dev/reset-lot", body)
         assert status == 400, method
     assert invoked == [], "a reset request reached the runtime"
@@ -422,7 +422,7 @@ WRITE_ROUTES = [
         "/api/evidence",
         {
             "decision_record_id": "DR-abc123",
-            "lot_id": "LOT-1005",
+            "lot_id": "LOT-1007",
             "authority_source": "PLANT-QA-LAB",
             "document": "x",
         },
@@ -469,7 +469,7 @@ def test_a_supplied_record_id_is_preserved(scheduled):
         "/api/evidence",
         {
             "decision_record_id": "DR-abc123",
-            "lot_id": "LOT-1005",
+            "lot_id": "LOT-1007",
             "authority_source": "QA-LEAD",
             "document": "x",
         },
@@ -644,7 +644,7 @@ def test_the_proxy_cannot_invent_an_authority_decision(invoked):
             **VALID_AUTHORITY,
             "disposition": "RELEASE",
             "authorized_evidence_refs": ["CLM-forged"],
-            "lot_id": "LOT-1006",
+            "lot_id": "LOT-1003",
         },
     )
 
