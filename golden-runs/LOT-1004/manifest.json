@@ -1,0 +1,129 @@
+{
+ "lot_id": "LOT-1004",
+ "scenario": "identity/binding ambiguity -> human confirms batch<->lot -> run 2 RELEASE",
+ "decision_record_id": "DR-8f59b0e6f7d2",
+ "run_count": 2,
+ "source_artifact_id": "sha256:326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
+ "source_filename": "northern-alloys-coa-batch-wp-26-0317-b.pdf",
+ "model_id": "BEDROCK_NOVA",
+ "runtime_version": "50",
+ "runtime_name": "Gatehouse-IWAmEp93XP",
+ "capture_timestamp": "2026-09-10T22:02:03Z",
+ "terminal_outcome": "RELEASE",
+ "mutation": {
+  "sequence": "DR-8f59b0e6f7d2#CAP-e041ce3c2a8c4f73",
+  "capability_id": "CAP-e041ce3c2a8c4f73",
+  "decision_record_id": "DR-8f59b0e6f7d2",
+  "issuer_identity": "vouch.policy-engine",
+  "action": "release_lot",
+  "target_type": "lot",
+  "target_id": "LOT-1004",
+  "parameters": {
+   "observed_inventory_version": "1"
+  },
+  "before_version": 17,
+  "after_version": 18,
+  "before_state": {
+   "kind": "lot",
+   "state_version": 17
+  },
+  "after_state": {
+   "kind": "lot",
+   "status": "RELEASED",
+   "state_version": 18,
+   "inventory_usable": true
+  },
+  "result": "lot LOT-1004 RELEASED",
+  "inventory_delta": 450.0,
+  "inventory_before": {
+   "usable": false,
+   "quantity": 450.0
+  },
+  "inventory_after": {
+   "usable": true,
+   "quantity": 450.0
+  },
+  "at": "2026-09-10T22:01:54.120531+00:00"
+ },
+ "production_consequence": {
+  "coverage_changes": [
+   {
+    "order_id": "C-417",
+    "coverage": [
+     {
+      "material_id": "MAT-ALLOY-7",
+      "required": 900.0,
+      "available": 950.0,
+      "short_by": 0.0,
+      "planned": 0.0,
+      "uncovered": 0.0,
+      "ratio": 1.0556
+     }
+    ]
+   },
+   {
+    "order_id": "C-418",
+    "coverage": [
+     {
+      "material_id": "MAT-ALLOY-7",
+      "required": 500.0,
+      "available": 950.0,
+      "short_by": 0.0,
+      "planned": 0.0,
+      "uncovered": 0.0,
+      "ratio": 1.9
+     }
+    ]
+   }
+  ],
+  "readiness_changes": [
+   {
+    "order_id": "C-417",
+    "from": "BLOCKED",
+    "to": "READY",
+    "reason": "all materials available",
+    "persisted": true,
+    "state_version": 31,
+    "ledger_sequence": "DR-8f59b0e6f7d2#CAP-ce5b3e1bec7f463d"
+   }
+  ],
+  "caused_by": [
+   {
+    "cause": "lot_disposition",
+    "lot_id": "LOT-1004",
+    "inventory_delta": 450.0,
+    "material_id": "MAT-ALLOY-7",
+    "effect": "order_readiness",
+    "order_id": "C-417",
+    "from": "BLOCKED",
+    "to": "READY",
+    "decision_record_id": "DR-8f59b0e6f7d2",
+    "ledger_sequence": "DR-8f59b0e6f7d2#CAP-ce5b3e1bec7f463d"
+   }
+  ],
+  "persisted": true
+ },
+ "human_interaction": true,
+ "human_kind": "IDENTITY",
+ "raw_event_count": 37,
+ "beat_count": 19,
+ "backend": {
+  "mode": "production",
+  "corpus": "AWS_DYNAMODB",
+  "evidence_store": "AWS_S3",
+  "capability_store": "AWS_DYNAMODB",
+  "record_store": "AWS_DYNAMODB",
+  "event_store": "AWS_DYNAMODB",
+  "reasoners": "BEDROCK_NOVA",
+  "durable": true
+ },
+ "human_choice": "CONFIRM_BINDING",
+ "human_choice_detail": {
+  "supplier_batch": "WP-26-0317-B",
+  "bound_lot_id": "LOT-1004",
+  "question_type": "IDENTITY_BINDING"
+ },
+ "run_1_outcome": "EVIDENCE_IDENTITY_UNRESOLVED",
+ "run_2_result": "RELEASE",
+ "extraction_succeeded": true
+}

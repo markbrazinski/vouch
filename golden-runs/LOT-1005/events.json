@@ -1,0 +1,112 @@
+[
+ {
+  "event_id": "DR-01a822d82a0c#000001",
+  "sequence": 1,
+  "event": "EVIDENCE_RECEIVED",
+  "decision_record_id": "DR-01a822d82a0c",
+  "at": "2026-09-10T22:02:27.630672+00:00",
+  "payload": {
+   "artifact_id": "ART-706f62e47555",
+   "source": "supplier-portal",
+   "content_type": "application/pdf",
+   "requested_lot": "LOT-1005",
+   "requested_material": "MAT-ALLOY-7",
+   "storage_ref": "s3://<evidence-bucket>/evidence/LOT-1005/ART-706f62e47555",
+   "content_hash": "bb73e789f5e8e43b886e28011a763ffce40124093913f15269f9dd9f43b0a061",
+   "object_version": "YoHpKWz6D9rg_I0WtSG0XjBzod.UIXVx",
+   "store_kind": "AWS_S3",
+   "trust_label": "UNTRUSTED_SUPPLIER",
+   "byte_length": 77047
+  }
+ },
+ {
+  "event_id": "DR-01a822d82a0c#000002",
+  "sequence": 2,
+  "event": "EVIDENCE_SECURITY_COMPLETED",
+  "decision_record_id": "DR-01a822d82a0c",
+  "at": "2026-09-10T22:02:28.293997+00:00",
+  "payload": {
+   "artifact_id": "ART-706f62e47555",
+   "detection_ran": true,
+   "result": "QUARANTINED_SECURITY",
+   "guardrail_outcome": "DETECTED",
+   "guardrail_id": "wok5lemdo1ze",
+   "guardrail_version": "DRAFT",
+   "malware_scan": "NOT_RUN",
+   "prompt_attack_detected": true,
+   "quarantined": true,
+   "binding_mismatches": [],
+   "binding_status": "BOUND",
+   "claimed_identity": {
+    "claimed_lot": "LOT-1005",
+    "claimed_material": "MAT-ALLOY-7",
+    "claimed_supplier": "SUP-CENTRAL",
+    "claimed_supplier_site": "SITE-C1",
+    "claimed_supplier_batch": "",
+    "claimed_lots": [
+     "LOT-1005"
+    ],
+    "claimed_materials": [
+     "MAT-ALLOY-7"
+    ],
+    "claimed_suppliers": [
+     "SUP-CENTRAL"
+    ],
+    "claimed_supplier_sites": [
+     "SITE-C1"
+    ],
+    "claimed_supplier_batches": []
+   },
+   "version": "vouch-sec-1"
+  }
+ },
+ {
+  "event_id": "DR-01a822d82a0c#000003",
+  "sequence": 3,
+  "event": "EVIDENCE_BINDING_COMPLETED",
+  "decision_record_id": "DR-01a822d82a0c",
+  "at": "2026-09-10T22:02:28.306205+00:00",
+  "payload": {
+   "artifact_id": "ART-706f62e47555",
+   "requested_lot": "LOT-1005",
+   "requested_material": "MAT-ALLOY-7",
+   "binding_status": "BOUND",
+   "bound": true,
+   "claimed_identity": {
+    "claimed_lot": "LOT-1005",
+    "claimed_material": "MAT-ALLOY-7",
+    "claimed_supplier": "SUP-CENTRAL",
+    "claimed_supplier_site": "SITE-C1",
+    "claimed_supplier_batch": "",
+    "claimed_lots": [
+     "LOT-1005"
+    ],
+    "claimed_materials": [
+     "MAT-ALLOY-7"
+    ],
+    "claimed_suppliers": [
+     "SUP-CENTRAL"
+    ],
+    "claimed_supplier_sites": [
+     "SITE-C1"
+    ],
+    "claimed_supplier_batches": []
+   },
+   "identity_stated": true,
+   "reasons": [],
+   "result": "QUARANTINED_SECURITY"
+  }
+ },
+ {
+  "event_id": "DR-01a822d82a0c#000004",
+  "sequence": 4,
+  "event": "QUALITY_DECISION_REQUIRED",
+  "decision_record_id": "DR-01a822d82a0c",
+  "at": "2026-09-10T22:02:28.320078+00:00",
+  "payload": {
+   "reason": "INJECTION",
+   "lot_id": "LOT-1005",
+   "category": "SECURITY_QUARANTINE"
+  }
+ }
+]

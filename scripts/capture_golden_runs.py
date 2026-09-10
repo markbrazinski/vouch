@@ -266,6 +266,11 @@ def beats_from(events: list[dict]) -> list[dict]:
         if last["beat_id"] == beat_id and last["run"] == run:
             last["sequence_end"] = seq
             last["event_types"].append(kind)
+            # A beat is a RUN of events, and the question may not be its first:
+            # LOT-1003 raises QUALITY_QUESTION_RAISED then QUALITY_DECISION_
+            # REQUIRED, so the flag has to survive the merge.
+            if kind == "QUALITY_QUESTION_RAISED":
+                last["interaction_required"] = True
             continue
         note, compress = READABILITY.get(beat_id, ("", False))
         beats.append({
@@ -274,8 +279,14 @@ def beats_from(events: list[dict]) -> list[dict]:
             "sequence_start": seq,
             "sequence_end": seq,
             "ui_stage": beat_id,
-            # The human gate is the only beat that BLOCKS on a person.
-            "interaction_required": beat_id == "human_gate",
+            # Only a beat that actually RAISED a question blocks on a person.
+            #
+            # QUALITY_DECISION_REQUIRED alone is an escalation, not a choice:
+            # LOT-1005's security halt emits it with no question, no options and
+            # no disposition, and marking that beat interactive would tell a
+            # timing pass to wait for an answer nobody is being asked for.
+            "interaction_required": beat_id == "human_gate"
+            and kind == "QUALITY_QUESTION_RAISED",
             "minimum_readability": note,
             "safe_to_compress": compress,
             "event_types": [kind],
@@ -339,6 +350,14 @@ def write_package(lot_id: str, result: dict, events: list[dict], record: dict,
     _write(pkg / "events.json", events)
     _write(pkg / "decision-record.json", record.get("record", record))
     _write(pkg / "beats.json", beats)
+    # The TERMINAL AUTHORITATIVE RESPONSE, verbatim.
+    #
+    # Not derivable from the other three: the live app receives this from the
+    # invocation and `project()` reads the disposition, mutation and
+    # consequences straight off it. Playback that had to reconstruct it from the
+    # record would be re-deriving the outcome rather than replaying it, which is
+    # exactly the line these packages exist to hold.
+    _write(pkg / "result.json", result)
     return pkg
 
 

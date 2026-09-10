@@ -3,8 +3,9 @@
  *
  * `hero-b-stored-capture.json` is a verbatim capture of `get_decision` and
  * `get_events` for DR-herob000001 taken from the live production backend. It is
- * a 2-run decision — the run that mattered ended in QUALITY_DECISION_REQUIRED —
- * which is exactly the shape that exposes `record.events` as unusable.
+ * a 2-run decision — run 1 abstained to QUALITY_DECISION_REQUIRED, a human
+ * supplied evidence, and run 2 RELEASED — which is exactly the shape that
+ * exposes `record.events` as unusable.
  *
  * These tests exist because a single-run capture cannot catch this: on a 1-run
  * decision both sources project identically, which is precisely why the earlier
@@ -59,14 +60,25 @@ describe('the capture is the shape this test needs', () => {
 describe('full get_events reconstructs the correct state and history', () => {
   const vm = projectStoredDecision(input());
 
-  it('reaches the quality-decision state, not a release', () => {
-    expect(vm.outcome.headline).toBe('Quality decision required');
-    expect(vm.dispositionLabel).toBe('QUALITY DECISION');
+  /**
+   * The record's own terminal facts: `disposition: RELEASE`, gate `ALLOWED`,
+   * `release_lot` committed, no failure category.
+   *
+   * This previously asserted 'QUALITY DECISION', which was wrong on this
+   * capture: run 1's escalation is durable and stays in the stream forever, and
+   * the projection read it as still outstanding even though a human answered it
+   * and run 2 committed a real mutation. The live `evaluate` response hid the
+   * defect by carrying only the CURRENT run's events; `get_events` returns the
+   * whole history, which is what this path reads.
+   */
+  it('reaches the release the record actually committed', () => {
+    expect(vm.outcome.headline).toBe('Released into usable inventory');
+    expect(vm.dispositionLabel).toBe('RELEASE');
   });
 
-  it('shows the material disagreement on the spine', () => {
-    const disposition = vm.spine.find((n) => n.key === 'disposition');
-    expect(disposition?.state).toBe('material_disagreement');
+  it('shows run 1 disagreement in the history, not as the terminal state', () => {
+    expect(CAPTURE.events.some((e) => e.event === 'QUALITY_DECISION_REQUIRED')).toBe(true);
+    expect(vm.spine.find((n) => n.key === 'disposition')?.state).toBe('terminal');
   });
 
   it('carries the history of BOTH runs', () => {
@@ -76,8 +88,8 @@ describe('full get_events reconstructs the correct state and history', () => {
   });
 });
 
-describe('substituting record.events would differ', () => {
-  it('projects a DIFFERENT and wrong outcome', () => {
+describe('substituting record.events loses the history', () => {
+  it('reaches the same outcome but discards almost all of run 1', () => {
     const authoritative = projectStoredDecision(input());
     const summary = projectFromRecordEventsForTest({
       decisionRecordId: CAPTURE.decision_record_id,
@@ -87,10 +99,14 @@ describe('substituting record.events would differ', () => {
       receiptMeta: 'SUP-WEST · site SITE-W1 · 200 kg',
     });
 
-    // The divergence is the whole reason for the rule. If this ever stops
-    // differing, re-verify the backend before relaxing anything.
-    expect(summary.outcome.headline).not.toBe(authoritative.outcome.headline);
-    expect(summary.outcome.headline).toBe('Released into usable inventory');
+    // Both now reach the release that was actually committed — the terminal
+    // OUTCOME is no longer where the two sources diverge.
+    //
+    // The rule stands on the AUDIT TRAIL instead, which is the stronger reason
+    // for it: a summary that agrees about the ending while silently dropping
+    // 46 of run 1's 50 events is a worse trap than one that visibly disagrees,
+    // because nothing about the terminal frame reveals the loss.
+    expect(summary.outcome.headline).toBe(authoritative.outcome.headline);
     expect(summary.spine.find((n) => n.key === 'disposition')?.state).toBe('terminal');
 
     // ...and it silently loses almost all of run 1. The summary keeps only

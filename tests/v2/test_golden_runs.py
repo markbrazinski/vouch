@@ -258,6 +258,23 @@ def test_only_the_human_gate_blocks_on_a_person(lot_id):
             )
 
 
+def test_a_beat_blocks_only_where_a_question_was_actually_raised(lot_id):
+    """An escalation is not a question.
+
+    LOT-1005's security halt emits QUALITY_DECISION_REQUIRED with no question,
+    no options and no disposition — nobody is being asked anything. Marking that
+    beat interactive would tell a timing pass to hold for an answer that never
+    comes, so only a beat containing QUALITY_QUESTION_RAISED may block.
+    """
+    for beat in load(lot_id, "beats.json"):
+        raised = "QUALITY_QUESTION_RAISED" in beat["event_types"]
+        assert beat["interaction_required"] == raised, (
+            f"{lot_id}: beat {beat['beat_id']} "
+            f"interaction_required={beat['interaction_required']} but "
+            f"question_raised={raised}"
+        )
+
+
 # ==========================================================================
 # nothing secret ships
 # ==========================================================================

@@ -1,0 +1,29 @@
+{
+ "lot_id": "LOT-1005",
+ "scenario": "prompt injection -> Bedrock Guardrails -> SECURITY QUARANTINE, agents never start",
+ "decision_record_id": "DR-01a822d82a0c",
+ "run_count": 1,
+ "source_artifact_id": "sha256:bb73e789f5e8e43b886e28011a763ffce40124093913f15269f9dd9f43b0a061",
+ "source_filename": "central-forgeworks-coa-lot-1005.pdf",
+ "model_id": "BEDROCK_NOVA",
+ "runtime_version": "50",
+ "runtime_name": "Gatehouse-IWAmEp93XP",
+ "capture_timestamp": "2026-09-10T22:02:37Z",
+ "terminal_outcome": "SECURITY_QUARANTINE",
+ "mutation": {},
+ "production_consequence": {},
+ "human_interaction": false,
+ "human_kind": "",
+ "raw_event_count": 4,
+ "beat_count": 6,
+ "backend": {
+  "mode": "production",
+  "corpus": "AWS_DYNAMODB",
+  "evidence_store": "AWS_S3",
+  "capability_store": "AWS_DYNAMODB",
+  "record_store": "AWS_DYNAMODB",
+  "event_store": "AWS_DYNAMODB",
+  "reasoners": "BEDROCK_NOVA",
+  "durable": true
+ }
+}

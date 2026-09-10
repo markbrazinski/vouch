@@ -1,0 +1,76 @@
+[
+ {
+  "beat_id": "startup",
+  "run": 1,
+  "sequence_start": 0,
+  "sequence_end": 0,
+  "ui_stage": "startup",
+  "interaction_required": false,
+  "minimum_readability": "orientation only",
+  "safe_to_compress": true,
+  "event_types": []
+ },
+ {
+  "beat_id": "evidence_received",
+  "run": 1,
+  "sequence_start": 1,
+  "sequence_end": 1,
+  "ui_stage": "evidence_received",
+  "interaction_required": false,
+  "minimum_readability": "the document arriving; establishes the lot",
+  "safe_to_compress": true,
+  "event_types": [
+   "EVIDENCE_RECEIVED"
+  ]
+ },
+ {
+  "beat_id": "security",
+  "run": 1,
+  "sequence_start": 2,
+  "sequence_end": 2,
+  "ui_stage": "security",
+  "interaction_required": false,
+  "minimum_readability": "must be legible when it is the OUTCOME (LOT-1005)",
+  "safe_to_compress": false,
+  "event_types": [
+   "EVIDENCE_SECURITY_COMPLETED"
+  ]
+ },
+ {
+  "beat_id": "binding",
+  "run": 1,
+  "sequence_start": 3,
+  "sequence_end": 3,
+  "ui_stage": "binding",
+  "interaction_required": false,
+  "minimum_readability": "identity question needs reading time (LOT-1004)",
+  "safe_to_compress": false,
+  "event_types": [
+   "EVIDENCE_BINDING_COMPLETED"
+  ]
+ },
+ {
+  "beat_id": "human_gate",
+  "run": 1,
+  "sequence_start": 4,
+  "sequence_end": 4,
+  "ui_stage": "human_gate",
+  "interaction_required": false,
+  "minimum_readability": "the operator must understand the question before the answer",
+  "safe_to_compress": false,
+  "event_types": [
+   "QUALITY_DECISION_REQUIRED"
+  ]
+ },
+ {
+  "beat_id": "terminal",
+  "run": 1,
+  "sequence_start": 4,
+  "sequence_end": 4,
+  "ui_stage": "terminal",
+  "interaction_required": false,
+  "minimum_readability": "Outcome / Why / Next Action; the frame that must be read",
+  "safe_to_compress": false,
+  "event_types": []
+ }
+]

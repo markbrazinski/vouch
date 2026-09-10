@@ -699,6 +699,44 @@ const allOf = (events: LifecycleEventDTO[], type: string): LifecycleEventDTO[] =
   events.filter((e) => e.event === type);
 
 /**
+ * An escalation that is still OUTSTANDING — not one a later run already answered.
+ *
+ * `QUALITY_DECISION_REQUIRED` is durable: it stays in the stream forever once
+ * emitted. On a resumed decision the human answers the question, the agents
+ * re-run, and a real DISPOSITION_COMPUTED plus a real mutation follow it — but
+ * `last(events, 'QUALITY_DECISION_REQUIRED')` still returns run 1's escalation,
+ * so the header claimed "QUALITY DECISION" on a lot that had already RELEASED.
+ *
+ * The live `evaluate` response hid this: it carries only the CURRENT run's
+ * events, so run 1's escalation is absent and the terminal frame looked right.
+ * `get_events` returns the whole history, which is what Records, Today and any
+ * saved-run playback read — and there the answered question came back to life.
+ *
+ * Caught on the LOT-1003 and LOT-1004 golden captures, where the escalation at
+ * sequence 30 and 6 is superseded by a disposition at 66 and 28.
+ *
+ * A question the final run genuinely ended on is still returned: nothing
+ * supersedes it, so there is nothing to compare against.
+ */
+const openQualityDecision = (
+  events: LifecycleEventDTO[],
+): LifecycleEventDTO | undefined => {
+  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  if (!qdr) return undefined;
+  const at = events.indexOf(qdr);
+  // Only a COMMITTED state change supersedes it. A later DISPOSITION_COMPUTED
+  // alone does not: on the abstain path the disposition is computed and then
+  // REFUSED by the gate, which is the very sequence that raises the question —
+  // treating it as settlement would hide every genuine abstention.
+  //
+  // A later DECISION_RESUMED does not settle it either: a resumed run may
+  // abstain a second time, and it is the last escalation that is outstanding.
+  // Only a mutation proves the case actually reached an authorized outcome.
+  const settled = events.slice(at + 1).some((e) => e.event === 'MUTATION_COMPLETED');
+  return settled ? undefined : qdr;
+};
+
+/**
  * D8. The active stage is derived from the last STAGE BOUNDARY event only.
  * `TOOL_CALLED` is intentionally absent from STAGE_OWNER.
  */
@@ -855,7 +893,7 @@ function dispositionFrom(
   result: EvaluateDTO | null,
 ): DispositionVM | null {
   const computed = last(events, 'DISPOSITION_COMPUTED');
-  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  const qdr = openQualityDecision(events);
   if (!computed && !qdr) return null;
   // Integration contract invariant 6. On a security quarantine the SAME
   // QUALITY_DECISION_REQUIRED event is emitted by the scanner, before any
@@ -1094,7 +1132,7 @@ function outcomeFrom(
     };
   }
 
-  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  const qdr = openQualityDecision(events);
   // A question that has been ANSWERED is no longer open. On a resumed case the
   // rail deliberately keeps run 1's escalation, so reading it alone left a
   // released lot still reporting "Quality decision required" — the outcome
@@ -1417,7 +1455,7 @@ function spineFrom(
   const investigator = last(events, 'APPLICABILITY_BRIEF_COMPLETED');
   const verifier = last(events, 'VERIFIER_BRIEF_COMPLETED');
   const computed = last(events, 'DISPOSITION_COMPUTED');
-  const qdr = last(events, 'QUALITY_DECISION_REQUIRED');
+  const qdr = openQualityDecision(events);
   const consequence = last(events, 'CONSEQUENCE_RECALCULATED');
 
   const evidenceState: SpineNodeVM['state'] = halted
