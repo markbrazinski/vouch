@@ -1,0 +1,158 @@
+{
+ "lot_id": "LOT-1003",
+ "scenario": "MATERIAL_DISAGREEMENT -> human establishes controlling evidence -> run 2 RELEASE",
+ "decision_record_id": "DR-aafc8009407b",
+ "run_count": 2,
+ "source_artifact_id": "sha256:a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8",
+ "source_filename": "western-polymers-coa-lot-1003.pdf",
+ "model_id": "BEDROCK_NOVA",
+ "runtime_version": "50",
+ "runtime_name": "Gatehouse-IWAmEp93XP",
+ "capture_timestamp": "2026-09-10T22:00:06Z",
+ "terminal_outcome": "RELEASE",
+ "mutation": {
+  "sequence": "DR-aafc8009407b#CAP-ae85c11a8eb94609",
+  "capability_id": "CAP-ae85c11a8eb94609",
+  "decision_record_id": "DR-aafc8009407b",
+  "issuer_identity": "vouch.policy-engine",
+  "action": "release_lot",
+  "target_type": "lot",
+  "target_id": "LOT-1003",
+  "parameters": {
+   "observed_inventory_version": "1"
+  },
+  "before_version": 20,
+  "after_version": 21,
+  "before_state": {
+   "kind": "lot",
+   "state_version": 20
+  },
+  "after_state": {
+   "kind": "lot",
+   "status": "RELEASED",
+   "state_version": 21,
+   "inventory_usable": true
+  },
+  "result": "lot LOT-1003 RELEASED",
+  "inventory_delta": 200.0,
+  "inventory_before": {
+   "usable": false,
+   "quantity": 200.0
+  },
+  "inventory_after": {
+   "usable": true,
+   "quantity": 200.0
+  },
+  "at": "2026-09-10T21:59:58.076325+00:00"
+ },
+ "production_consequence": {
+  "coverage_changes": [
+   {
+    "order_id": "C-419",
+    "coverage": [
+     {
+      "material_id": "MAT-RESIN-3",
+      "required": 800.0,
+      "available": 800.0,
+      "short_by": 0.0,
+      "planned": 0.0,
+      "uncovered": 0.0,
+      "ratio": 1.0
+     }
+    ]
+   }
+  ],
+  "readiness_changes": [
+   {
+    "order_id": "C-419",
+    "from": "AT_RISK",
+    "to": "READY",
+    "reason": "all materials available",
+    "persisted": true,
+    "state_version": 22,
+    "ledger_sequence": "DR-aafc8009407b#CAP-3107cae39a7d456a"
+   }
+  ],
+  "caused_by": [
+   {
+    "cause": "lot_disposition",
+    "lot_id": "LOT-1003",
+    "inventory_delta": 200.0,
+    "material_id": "MAT-RESIN-3",
+    "effect": "order_readiness",
+    "order_id": "C-419",
+    "from": "AT_RISK",
+    "to": "READY",
+    "decision_record_id": "DR-aafc8009407b",
+    "ledger_sequence": "DR-aafc8009407b#CAP-3107cae39a7d456a"
+   }
+  ],
+  "persisted": true
+ },
+ "human_interaction": true,
+ "human_kind": "QUALITY",
+ "raw_event_count": 74,
+ "beat_count": 21,
+ "backend": {
+  "mode": "production",
+  "corpus": "AWS_DYNAMODB",
+  "evidence_store": "AWS_S3",
+  "capability_store": "AWS_DYNAMODB",
+  "record_store": "AWS_DYNAMODB",
+  "event_store": "AWS_DYNAMODB",
+  "reasoners": "BEDROCK_NOVA",
+  "durable": true
+ },
+ "total_attempts": 2,
+ "attempt_ledger": [
+  {
+   "attempt": 1,
+   "decision_record_id": "DR-b31740de0021",
+   "investigator_selection": "",
+   "verifier_selection": "",
+   "reconciliation": "QUARANTINE",
+   "contract_valid": true,
+   "human_gate": false,
+   "final_state": "QUARANTINE",
+   "golden": false
+  },
+  {
+   "attempt": 2,
+   "decision_record_id": "DR-aafc8009407b",
+   "investigator_selection": "CLM-c2a3b0d59c33-00",
+   "verifier_selection": "CLM-c2a3b0d59c33-01",
+   "reconciliation": "MATERIAL_DISAGREEMENT",
+   "contract_valid": true,
+   "human_gate": true,
+   "final_state": "RELEASE",
+   "golden": true,
+   "human_selection": "CLM-c2a3b0d59c33-01",
+   "human_selection_detail": {
+    "value": 312.0,
+    "units": "cP",
+    "method": "ASTM-D445",
+    "condition": "25C",
+    "selected_by": "VERIFIER",
+    "equivalence_id": "EQV-1",
+    "within_limits": true,
+    "threshold": "[200.0, 400.0] cP"
+   },
+   "run2_result": "RELEASE"
+  }
+ ],
+ "human_choice": "CLM-c2a3b0d59c33-01",
+ "human_choice_detail": {
+  "value": 312.0,
+  "units": "cP",
+  "method": "ASTM-D445",
+  "condition": "25C",
+  "selected_by": "VERIFIER",
+  "equivalence_id": "EQV-1",
+  "within_limits": true,
+  "threshold": "[200.0, 400.0] cP"
+ },
+ "investigator_selection": "CLM-c2a3b0d59c33-00",
+ "verifier_selection": "CLM-c2a3b0d59c33-01",
+ "run_2_result": "RELEASE",
+ "run_1_outcome": "MATERIAL_DISAGREEMENT"
+}

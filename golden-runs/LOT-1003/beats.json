@@ -67,7 +67,7 @@
   "beat_id": "investigator",
   "run": 1,
   "sequence_start": 6,
-  "sequence_end": 13,
+  "sequence_end": 15,
   "ui_stage": "investigator",
   "interaction_required": false,
   "minimum_readability": "first agent reasoning; sets the grammar",
@@ -80,14 +80,16 @@
    "TOOL_RESULT_BOUND",
    "TOOL_CALLED",
    "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
    "APPLICABILITY_BRIEF_COMPLETED"
   ]
  },
  {
   "beat_id": "verifier",
   "run": 1,
-  "sequence_start": 14,
-  "sequence_end": 21,
+  "sequence_start": 16,
+  "sequence_end": 27,
   "ui_stage": "verifier",
   "interaction_required": false,
   "minimum_readability": "independence is the point; must resolve visibly BEFORE disposition",
@@ -100,14 +102,139 @@
    "TOOL_RESULT_BOUND",
    "TOOL_CALLED",
    "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
    "VERIFIER_BRIEF_COMPLETED"
   ]
  },
  {
   "beat_id": "reconciliation",
   "run": 1,
-  "sequence_start": 22,
-  "sequence_end": 22,
+  "sequence_start": 28,
+  "sequence_end": 28,
+  "ui_stage": "reconciliation",
+  "interaction_required": false,
+  "minimum_readability": "the comparison; slower when it DIFFERS",
+  "safe_to_compress": false,
+  "event_types": [
+   "RECONCILIATION_COMPLETED"
+  ]
+ },
+ {
+  "beat_id": "human_gate",
+  "run": 1,
+  "sequence_start": 29,
+  "sequence_end": 30,
+  "ui_stage": "human_gate",
+  "interaction_required": true,
+  "minimum_readability": "the operator must understand the question before the answer",
+  "safe_to_compress": false,
+  "event_types": [
+   "QUALITY_QUESTION_RAISED",
+   "QUALITY_DECISION_REQUIRED"
+  ]
+ },
+ {
+  "beat_id": "human_authority",
+  "run": 2,
+  "sequence_start": 31,
+  "sequence_end": 31,
+  "ui_stage": "human_authority",
+  "interaction_required": false,
+  "minimum_readability": "the human act itself; the hinge of the story",
+  "safe_to_compress": false,
+  "event_types": [
+   "QUALITY_AUTHORITY_RECORDED"
+  ]
+ },
+ {
+  "beat_id": "run_2_start",
+  "run": 2,
+  "sequence_start": 32,
+  "sequence_end": 32,
+  "ui_stage": "run_2_start",
+  "interaction_required": false,
+  "minimum_readability": "same record resuming; continuity must land",
+  "safe_to_compress": false,
+  "event_types": [
+   "DECISION_RESUMED"
+  ]
+ },
+ {
+  "beat_id": "extraction",
+  "run": 2,
+  "sequence_start": 33,
+  "sequence_end": 33,
+  "ui_stage": "extraction",
+  "interaction_required": false,
+  "minimum_readability": "mechanical; safe to move through",
+  "safe_to_compress": true,
+  "event_types": [
+   "EVIDENCE_SNAPSHOT_CREATED"
+  ]
+ },
+ {
+  "beat_id": "investigator",
+  "run": 2,
+  "sequence_start": 34,
+  "sequence_end": 45,
+  "ui_stage": "investigator",
+  "interaction_required": false,
+  "minimum_readability": "first agent reasoning; sets the grammar",
+  "safe_to_compress": false,
+  "event_types": [
+   "INVESTIGATOR_STARTED",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "APPLICABILITY_BRIEF_COMPLETED"
+  ]
+ },
+ {
+  "beat_id": "verifier",
+  "run": 2,
+  "sequence_start": 46,
+  "sequence_end": 64,
+  "ui_stage": "verifier",
+  "interaction_required": false,
+  "minimum_readability": "independence is the point; must resolve visibly BEFORE disposition",
+  "safe_to_compress": false,
+  "event_types": [
+   "VERIFIER_STARTED",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "VERIFIER_BRIEF_COMPLETED",
+   "BRIEF_VALIDATION_FAILED",
+   "VERIFIER_STARTED",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "VERIFIER_BRIEF_COMPLETED"
+  ]
+ },
+ {
+  "beat_id": "reconciliation",
+  "run": 2,
+  "sequence_start": 65,
+  "sequence_end": 65,
   "ui_stage": "reconciliation",
   "interaction_required": false,
   "minimum_readability": "the comparison; slower when it DIFFERS",
@@ -118,9 +245,9 @@
  },
  {
   "beat_id": "disposition",
-  "run": 1,
-  "sequence_start": 23,
-  "sequence_end": 24,
+  "run": 2,
+  "sequence_start": 66,
+  "sequence_end": 67,
   "ui_stage": "disposition",
   "interaction_required": false,
   "minimum_readability": "the deterministic result and its arithmetic",
@@ -132,9 +259,9 @@
  },
  {
   "beat_id": "mutation",
-  "run": 1,
-  "sequence_start": 25,
-  "sequence_end": 26,
+  "run": 2,
+  "sequence_start": 68,
+  "sequence_end": 69,
   "ui_stage": "mutation",
   "interaction_required": false,
   "minimum_readability": "the state actually changing",
@@ -146,9 +273,9 @@
  },
  {
   "beat_id": "disposition",
-  "run": 1,
-  "sequence_start": 27,
-  "sequence_end": 27,
+  "run": 2,
+  "sequence_start": 70,
+  "sequence_end": 70,
   "ui_stage": "disposition",
   "interaction_required": false,
   "minimum_readability": "the deterministic result and its arithmetic",
@@ -159,9 +286,9 @@
  },
  {
   "beat_id": "mutation",
-  "run": 1,
-  "sequence_start": 28,
-  "sequence_end": 29,
+  "run": 2,
+  "sequence_start": 71,
+  "sequence_end": 72,
   "ui_stage": "mutation",
   "interaction_required": false,
   "minimum_readability": "the state actually changing",
@@ -173,24 +300,23 @@
  },
  {
   "beat_id": "consequence",
-  "run": 1,
-  "sequence_start": 30,
-  "sequence_end": 32,
+  "run": 2,
+  "sequence_start": 73,
+  "sequence_end": 74,
   "ui_stage": "consequence",
   "interaction_required": false,
   "minimum_readability": "production effect; the 'so what'",
   "safe_to_compress": false,
   "event_types": [
    "READINESS_TRANSITIONED",
-   "CONSEQUENCE_RECALCULATED",
    "CONSEQUENCE_RECALCULATED"
   ]
  },
  {
   "beat_id": "terminal",
-  "run": 1,
-  "sequence_start": 32,
-  "sequence_end": 32,
+  "run": 2,
+  "sequence_start": 74,
+  "sequence_end": 74,
   "ui_stage": "terminal",
   "interaction_required": false,
   "minimum_readability": "Outcome / Why / Next Action; the frame that must be read",

@@ -89,10 +89,7 @@ BEAT_OF: dict[str, str] = {
     "EVIDENCE_EXTRACTED": "extraction",
     "EVIDENCE_SNAPSHOT_CREATED": "extraction",
     "INVESTIGATOR_STARTED": "investigator",
-    "TOOL_CALLED": "investigator",
-    "TOOL_RESULT_BOUND": "investigator",
     "APPLICABILITY_BRIEF_COMPLETED": "investigator",
-    "BRIEF_VALIDATION_FAILED": "investigator",
     "VERIFIER_STARTED": "verifier",
     "VERIFIER_BRIEF_COMPLETED": "verifier",
     "RECONCILIATION_COMPLETED": "reconciliation",
@@ -214,10 +211,56 @@ def beats_from(events: list[dict]) -> list[dict]:
         "event_types": [],
     }]
 
+    # TOOL_CALLED / TOOL_RESULT_BOUND belong to whichever agent is CURRENTLY
+    # reasoning — the event does not say which. Attributing them statically to
+    # the investigator split the verifier into two fragments around its own tool
+    # calls, which would let a timing pass hold "verifier" for 18ms and run the
+    # 7.5s it actually spent reasoning under the investigator's label.
+    agent = "investigator"
+    # Run number is DERIVED, mirroring `runNumbers()` in the frontend adapter:
+    # the backend does not put `run_number` on the wire (`rerun()` increments
+    # `run_count` on the RECORD), so the only in-stream markers are the human
+    # act and DECISION_RESUMED. The boundary opens at the HUMAN act, because
+    # that is what causes the new run — filing it under run 1 would attribute
+    # it to the run it actually ended.
+    #
+    # Deliberately the same rule as the UI: beats and the activity rail must
+    # not disagree about which run a frame belongs to.
+    run = 1
+    stepped = False
+
     for row in events:
         kind = row.get("event", "")
-        beat_id = BEAT_OF.get(kind, "terminal")
-        run = int((row.get("payload") or {}).get("run_number") or row.get("run_number") or 1)
+        payload = row.get("payload") or {}
+        human_act = kind == "HUMAN_EVIDENCE_RECEIVED" or (
+            kind == "QUALITY_AUTHORITY_RECORDED"
+            and payload.get("decision") in ("CONFIRM_BINDING", "ESTABLISH_EVIDENCE")
+        )
+        if human_act:
+            run += 1
+            stepped = True
+        elif kind == "DECISION_RESUMED":
+            if not stepped:
+                run += 1
+            stepped = False
+        run = int(payload.get("run_number") or row.get("run_number") or run)
+
+        if kind == "INVESTIGATOR_STARTED":
+            agent = "investigator"
+        elif kind == "VERIFIER_STARTED":
+            agent = "verifier"
+        # Events that belong to whichever agent is CURRENTLY reasoning. Tool
+        # calls do not name a beat, and BRIEF_VALIDATION_FAILED is emitted by
+        # either role — a verifier whose first brief ignored established
+        # evidence retries, and attributing that rejection to the investigator
+        # would split the verifier around its own retry.
+        #
+        # `agent` in the payload is authoritative where present; the running
+        # agent is the fallback.
+        if kind in ("TOOL_CALLED", "TOOL_RESULT_BOUND", "BRIEF_VALIDATION_FAILED"):
+            beat_id = payload.get("agent") or agent
+        else:
+            beat_id = BEAT_OF.get(kind, "terminal")
         seq = int(row.get("sequence") or 0)
         last = beats[-1]
         if last["beat_id"] == beat_id and last["run"] == run:
@@ -304,8 +347,31 @@ def _sha256(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _redact(body):
+    """Strip account-specific targeting from anything written to disk.
+
+    Evidence refs are stored as `s3://<bucket>/evidence/<lot>/<artifact-id>`,
+    and the bucket name embeds the AWS account id — tracked targeting
+    information the contract (§13) and `test_no_aws_account_id_in_tracked_files`
+    both forbid. The ARTIFACT ID is the stable identifier a playback or an audit
+    actually needs, so the bucket is replaced and the path kept.
+
+    Applied to the whole serialized document rather than to known fields: a ref
+    can appear anywhere in a record, and a redaction that has to enumerate
+    locations is one schema change away from leaking.
+    """
+    config = load()
+    text = json.dumps(body, indent=1, default=str, sort_keys=False)
+    if config.evidence_bucket:
+        text = text.replace(f"s3://{config.evidence_bucket}/", "s3://<evidence-bucket>/")
+        text = text.replace(config.evidence_bucket, "<evidence-bucket>")
+    if config.account_id:
+        text = text.replace(config.account_id, "<account-id>")
+    return text
+
+
 def _write(path: Path, body) -> None:
-    path.write_text(json.dumps(body, indent=1, default=str, sort_keys=False) + "\n")
+    path.write_text(_redact(body) + "\n")
 
 
 def capture_simple(lot_id: str) -> dict:
@@ -319,6 +385,180 @@ def capture_simple(lot_id: str) -> dict:
     return {"result": result, "events": events, "package": pkg}
 
 
+#: LOT-1003 is non-deterministic BY DESIGN: two honest measurements point
+#: opposite ways, and whether the two agents select materially different
+#: controlling evidence is a property of the run, not of the fixture. The
+#: commission allows this many live attempts before declaring the golden run
+#: unfindable. Nothing is tuned between attempts — same prompt, same fixture,
+#: same model. A convergent run is a truthful non-golden outcome, kept as
+#: history, and the next attempt starts from an isolated LOT reset.
+MAX_DISAGREEMENT_ATTEMPTS = 15
+
+
+def capture_disagreement(lot_id: str = "LOT-1003") -> dict:
+    """Retry LOT-1003 until the agents genuinely disagree, then let a human decide.
+
+    Returns the attempt ledger alongside the golden package, because the runs
+    that did NOT qualify are evidence too: they are what makes the qualifying
+    run a real sample rather than a staged one.
+    """
+    spec = SCENARIOS[lot_id]
+    pdf = EVIDENCE / spec["pdf"]
+    ledger: list[dict] = []
+
+    for attempt in range(1, MAX_DISAGREEMENT_ATTEMPTS + 1):
+        if attempt > 1:
+            reset_lot(lot_id)  # isolated, never a full reseed
+        result = evaluate(lot_id, pdf)
+        record_id = result.get("decision_record_id", "")
+        category = result.get("failure_category") or ""
+        qdr = bool(result.get("quality_decision_required"))
+        question = _question_of(result)
+
+        row = {
+            "attempt": attempt,
+            "decision_record_id": record_id,
+            "investigator_selection": "",
+            "verifier_selection": "",
+            "reconciliation": category or (result.get("disposition") or ""),
+            "contract_valid": bool(record_id) and category != "TECHNICAL_FAILURE",
+            "human_gate": qdr,
+            "final_state": result.get("disposition") or category or "",
+            "golden": False,
+        }
+        if question:
+            row["investigator_selection"] = question.get("investigator_evidence_ref", "")
+            row["verifier_selection"] = question.get("verifier_evidence_ref", "")
+
+        qualifies = qdr and category == "MATERIAL_DISAGREEMENT" and bool(question)
+        print(f"  attempt {attempt}: {row['reconciliation'] or '(none)'} "
+              f"qdr={qdr} {'<- QUALIFIES' if qualifies else ''}")
+        if not qualifies:
+            ledger.append(row)
+            continue
+
+        # The human establishes the RELEASE-producing controlling evidence. The
+        # option is chosen by its OWN computed `would_disposition`, never by a
+        # hard-coded claim id: the engine states which path releases, and the
+        # capture selects that one rather than assuming which agent found it.
+        release = next(
+            (o for o in (question.get("options") or [])
+             if o.get("would_disposition") == "RELEASE"),
+            None,
+        )
+        if release is None:
+            row["contract_valid"] = False
+            ledger.append(row)
+            print("    no RELEASE option offered; not a usable golden run")
+            continue
+
+        resumed = invoke({
+            "action": "submit_quality_authority",
+            "decision_record_id": record_id,
+            "decision": "ESTABLISH_EVIDENCE",
+            "accountable_actor": "QA-LEAD",
+            "authority_source": "PLANT_QUALITY",
+            "evidence_ref": release["claim_id"],
+            "question_id": question.get("question_id", ""),
+        })
+        row.update(
+            golden=True,
+            final_state=resumed.get("disposition") or "",
+            human_selection=release["claim_id"],
+            human_selection_detail={
+                k: release.get(k) for k in
+                ("value", "units", "method", "condition", "selected_by",
+                 "equivalence_id", "within_limits", "threshold")
+            },
+            run2_result=resumed.get("disposition") or "",
+        )
+        ledger.append(row)
+
+        events = full_events(record_id)
+        record = stored_record(record_id)
+        pkg = write_package(lot_id, resumed, events, record, extra={
+            "total_attempts": attempt,
+            "attempt_ledger": ledger,
+            "human_choice": release["claim_id"],
+            "human_choice_detail": row["human_selection_detail"],
+            "investigator_selection": row["investigator_selection"],
+            "verifier_selection": row["verifier_selection"],
+            "run_2_result": resumed.get("disposition") or "",
+            # Run 1's terminal state, so the package proves the case ABSTAINED
+            # before a human touched it rather than merely ending in RELEASE.
+            "run_1_outcome": "MATERIAL_DISAGREEMENT",
+        })
+        return {"result": resumed, "events": events, "package": pkg, "ledger": ledger}
+
+    raise SystemExit(
+        f"LOT-1003_GOLDEN_RUN_NOT_FOUND after {MAX_DISAGREEMENT_ATTEMPTS} attempts"
+    )
+
+
+def capture_identity(lot_id: str = "LOT-1004") -> dict:
+    """LOT-1004: the document was READ; what was missing was authority to attribute it.
+
+    Extraction succeeds completely and security is clean. The certificate simply
+    names the supplier's own consignment (`WP-26-0317-B`) and nothing
+    authoritative maps that to an internal lot — so Vouch asks rather than
+    guessing, and a human establishes the binding.
+    """
+    spec = SCENARIOS[lot_id]
+    first = evaluate(lot_id, EVIDENCE / spec["pdf"])
+    record_id = first.get("decision_record_id", "")
+    question = _question_of(first)
+    print(f"  run 1: {first.get('failure_category') or '(none)'} "
+          f"qdr={first.get('quality_decision_required')}")
+
+    if not question or question.get("question_type") != "IDENTITY_BINDING":
+        raise SystemExit(
+            f"LOT-1004 did not raise an identity question: "
+            f"{first.get('failure_category')!r} / {(question or {}).get('question_type')!r}"
+        )
+
+    supplier_batch = question.get("supplier_batch", "")
+    resumed = invoke({
+        "action": "submit_quality_authority",
+        "decision_record_id": record_id,
+        "decision": "CONFIRM_BINDING",
+        "accountable_actor": "QA-LEAD",
+        "authority_source": "PLANT_QUALITY",
+        "question_id": question.get("question_id", ""),
+        "supplier_batch": supplier_batch,
+        "bound_lot_id": lot_id,
+        "artifact_id": question.get("artifact_id", ""),
+        "content_hash": question.get("content_hash", ""),
+    })
+    print(f"  run 2: disposition={resumed.get('disposition') or '(none)'} "
+          f"failure={resumed.get('failure_category') or '(none)'}")
+
+    events = full_events(record_id)
+    record = stored_record(record_id)
+    pkg = write_package(lot_id, resumed, events, record, extra={
+        "human_choice": "CONFIRM_BINDING",
+        "human_choice_detail": {
+            "supplier_batch": supplier_batch,
+            "bound_lot_id": lot_id,
+            "question_type": "IDENTITY_BINDING",
+        },
+        # Stated explicitly because the whole point of the scenario is that this
+        # is NOT an OCR failure: the document parsed and extracted cleanly.
+        "run_1_outcome": first.get("failure_category") or "",
+        "run_2_result": resumed.get("disposition") or "",
+        "extraction_succeeded": any(
+            row["event"] == "EVIDENCE_EXTRACTED" for row in events
+        ),
+    })
+    return {"result": resumed, "events": events, "package": pkg}
+
+
+def _question_of(result: dict) -> dict | None:
+    """The open quality question on a returned record, if there is one."""
+    record = result.get("decision_record") or {}
+    question = ((record.get("quality_authority") or {}).get("question")) or {}
+    return question or None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("lots", nargs="*", default=[])
@@ -329,7 +569,11 @@ def main() -> int:
     lots = args.lots or list(SCENARIOS)
     for lot_id in lots:
         print(f"\n=== {lot_id} — {SCENARIOS[lot_id]['scenario']}")
-        got = capture_simple(lot_id)
+        capture = {
+            "LOT-1003": capture_disagreement,
+            "LOT-1004": capture_identity,
+        }.get(lot_id, capture_simple)
+        got = capture(lot_id)
         r = got["result"]
         print(f"  record={r.get('decision_record_id')} "
               f"disposition={r.get('disposition') or '(none)'} "

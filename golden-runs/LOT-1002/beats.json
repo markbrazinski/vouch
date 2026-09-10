@@ -67,12 +67,23 @@
   "beat_id": "investigator",
   "run": 1,
   "sequence_start": 6,
-  "sequence_end": 13,
+  "sequence_end": 24,
   "ui_stage": "investigator",
   "interaction_required": false,
   "minimum_readability": "first agent reasoning; sets the grammar",
   "safe_to_compress": false,
   "event_types": [
+   "INVESTIGATOR_STARTED",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "TOOL_CALLED",
+   "TOOL_RESULT_BOUND",
+   "APPLICABILITY_BRIEF_COMPLETED",
+   "BRIEF_VALIDATION_FAILED",
    "INVESTIGATOR_STARTED",
    "TOOL_CALLED",
    "TOOL_RESULT_BOUND",
@@ -86,8 +97,8 @@
  {
   "beat_id": "verifier",
   "run": 1,
-  "sequence_start": 14,
-  "sequence_end": 21,
+  "sequence_start": 25,
+  "sequence_end": 32,
   "ui_stage": "verifier",
   "interaction_required": false,
   "minimum_readability": "independence is the point; must resolve visibly BEFORE disposition",
@@ -106,8 +117,8 @@
  {
   "beat_id": "reconciliation",
   "run": 1,
-  "sequence_start": 22,
-  "sequence_end": 22,
+  "sequence_start": 33,
+  "sequence_end": 33,
   "ui_stage": "reconciliation",
   "interaction_required": false,
   "minimum_readability": "the comparison; slower when it DIFFERS",
@@ -119,8 +130,8 @@
  {
   "beat_id": "disposition",
   "run": 1,
-  "sequence_start": 23,
-  "sequence_end": 24,
+  "sequence_start": 34,
+  "sequence_end": 35,
   "ui_stage": "disposition",
   "interaction_required": false,
   "minimum_readability": "the deterministic result and its arithmetic",
@@ -133,8 +144,8 @@
  {
   "beat_id": "mutation",
   "run": 1,
-  "sequence_start": 25,
-  "sequence_end": 26,
+  "sequence_start": 36,
+  "sequence_end": 37,
   "ui_stage": "mutation",
   "interaction_required": false,
   "minimum_readability": "the state actually changing",
@@ -147,8 +158,8 @@
  {
   "beat_id": "disposition",
   "run": 1,
-  "sequence_start": 27,
-  "sequence_end": 27,
+  "sequence_start": 38,
+  "sequence_end": 38,
   "ui_stage": "disposition",
   "interaction_required": false,
   "minimum_readability": "the deterministic result and its arithmetic",
@@ -160,8 +171,8 @@
  {
   "beat_id": "mutation",
   "run": 1,
-  "sequence_start": 28,
-  "sequence_end": 29,
+  "sequence_start": 39,
+  "sequence_end": 40,
   "ui_stage": "mutation",
   "interaction_required": false,
   "minimum_readability": "the state actually changing",
@@ -174,8 +185,8 @@
  {
   "beat_id": "consequence",
   "run": 1,
-  "sequence_start": 30,
-  "sequence_end": 32,
+  "sequence_start": 41,
+  "sequence_end": 44,
   "ui_stage": "consequence",
   "interaction_required": false,
   "minimum_readability": "production effect; the 'so what'",
@@ -183,14 +194,55 @@
   "event_types": [
    "READINESS_TRANSITIONED",
    "CONSEQUENCE_RECALCULATED",
-   "CONSEQUENCE_RECALCULATED"
+   "CONSEQUENCE_RECALCULATED",
+   "RECOVERY_EVALUATED"
+  ]
+ },
+ {
+  "beat_id": "disposition",
+  "run": 1,
+  "sequence_start": 45,
+  "sequence_end": 45,
+  "ui_stage": "disposition",
+  "interaction_required": false,
+  "minimum_readability": "the deterministic result and its arithmetic",
+  "safe_to_compress": false,
+  "event_types": [
+   "POLICY_EVALUATED"
+  ]
+ },
+ {
+  "beat_id": "mutation",
+  "run": 1,
+  "sequence_start": 46,
+  "sequence_end": 47,
+  "ui_stage": "mutation",
+  "interaction_required": false,
+  "minimum_readability": "the state actually changing",
+  "safe_to_compress": true,
+  "event_types": [
+   "CAPABILITY_ISSUED",
+   "MUTATION_COMPLETED"
+  ]
+ },
+ {
+  "beat_id": "consequence",
+  "run": 1,
+  "sequence_start": 48,
+  "sequence_end": 48,
+  "ui_stage": "consequence",
+  "interaction_required": false,
+  "minimum_readability": "production effect; the 'so what'",
+  "safe_to_compress": false,
+  "event_types": [
+   "RECOVERY_EXECUTED"
   ]
  },
  {
   "beat_id": "terminal",
   "run": 1,
-  "sequence_start": 32,
-  "sequence_end": 32,
+  "sequence_start": 48,
+  "sequence_end": 48,
   "ui_stage": "terminal",
   "interaction_required": false,
   "minimum_readability": "Outcome / Why / Next Action; the frame that must be read",
