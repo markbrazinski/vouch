@@ -1320,3 +1320,127 @@ def test_live_guardrail_quarantines_the_artifact_and_never_reaches_the_agents():
     ]
     assert security and security[0].payload["result"] == "QUARANTINED_SECURITY"
     assert security[0].payload["guardrail_id"] == GUARDRAIL_ID
+
+
+# ==========================================================================
+# The terminal batch must not replay the live-written stream
+# ==========================================================================
+
+
+class _EventTable:
+    """A DynamoDB double that honours the `sk > :after` range `events_for` uses.
+
+    `TransactionInspector.query` returns every row for the partition, which
+    cannot express the cursor read `append_all`'s dedupe depends on.
+    """
+
+    def __init__(self):
+        self.items: dict[tuple[str, str], dict] = {}
+
+    def put_item(self, TableName, Item, ConditionExpression=None, **kwargs):
+        key = (Item["pk"]["S"], Item["sk"]["S"])
+        if ConditionExpression == "attribute_not_exists(sk)" and key in self.items:
+            raise RuntimeError("ConditionalCheckFailedException")
+        self.items[key] = Item
+
+    def query(self, TableName, KeyConditionExpression, ExpressionAttributeValues,
+              ScanIndexForward=True, Limit=None, **kwargs):
+        pk = ExpressionAttributeValues[":pk"]["S"]
+        rows = [v for (p, _), v in self.items.items() if p == pk]
+        if ":after" in ExpressionAttributeValues:
+            after = ExpressionAttributeValues[":after"]["S"]
+            rows = [r for r in rows if r["sk"]["S"] > after]
+        if ":prefix" in ExpressionAttributeValues:
+            prefix = ExpressionAttributeValues[":prefix"]["S"]
+            rows = [r for r in rows if r["sk"]["S"].startswith(prefix)]
+        rows.sort(key=lambda r: r["sk"]["S"], reverse=not ScanIndexForward)
+        return {"Items": rows[:Limit] if Limit else rows}
+
+
+def _record_store_on(table):
+    from vouch.v2.persistence import DynamoRecordStore
+
+    store = DynamoRecordStore.__new__(DynamoRecordStore)
+    store.table = "t"
+    store._region = "us-east-1"
+    # `ddb` is a lazy property that would build a real client; seed its backing
+    # field so nothing in this test reaches AWS.
+    store._ddb = table
+    return store
+
+
+def test_terminal_batch_does_not_duplicate_live_written_events():
+    """The whole run was being persisted TWICE against the real store.
+
+    Every event is written live by `_persist_event`, then the terminal
+    `_persist` calls `append_all` with the same log. `append`'s
+    ConditionExpression guards the sort KEY only, and the terminal batch starts
+    past every live row — so each event landed again at a fresh sequence and the
+    stream replayed the entire run, original timestamps included.
+
+    Caught on the LOT-1001 golden capture: 64 stored events for a 32-event run.
+    Both other stores already dedupe on event identity; only the store the
+    deployed runtime actually uses did not.
+    """
+    from vouch.v2.lifecycle import EventLog, EventType
+
+    record_id = "DR-DUPE"
+    log = EventLog()
+    log.emit(EventType.EVIDENCE_RECEIVED, record_id, artifact_id="ART-1")
+    log.emit(EventType.INVESTIGATOR_STARTED, record_id)
+    log.emit(EventType.DISPOSITION_COMPUTED, record_id, disposition="RELEASE")
+
+    store = _record_store_on(_EventTable())
+    for event in log.events:  # live sink, one at a time
+        store.append_all([event])
+
+    assert store.append_all(log.events) == 0, "terminal batch re-appended events"
+
+    rows = store.events_for(record_id)
+    assert [r["event"] for r in rows] == [
+        "EVIDENCE_RECEIVED", "INVESTIGATOR_STARTED", "DISPOSITION_COMPUTED",
+    ]
+    assert [r["sequence"] for r in rows] == [1, 2, 3]
+
+
+def test_genuinely_repeated_event_types_are_kept():
+    """Dedupe is on identity, not on type: three real tool calls stay three.
+
+    The guard must not collapse distinct emissions — `at` is set per event at
+    construction, which is what separates them.
+    """
+    from vouch.v2.lifecycle import EventLog, EventType
+
+    record_id = "DR-TOOLS"
+    log = EventLog()
+    for tool in ("get_lot", "get_governing_spec", "get_evidence"):
+        log.emit(EventType.TOOL_CALLED, record_id, tool=tool)
+
+    store = _record_store_on(_EventTable())
+    assert store.append_all(log.events) == 3
+    assert store.append_all(log.events) == 0
+
+    rows = store.events_for(record_id)
+    assert len(rows) == 3
+    assert [r["payload"]["tool"] for r in rows] == [
+        "get_lot", "get_governing_spec", "get_evidence",
+    ]
+
+
+def test_continuation_events_still_extend_history():
+    """Dedupe must not block run 2: new events append after the existing max."""
+    from vouch.v2.lifecycle import EventLog, EventType
+
+    record_id = "DR-RESUME"
+    store = _record_store_on(_EventTable())
+
+    run1 = EventLog()
+    run1.emit(EventType.QUALITY_DECISION_REQUIRED, record_id, reason="ABSTAIN")
+    assert store.append_all(run1.events) == 1
+
+    run2 = EventLog()
+    run2.emit(EventType.QUALITY_AUTHORITY_RECORDED, record_id, actor="QA-LEAD")
+    run2.emit(EventType.DECISION_RESUMED, record_id, run_number=2)
+    assert store.append_all(run2.events) == 2
+
+    assert [r["sequence"] for r in store.events_for(record_id)] == [1, 2, 3]

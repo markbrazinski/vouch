@@ -1,0 +1,120 @@
+{
+ "lot_id": "LOT-1001",
+ "scenario": "agents agree + deterministic PASS -> RELEASE",
+ "decision_record_id": "DR-2e7d8698d650",
+ "run_count": 1,
+ "source_artifact_id": "sha256:765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181",
+ "source_filename": "northern-alloys-coa-lot-1001.pdf",
+ "model_id": "BEDROCK_NOVA",
+ "runtime_version": "",
+ "runtime_name": "Gatehouse-IWAmEp93XP",
+ "capture_timestamp": "2026-09-10T21:40:40Z",
+ "terminal_outcome": "RELEASE",
+ "mutation": {
+  "sequence": "DR-2e7d8698d650#CAP-fcd7647c272d46a5",
+  "capability_id": "CAP-fcd7647c272d46a5",
+  "decision_record_id": "DR-2e7d8698d650",
+  "issuer_identity": "vouch.policy-engine",
+  "action": "release_lot",
+  "target_type": "lot",
+  "target_id": "LOT-1001",
+  "parameters": {
+   "observed_inventory_version": "1"
+  },
+  "before_version": 23,
+  "after_version": 24,
+  "before_state": {
+   "kind": "lot",
+   "state_version": 23
+  },
+  "after_state": {
+   "kind": "lot",
+   "status": "RELEASED",
+   "state_version": 24,
+   "inventory_usable": true
+  },
+  "result": "lot LOT-1001 RELEASED",
+  "inventory_delta": 500.0,
+  "inventory_before": {
+   "usable": false,
+   "quantity": 500.0
+  },
+  "inventory_after": {
+   "usable": true,
+   "quantity": 500.0
+  },
+  "at": "2026-09-10T21:40:31.967451+00:00"
+ },
+ "production_consequence": {
+  "coverage_changes": [
+   {
+    "order_id": "C-417",
+    "coverage": [
+     {
+      "material_id": "MAT-ALLOY-7",
+      "required": 900.0,
+      "available": 500.0,
+      "short_by": 400.0,
+      "planned": 400.0,
+      "uncovered": 0.0,
+      "ratio": 0.5556
+     }
+    ]
+   },
+   {
+    "order_id": "C-418",
+    "coverage": [
+     {
+      "material_id": "MAT-ALLOY-7",
+      "required": 500.0,
+      "available": 500.0,
+      "short_by": 0.0,
+      "planned": 0.0,
+      "uncovered": 0.0,
+      "ratio": 1.0
+     }
+    ]
+   }
+  ],
+  "readiness_changes": [
+   {
+    "order_id": "C-417",
+    "from": "READY",
+    "to": "AT_RISK",
+    "reason": "MAT-ALLOY-7 short by 400.0 (need 900.0, have 500.0, 400.0 queued)",
+    "persisted": true,
+    "state_version": 27,
+    "ledger_sequence": "DR-2e7d8698d650#CAP-eeb31a4ad90f4a2c"
+   }
+  ],
+  "caused_by": [
+   {
+    "cause": "lot_disposition",
+    "lot_id": "LOT-1001",
+    "inventory_delta": 500.0,
+    "material_id": "MAT-ALLOY-7",
+    "effect": "order_readiness",
+    "order_id": "C-417",
+    "from": "READY",
+    "to": "AT_RISK",
+    "decision_record_id": "DR-2e7d8698d650",
+    "ledger_sequence": "DR-2e7d8698d650#CAP-eeb31a4ad90f4a2c"
+   }
+  ],
+  "persisted": true
+ },
+ "human_interaction": false,
+ "human_kind": "",
+ "raw_event_count": 64,
+ "beat_count": 30,
+ "backend": {
+  "mode": "production",
+  "corpus": "AWS_DYNAMODB",
+  "evidence_store": "AWS_S3",
+  "capability_store": "AWS_DYNAMODB",
+  "record_store": "AWS_DYNAMODB",
+  "event_store": "AWS_DYNAMODB",
+  "reasoners": "BEDROCK_NOVA",
+  "durable": true
+ }
+}

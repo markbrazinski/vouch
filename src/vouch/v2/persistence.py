@@ -392,10 +392,25 @@ class DynamoRecordStore:
             return 0
         record_id = events[0].decision_record_id
         index = start if start is not None else self.next_sequence(record_id)
+        # Idempotent on event IDENTITY, matching LocalRecordStore and
+        # InMemoryRecordStore. `append`'s ConditionExpression guards the sort
+        # KEY, which only stops rewriting the same slot — and the terminal batch
+        # starts past every live-written row, so without this each event landed
+        # a second time at a fresh sequence. The stream then replayed the whole
+        # run twice, with the original timestamps, which reads as a real repeat
+        # rather than a storage artifact.
+        #
+        # Read once, not per event: `events_for` paginates the whole history and
+        # calling it inside the loop would be O(n^2) queries on a long case.
+        stored = {_row_identity(row) for row in self.events_for(record_id)}
         count = 0
         for event in events:
+            identity = _event_identity(event)
+            if identity in stored:
+                continue
             try:
                 self.append(event, index)
+                stored.add(identity)
                 count += 1
             except Exception as exc:  # noqa: BLE001
                 if "ConditionalCheckFailed" not in str(exc):
