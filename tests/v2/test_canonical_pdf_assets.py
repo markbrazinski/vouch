@@ -36,8 +36,8 @@ EVIDENCE = ROOT / "demo" / "evidence"
 PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
 PDF2 = EVIDENCE / "northern-alloys-coa-batch-wp-26-0317-b.pdf"
-PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
-PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
+PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1005.pdf"
+PDF4 = EVIDENCE / "western-polymers-coa-lot-1003.pdf"
 
 #: The exact bytes that were qualified. A changed hash means a new document,
 #: and a new document has not been through the pipeline.
@@ -45,8 +45,8 @@ SHA256 = {
     PDF0: "765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181",
     PDF1: "bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be",
     PDF2: "326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242",
-    PDF3: "5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947",
-    PDF4: "e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4",
+    PDF3: "bb73e789f5e8e43b886e28011a763ffce40124093913f15269f9dd9f43b0a061",
+    PDF4: "a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8",
 }
 
 #: Substrings of the approved hostile payload. Only PDF 3 may contain these.

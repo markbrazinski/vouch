@@ -1,26 +1,5 @@
 # Canonical Supplier Evidence — Manifest
 
-> **RENUMBER IN PROGRESS — two documents print a stale lot id.**
->
-> The canonical film map is now LOT-1001 … LOT-1005 (see
-> `contracts/demo/VOUCH_V2_CANONICAL_SUPPLIER_DOCUMENT_BRIEF.md`). Fixtures,
-> tests, reset tooling and the frontend have all migrated. Two PDFs have not,
-> because their printed identity — not merely their filename — is now false:
->
-> | File | Prints | Must print | Scenario |
-> |---|---|---|---|
-> | `central-forgeworks-coa-lot-1004.pdf` | `LOT-1004` | **`LOT-1005`** | prompt injection |
-> | `western-polymers-coa-lot-1006.pdf` | `LOT-1006` | **`LOT-1003`** | disagreement |
->
-> Both need a Design re-export. Filenames are deliberately NOT renamed ahead of
-> that: a file called `…-lot-1005.pdf` that prints `LOT-1004` inside would hide
-> the very mismatch these documents exist to test. Ten backend tests fail
-> against these two files until the re-export lands, and that is the honest
-> state — no assertion was weakened to make them pass.
->
-> The binding case (`northern-alloys-coa-batch-wp-26-0317-b.pdf`) needed no
-> re-export: it prints no lot id at all, which is the whole point of it.
-
 The five synthetic supplier documents the Vouch demo runs on. They are the
 **exact bytes** that were qualified: each one was run through the real evidence
 pipeline (real `pypdf` extraction, real deterministic parser, real security
@@ -116,7 +95,7 @@ Its 450 kg is deliberately too little to change the readiness of `C-417`,
 `C-418` or `C-419`, so this case tells its own story without disturbing Hero A
 or the LOT-1003 disagreement.
 
-## central-forgeworks-coa-lot-1004.pdf
+## central-forgeworks-coa-lot-1005.pdf
 
 | | |
 |---|---|
@@ -126,7 +105,7 @@ or the LOT-1003 disagreement.
 | Cites | `SPEC-A7` Revision C |
 | Measurements | tensile_strength 402 MPa (ASTM-E8, room_temp) |
 | Payload | prompt-injection text in SUPPLEMENTAL REMARKS, as real selectable PDF text |
-| SHA-256 | `5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947` |
+| SHA-256 | `bb73e789f5e8e43b886e28011a763ffce40124093913f15269f9dd9f43b0a061` |
 | Intended path | **security quarantine before any agent runs** |
 | Qualified outcome | injection `DETECTED` → `SECURITY_QUARANTINE` → artifact retained and `excluded_from_decision_use` → neither agent started → zero mutation → `LOT-1005` stays `RECEIVED` |
 
@@ -134,7 +113,7 @@ The 402 MPa value would fail Revision C anyway. That is deliberate: the security
 control fires **before** the quality question is reached, so the demonstrated
 outcome can never be mistaken for a quality verdict.
 
-## western-polymers-coa-lot-1006.pdf
+## western-polymers-coa-lot-1003.pdf
 
 | | |
 |---|---|
@@ -143,7 +122,7 @@ outcome can never be mistaken for a quality verdict.
 | Document type | Certificate of Analysis |
 | Cites | `SPEC-R3` **Revision A** (the governing revision) |
 | Measurements | viscosity **178 cP** (ASTM-D2196, 25C) · viscosity 312 cP (ASTM-D445, 25C) |
-| SHA-256 | `e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4` |
+| SHA-256 | `a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8` |
 | Intended path | **ordinary extraction** — Textract NOT required |
 | Qualified outcome | 2 claims @ confidence 1.0 → `BOUND` → agents select DIFFERENT evidence → `MATERIAL_DISAGREEMENT` → quality question → human authorizes applicability → **same record, run 2** → agents converge → `RELEASE` → `release_lot` → 200 kg usable → C-419 `AT_RISK → READY` |
 

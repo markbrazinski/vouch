@@ -474,7 +474,7 @@ def test_a_resolved_disagreement_stops_asking_for_a_decision(runtime):
     from pathlib import Path
 
     pdf = Path(__file__).resolve().parents[2] / "demo" / "evidence" / (
-        "western-polymers-coa-lot-1006.pdf"
+        "western-polymers-coa-lot-1003.pdf"
     )
     first = runtime.invoke({
         "action": "evaluate_lot", "lot_id": "LOT-1003",
@@ -532,7 +532,7 @@ def test_a_decided_lot_is_not_duplicated_by_its_arrival(runtime):
     from pathlib import Path
 
     pdf = Path(__file__).resolve().parents[2] / "demo" / "evidence" / (
-        "western-polymers-coa-lot-1006.pdf"
+        "western-polymers-coa-lot-1003.pdf"
     )
     outcome = runtime.invoke({
         "action": "evaluate_lot", "lot_id": "LOT-1003",

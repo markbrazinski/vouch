@@ -29,8 +29,8 @@ ENTRYPOINT = ROOT / "app" / "Gatehouse" / "main.py"
 PDF0 = EVIDENCE / "northern-alloys-coa-lot-1001.pdf"
 PDF1 = EVIDENCE / "eastern-metals-coa-lot-1002.pdf"
 PDF2 = EVIDENCE / "northern-alloys-coa-batch-wp-26-0317-b.pdf"
-PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1004.pdf"
-PDF4 = EVIDENCE / "western-polymers-coa-lot-1006.pdf"
+PDF3 = EVIDENCE / "central-forgeworks-coa-lot-1005.pdf"
+PDF4 = EVIDENCE / "western-polymers-coa-lot-1003.pdf"
 
 
 @pytest.fixture(scope="module")

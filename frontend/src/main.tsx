@@ -9,8 +9,8 @@ import type { ArrivalDocuments, HeroAEntry } from './decision/entry';
 import COA_1001 from './evidence/northern-alloys-coa-lot-1001.pdf?url';
 import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
 import COA_BATCH_WP from './evidence/northern-alloys-coa-batch-wp-26-0317-b.pdf?url';
-import COA_1004 from './evidence/central-forgeworks-coa-lot-1004.pdf?url';
-import COA_1006 from './evidence/western-polymers-coa-lot-1006.pdf?url';
+import COA_1004 from './evidence/central-forgeworks-coa-lot-1005.pdf?url';
+import COA_1006 from './evidence/western-polymers-coa-lot-1003.pdf?url';
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -86,7 +86,7 @@ const ARRIVALS: ArrivalDocuments = {
     receiptMeta: 'SUP-CENTRAL · site SITE-C1 · 200 kg',
     contentType: 'application/pdf',
     documentUrl: COA_1004,
-    documentName: 'central-forgeworks-coa-lot-1004.pdf',
+    documentName: 'central-forgeworks-coa-lot-1005.pdf',
   },
   'LOT-1003': {
     lotId: 'LOT-1003',
@@ -94,7 +94,7 @@ const ARRIVALS: ArrivalDocuments = {
     receiptMeta: 'SUP-WEST · site SITE-W1 · 200 kg',
     contentType: 'application/pdf',
     documentUrl: COA_1006,
-    documentName: 'western-polymers-coa-lot-1006.pdf',
+    documentName: 'western-polymers-coa-lot-1003.pdf',
   },
 };
 

@@ -97,9 +97,9 @@ describe('production build excludes the dev fixture harness', () => {
       [
         '765839cc6520c58e454622ee280b5bea2498d24e7629298a26d32a3b10dee181', // 1001
         'bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be', // 1002
-        '326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242', // 1003 batch WP-26-0317-B
-        '5cc20bcbf5b74347158a8cef65894e9243ed4809a008f42ef1debf7275d03947', // 1004
-        'e2ea3ff42082fb6eedf49aaa8249cfb316f0c6296eb6bd50df5ad843718087b4', // 1006
+        '326b4463ab1bf4222ea8466cc0997508a0f5e4bd0bec51180888054cc8721242', // 1004 binding · batch WP-26-0317-B
+        'bb73e789f5e8e43b886e28011a763ffce40124093913f15269f9dd9f43b0a061', // 1005 injection
+        'a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8', // 1003 disagreement
       ].sort(),
     );
 
