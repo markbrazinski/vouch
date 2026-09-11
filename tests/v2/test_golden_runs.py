@@ -50,7 +50,10 @@ def lot_id(request):
 
 
 def test_package_has_every_required_file(lot_id):
-    for name in ("manifest.json", "events.json", "decision-record.json", "beats.json"):
+    for name in (
+        "manifest.json", "events.json", "decision-record.json",
+        "beats.json", "result.json", "sources.json",
+    ):
         assert (GOLDEN / lot_id / name).exists(), f"{lot_id}/{name} missing"
 
 
@@ -423,7 +426,7 @@ def test_the_frontend_copy_matches_the_capture(lot_id):
 
     Resync with:  python scripts/sync_golden_to_frontend.py
     """
-    for name in ("events.json", "result.json", "decision-record.json"):
+    for name in ("events.json", "result.json", "decision-record.json", "sources.json"):
         shipped = FRONTEND_PACKAGES / lot_id / name
         assert shipped.exists(), (
             f"{lot_id}/{name} is missing from the frontend copy; "
@@ -445,3 +448,49 @@ def test_the_frontend_copy_carries_no_secrets(lot_id):
         assert not re.search(r"\b\d{12}\b", text), f"{path.name}: AWS account id"
         assert "X-Amz-Signature" not in text, f"{path.name}: presigned URL"
         assert "AKIA" not in text and "ASIA" not in text, f"{path.name}: access key"
+
+
+# ==========================================================================
+# the artifact panel
+# ==========================================================================
+
+
+def test_the_run_captured_its_source_artifact(lot_id):
+    """Without this the Evidence panel contradicts itself.
+
+    The panel's header counts claims from the RECORD, but its artifact list and
+    "N claims frozen into the snapshot" line come from `get_source`. Replaying
+    without it rendered "2 claims frozen" beside "Awaiting the first artifact"
+    and "0 claims frozen into the snapshot" — three statements about one
+    document, two of them wrong.
+    """
+    sources = load(lot_id, "sources.json")
+    assert len(sources) == 1, f"{lot_id}: expected one certificate, got {len(sources)}"
+
+    artifact = sources[0]
+    assert artifact["artifact_id"].startswith("ART-")
+    assert artifact["content_hash"] == load(lot_id, "manifest.json")[
+        "source_artifact_id"
+    ].removeprefix("sha256:"), f"{lot_id}: the artifact is not the captured PDF"
+
+
+def test_the_artifact_matches_the_event_stream(lot_id):
+    """The panel must describe the document the run actually evaluated."""
+    ids = {
+        (row.get("payload") or {}).get("artifact_id")
+        for row in load(lot_id, "events.json")
+    } - {None, ""}
+    for artifact in load(lot_id, "sources.json"):
+        assert artifact["artifact_id"] in ids, (
+            f"{lot_id}: artifact {artifact['artifact_id']} appears in no event"
+        )
+
+
+def test_no_expiring_link_was_persisted(lot_id):
+    """§8: a presigned URL carries the bucket and dies. A film weeks later opens
+    a dead link, so the viewer re-signs at open time instead."""
+    for artifact in load(lot_id, "sources.json"):
+        assert "view_ref" not in artifact, f"{lot_id}: a presigned URL was saved"
+        assert "view_url" not in artifact, f"{lot_id}: a presigned URL was saved"
+        # Recorded positively so the UI still knows the document is openable.
+        assert artifact.get("retrievable") is True

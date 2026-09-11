@@ -1,0 +1,19 @@
+[
+ {
+  "artifact_id": "ART-3b4e43fb281a",
+  "document_identity": "COA",
+  "content_type": "application/pdf",
+  "trust_class": "UNTRUSTED_SUPPLIER",
+  "security_state": "CLEARED",
+  "content_hash": "bf3e80258af52dd098bc5a76e18b3603e024c3276bb56bdf9816f64fd5f459be",
+  "object_version": "osC2.ubtEVLOptN7bhKqX5usYLl3kRCz",
+  "storage_ref": "s3://<evidence-bucket>/evidence/LOT-1002/ART-3b4e43fb281a",
+  "binding_status": "BOUND",
+  "received_at": "2026-09-10T21:45:13.014427+00:00",
+  "page_count": null,
+  "claim_count": 2,
+  "excluded_from_decision_use": false,
+  "prompt_attack_detected": false,
+  "retrievable": true
+ }
+]

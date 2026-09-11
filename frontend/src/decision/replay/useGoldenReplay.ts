@@ -45,10 +45,11 @@ async function loadPackage(lotId: string): Promise<GoldenPackage> {
   // `packages/` is a copy of `golden-runs/`, synced by
   // `scripts/sync_golden_to_frontend.py`. Vite bundles only what lives under
   // the project root, and a test fails if the copy drifts from the capture.
-  const [events, result, record] = await Promise.all([
+  const [events, result, record, sources] = await Promise.all([
     import(`./packages/${lotId}/events.json`),
     import(`./packages/${lotId}/result.json`),
     import(`./packages/${lotId}/decision-record.json`),
+    import(`./packages/${lotId}/sources.json`),
   ]);
   return {
     // Stored rows nest their payload; the adapter reads flat. The same
@@ -57,7 +58,10 @@ async function loadPackage(lotId: string): Promise<GoldenPackage> {
     events: (events.default as LifecycleEventDTO[]).map(normalizeEvent),
     result: result.default as EvaluateDTO,
     record: record.default as Record<string, unknown>,
-    sources: [],
+    // The artifact panel. `get_source` joins metadata the event stream alone
+    // does not carry, so it is captured rather than recomputed — without it the
+    // panel read "Awaiting the first artifact" beside its own "2 claims frozen".
+    sources: sources.default as SourceArtifactDTO[],
   };
 }
 
@@ -109,6 +113,71 @@ const IDLE: Omit<GoldenReplayState, 'advance'> = {
  */
 const pausesForOperator = (beat: BeatTiming): boolean =>
   beat.beatId === 'human_gate' && beat.awaitsOperator === true;
+
+/**
+ * Never let two events land close enough to read as simultaneous.
+ *
+ * A result follows its tool call by ~20ms in the real capture. Scaled down that
+ * is a single frame, so the pair would appear at once and the call would never
+ * be seen being made. This is the smallest gap that still reads as two things.
+ */
+const MIN_REVEAL_GAP_MS = 260;
+
+/**
+ * When, within a beat's film budget, to reveal the event at `step`.
+ *
+ * The capture's own timestamps set the SHAPE: a 2.6s pause before the first
+ * tool call and 1.4s between the rest stay proportionally longer than the 20ms
+ * between a call and its result. Only the overall scale is a presentation
+ * choice — the beat's budget divided across the real elapsed time.
+ *
+ * Falls back to even spacing when the timestamps are unusable (all identical,
+ * or unparseable), which is better than collapsing to zero.
+ */
+function revealOffset(events: LifecycleEventDTO[], step: number, budgetMs: number): number {
+  const at = (e: LifecycleEventDTO) => Date.parse(String(e.at ?? ''));
+  const first = at(events[0]);
+  const last = at(events[events.length - 1]);
+  const span = last - first;
+
+  const even = ((step + 1) / events.length) * budgetMs;
+  if (!Number.isFinite(span) || span <= 0) return even;
+
+  const elapsed = at(events[step]) - first;
+  if (!Number.isFinite(elapsed)) return even;
+
+  const scaled = (elapsed / span) * budgetMs;
+  // Each step must be visibly after the one before it, whatever the scale.
+  //
+  // Proportional scaling alone is not enough: a tool call and its result are
+  // 20ms apart in the capture, which scales to a few frames, so the pair landed
+  // together and the call was never seen PENDING. The floor is cumulative —
+  // every step is pushed at least one readable gap past its predecessor — which
+  // preserves the ordering while guaranteeing the request is on screen before
+  // its answer. That "asked, then answered" beat is the tool use being visible
+  // rather than implied.
+  //
+  // Clamped inside the beat. Without this the floor could push a step PAST the
+  // beat's own final reveal, which fires at `budgetMs` — the later events would
+  // land first and the count would jump forward and then fall back. Each step
+  // is kept strictly before that, and ordered among itself.
+  const floor = (step + 1) * MIN_REVEAL_GAP_MS;
+  const ceiling = (budgetMs * (step + 1)) / (events.length + 1);
+  return Math.min(Math.max(scaled, floor), ceiling);
+}
+
+/**
+ * When a beat's LAST event lands, which is when the beat is complete.
+ *
+ * A beat with staggered steps must not finish before them, and a beat with one
+ * event (or none) still occupies its full budget — that budget is what gives a
+ * single-event beat like `security` its readable time on screen.
+ */
+function revealEnd(events: LifecycleEventDTO[], budgetMs: number): number {
+  if (events.length <= 1) return budgetMs;
+  const lastStep = revealOffset(events, events.length - 2, budgetMs);
+  return Math.max(budgetMs, lastStep + MIN_REVEAL_GAP_MS);
+}
 
 /**
  * The record AS IT STOOD when the question was put, rebuilt from the stored one.
@@ -181,6 +250,38 @@ export function useGoldenReplay(lotId: string | null): GoldenReplayState {
       const last = index === beats.length - 1;
       const pause = pausesForOperator(beat);
 
+      /**
+       * Reveal the beat's events one at a time, in their real rhythm.
+       *
+       * Revealing the whole span at once dropped an agent's tool calls onto the
+       * screen simultaneously, which is not what happened: the investigator
+       * took 2.6s to reach its first tool and ~1.4s between the rest, because
+       * it was deciding what to ask for next. Landing them together reads as a
+       * batch lookup and loses the thing the shot is meant to show.
+       *
+       * The ORDER and SPACING come from the capture's own timestamps, scaled
+       * into the beat's film budget, so a longer real gap stays a longer gap.
+       * Only the scale is a presentation choice.
+       */
+      const inBeat = loaded.events.filter(
+        (e) => Number(e.sequence ?? 0) >= beat.from && Number(e.sequence ?? 0) <= beat.to,
+      );
+      for (let step = 0; step < inBeat.length - 1; step += 1) {
+        const upTo = Number(inBeat[step].sequence ?? 0);
+        const offset = revealOffset(inBeat, step, beat.seconds * 1000);
+        timers.current.push(
+          window.setTimeout(() => {
+            if (cancelled.current) return;
+            setState((prev) => ({
+              ...prev,
+              events: loaded.events.filter((e) => Number(e.sequence ?? 0) <= upTo),
+              beat,
+              beatIndex: index,
+            }));
+          }, at + offset),
+        );
+      }
+
       timers.current.push(
         window.setTimeout(() => {
           if (cancelled.current) return;
@@ -200,14 +301,23 @@ export function useGoldenReplay(lotId: string | null): GoldenReplayState {
               : pause
                 ? recordAtTheGate(loaded.record)
                 : null,
-            sources: last ? loaded.sources : [],
+            // From the moment the evidence event lands, exactly as the live
+            // path does: `get_source` answers from the event stream while the
+            // run is still going, because the certificate is known at
+            // EVIDENCE_RECEIVED and there is no reason to withhold it until the
+            // verdict.
+            sources: beat.to >= 1 ? loaded.sources : [],
             running: !last && !pause,
             beat,
             beatIndex: index,
             finished: last,
             awaitingOperator: pause,
           }));
-        }, at),
+          // Fires at the END of the beat, not its start. Landing it at `at`
+          // revealed every event in the beat immediately and the staggered
+          // steps then rewound the count — the display jumped forward and
+          // fell back. A beat completes when its time is up.
+        }, at + revealEnd(inBeat, beat.seconds * 1000)),
       );
 
       if (pause) {
@@ -216,7 +326,7 @@ export function useGoldenReplay(lotId: string | null): GoldenReplayState {
         resumeAt.current = index + 1;
         break;
       }
-      elapsed += beat.seconds * 1000;
+      elapsed += revealEnd(inBeat, beat.seconds * 1000);
     }
   }, []);
 

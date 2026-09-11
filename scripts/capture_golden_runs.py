@@ -171,6 +171,12 @@ def evaluate(lot_id: str, pdf: Path) -> dict:
     })
 
 
+def source_artifacts(record_id: str) -> list[dict]:
+    """The artifact panel's contents, as `get_source` returns them."""
+    out = invoke({"action": "get_source", "decision_record_id": record_id})
+    return _strip_expiring(out.get("sources") or [])
+
+
 def full_events(record_id: str) -> list[dict]:
     """The COMPLETE ordered stream, nothing dropped."""
     return invoke({"action": "get_events", "decision_record_id": record_id})["events"]
@@ -310,6 +316,7 @@ def beats_from(events: list[dict]) -> list[dict]:
 
 
 def write_package(lot_id: str, result: dict, events: list[dict], record: dict,
+                  sources: list[dict] | None = None,
                   extra: dict | None = None) -> Path:
     """Write one golden package. No credentials, no account ids, no presigned URLs."""
     pkg = OUT / lot_id
@@ -317,6 +324,7 @@ def write_package(lot_id: str, result: dict, events: list[dict], record: dict,
     spec = SCENARIOS[lot_id]
     pdf = EVIDENCE / spec["pdf"]
 
+    sources = sources or []
     beats = beats_from(events)
     runs = max((b["run"] for b in beats), default=1)
     consequences = result.get("consequences") or {}
@@ -358,12 +366,38 @@ def write_package(lot_id: str, result: dict, events: list[dict], record: dict,
     # record would be re-deriving the outcome rather than replaying it, which is
     # exactly the line these packages exist to hold.
     _write(pkg / "result.json", result)
+    # The artifact panel. Derived by the backend from events + record, but not
+    # reconstructible here — `get_source` joins metadata this script does not
+    # model, so it is captured rather than recomputed.
+    _write(pkg / "sources.json", sources)
     return pkg
 
 
 def _sha256(path: Path) -> str:
     import hashlib
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+#: Fields that must not survive into a saved package.
+#:
+#: `view_ref` is a PRESIGNED URL. It carries the bucket, it expires, and §8
+#: forbids persisting one — a film shot weeks from now would open a dead link.
+#: Dropping it costs nothing: the adapter reads only its PRESENCE (to decide
+#: whether the document is openable) and the viewer fetches a fresh URL from the
+#: BFF when the operator actually opens it.
+EXPIRING_FIELDS = ("view_ref", "view_url")
+
+
+def _strip_expiring(sources: list[dict]) -> list[dict]:
+    """Keep the artifact metadata, drop the link that will not survive."""
+    cleaned = []
+    for source in sources:
+        row = {k: v for k, v in source.items() if k not in EXPIRING_FIELDS}
+        # `openable` is derived downstream from view_ref's presence, so state it
+        # positively here rather than leaving a dead URL behind to imply it.
+        row["retrievable"] = any(source.get(f) for f in EXPIRING_FIELDS)
+        cleaned.append(row)
+    return cleaned
 
 
 def _redact(body):
@@ -400,7 +434,8 @@ def capture_simple(lot_id: str) -> dict:
     record_id = result.get("decision_record_id", "")
     events = full_events(record_id) if record_id else []
     record = stored_record(record_id) if record_id else {}
-    pkg = write_package(lot_id, result, events, record)
+    sources = source_artifacts(record_id) if record_id else []
+    pkg = write_package(lot_id, result, events, record, sources)
     return {"result": result, "events": events, "package": pkg}
 
 
@@ -495,7 +530,8 @@ def capture_disagreement(lot_id: str = "LOT-1003") -> dict:
 
         events = full_events(record_id)
         record = stored_record(record_id)
-        pkg = write_package(lot_id, resumed, events, record, extra={
+        sources = source_artifacts(record_id)
+        pkg = write_package(lot_id, resumed, events, record, sources, extra={
             "total_attempts": attempt,
             "attempt_ledger": ledger,
             "human_choice": release["claim_id"],
@@ -553,7 +589,8 @@ def capture_identity(lot_id: str = "LOT-1004") -> dict:
 
     events = full_events(record_id)
     record = stored_record(record_id)
-    pkg = write_package(lot_id, resumed, events, record, extra={
+    sources = source_artifacts(record_id)
+    pkg = write_package(lot_id, resumed, events, record, sources, extra={
         "human_choice": "CONFIRM_BINDING",
         "human_choice_detail": {
             "supplier_batch": supplier_batch,

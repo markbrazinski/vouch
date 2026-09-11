@@ -31,7 +31,7 @@ DEST = ROOT / "frontend" / "src" / "decision" / "replay" / "packages"
 #: What the browser needs. The DecisionRecord and the terminal response are
 #: both required: `project()` reads the disposition off the response and the
 #: canonical claims off the record.
-FILES = ("events.json", "result.json", "decision-record.json")
+FILES = ("events.json", "result.json", "decision-record.json", "sources.json")
 
 
 def main() -> int:
