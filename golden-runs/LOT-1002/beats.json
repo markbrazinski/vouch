@@ -8,7 +8,10 @@
   "interaction_required": false,
   "minimum_readability": "orientation only",
   "safe_to_compress": true,
-  "event_types": []
+  "event_types": [],
+  "measured_s": 0.0,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "evidence_received",
@@ -21,7 +24,10 @@
   "safe_to_compress": true,
   "event_types": [
    "EVIDENCE_RECEIVED"
-  ]
+  ],
+  "measured_s": 0.0,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "security",
@@ -34,7 +40,10 @@
   "safe_to_compress": false,
   "event_types": [
    "EVIDENCE_SECURITY_COMPLETED"
-  ]
+  ],
+  "measured_s": 1.004,
+  "measured_is_operator_latency": false,
+  "film_s": 1.0
  },
  {
   "beat_id": "binding",
@@ -47,7 +56,10 @@
   "safe_to_compress": false,
   "event_types": [
    "EVIDENCE_BINDING_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.02,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "extraction",
@@ -61,7 +73,10 @@
   "event_types": [
    "EVIDENCE_EXTRACTED",
    "EVIDENCE_SNAPSHOT_CREATED"
-  ]
+  ],
+  "measured_s": 0.041,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "investigator",
@@ -92,7 +107,10 @@
    "TOOL_CALLED",
    "TOOL_RESULT_BOUND",
    "APPLICABILITY_BRIEF_COMPLETED"
-  ]
+  ],
+  "measured_s": 17.317,
+  "measured_is_operator_latency": false,
+  "film_s": 3.5
  },
  {
   "beat_id": "verifier",
@@ -112,7 +130,10 @@
    "TOOL_CALLED",
    "TOOL_RESULT_BOUND",
    "VERIFIER_BRIEF_COMPLETED"
-  ]
+  ],
+  "measured_s": 7.407,
+  "measured_is_operator_latency": false,
+  "film_s": 3.5
  },
  {
   "beat_id": "reconciliation",
@@ -125,7 +146,10 @@
   "safe_to_compress": false,
   "event_types": [
    "RECONCILIATION_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.018,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "disposition",
@@ -139,7 +163,10 @@
   "event_types": [
    "DISPOSITION_COMPUTED",
    "POLICY_EVALUATED"
-  ]
+  ],
+  "measured_s": 0.179,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "mutation",
@@ -153,7 +180,10 @@
   "event_types": [
    "CAPABILITY_ISSUED",
    "MUTATION_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.076,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "disposition",
@@ -166,7 +196,10 @@
   "safe_to_compress": false,
   "event_types": [
    "POLICY_EVALUATED"
-  ]
+  ],
+  "measured_s": 0.047,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "mutation",
@@ -180,7 +213,10 @@
   "event_types": [
    "CAPABILITY_ISSUED",
    "MUTATION_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.06,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "consequence",
@@ -196,7 +232,10 @@
    "CONSEQUENCE_RECALCULATED",
    "CONSEQUENCE_RECALCULATED",
    "RECOVERY_EVALUATED"
-  ]
+  ],
+  "measured_s": 0.114,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "disposition",
@@ -209,7 +248,10 @@
   "safe_to_compress": false,
   "event_types": [
    "POLICY_EVALUATED"
-  ]
+  ],
+  "measured_s": 0.024,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "mutation",
@@ -223,7 +265,10 @@
   "event_types": [
    "CAPABILITY_ISSUED",
    "MUTATION_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.058,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "consequence",
@@ -236,7 +281,10 @@
   "safe_to_compress": false,
   "event_types": [
    "RECOVERY_EXECUTED"
-  ]
+  ],
+  "measured_s": 0.019,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "terminal",
@@ -247,6 +295,9 @@
   "interaction_required": false,
   "minimum_readability": "Outcome / Why / Next Action; the frame that must be read",
   "safe_to_compress": false,
-  "event_types": []
+  "event_types": [],
+  "measured_s": 0.019,
+  "measured_is_operator_latency": false,
+  "film_s": 2.5
  }
 ]

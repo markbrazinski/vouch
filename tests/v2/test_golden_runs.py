@@ -229,7 +229,7 @@ def test_beats_cover_the_stream_without_gaps_or_overlap(lot_id):
 
 
 def test_every_beat_is_playable(lot_id):
-    """A beat must carry what a timing pass needs, and no duration yet."""
+    """A beat must carry what a timing pass needs, and keep truth separable."""
     known = {
         "startup", "evidence_received", "security", "extraction", "binding",
         "investigator", "verifier", "reconciliation", "human_gate",
@@ -242,12 +242,20 @@ def test_every_beat_is_playable(lot_id):
         assert beat["sequence_start"] <= beat["sequence_end"]
         assert isinstance(beat["interaction_required"], bool)
         assert isinstance(beat["safe_to_compress"], bool)
-        # Timing is a LATER decision. A duration here would freeze the film's
-        # pacing into the truth capture, which is exactly what these packages
-        # exist to keep separate.
+        # Timing may now be present (`scripts/time_golden_runs.py --write`),
+        # but the two numbers must stay DISTINGUISHABLE: `measured_s` is what
+        # the machine did and is re-derivable from events.json, `film_s` is a
+        # presentation choice. A single ambiguous "duration" would collapse them
+        # and make the capture unfalsifiable.
         assert "duration" not in beat and "seconds" not in beat, (
-            f"{lot_id}: beat {beat['beat_id']} carries playback timing"
+            f"{lot_id}: beat {beat['beat_id']} carries an ambiguous duration; "
+            f"use measured_s (truth) and film_s (presentation)"
         )
+        if "film_s" in beat:
+            assert "measured_s" in beat, (
+                f"{lot_id}: beat {beat['beat_id']} has a film time with no "
+                f"measurement to justify it"
+            )
 
 
 def test_only_the_human_gate_blocks_on_a_person(lot_id):
@@ -306,3 +314,88 @@ def test_the_source_artifact_is_named_by_a_stable_identifier(lot_id):
     assert actual == manifest["source_artifact_id"], (
         f"{lot_id}: the captured source no longer matches {source.name}"
     )
+
+
+# ==========================================================================
+# film timing — derived from the measured runs
+# ==========================================================================
+
+
+def timings(lot_id: str):
+    """Beats with `measured_s` / `film_s`, computed fresh from the capture."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "time_golden_runs", ROOT / "scripts" / "time_golden_runs.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    beats = module.measure(lot_id)
+    for beat in beats:
+        beat["film_s"] = module.film_time(beat, 1.5, lot_id)
+    return beats
+
+
+def test_measured_time_never_exceeds_the_runs_wall_clock(lot_id):
+    """Beat measurements must add up to the run, not invent time.
+
+    Spans are contiguous (previous beat's last event to this beat's last), so
+    their sum cannot exceed first-to-last across the whole stream.
+    """
+    from datetime import datetime
+
+    events = load(lot_id, "events.json")
+    if len(events) < 2:
+        pytest.skip("too short to bound")
+    span = (
+        datetime.fromisoformat(events[-1]["at"]) - datetime.fromisoformat(events[0]["at"])
+    ).total_seconds()
+    total = sum(b["measured_s"] for b in timings(lot_id))
+    assert total <= span + 0.05, f"{lot_id}: beats claim {total}s of a {span}s run"
+
+
+def test_operator_latency_is_excluded_from_machine_time(lot_id):
+    """A person's response time is not something the factory did.
+
+    LOT-1003's capture shows 61s between the question and the answer — the
+    interval a human (here, the harness) took to reply. Counting that as machine
+    time would overstate the pipeline by a factor of four.
+    """
+    for beat in timings(lot_id):
+        if beat["beat_id"] in ("human_gate", "human_authority"):
+            assert beat["measured_is_operator_latency"] is True
+        else:
+            assert beat["measured_is_operator_latency"] is False
+
+
+def test_every_beat_is_on_screen_long_enough_to_read(lot_id):
+    """No real beat flashes past. Binding genuinely took 16ms; 16ms is not a frame."""
+    for beat in timings(lot_id):
+        assert beat["film_s"] >= 0.6, (
+            f"{lot_id}: beat {beat['beat_id']} holds for only {beat['film_s']}s"
+        )
+
+
+def test_only_a_real_question_gets_the_decision_hold(lot_id):
+    """LOT-1005 escalates without asking anything, and must not stage a pause.
+
+    Holding a security halt's escalation for the full decision beat would show a
+    deliberation that never happened.
+    """
+    for beat in timings(lot_id):
+        if beat["beat_id"] == "human_gate" and not beat["interaction_required"]:
+            assert beat["film_s"] < 1.5, (
+                f"{lot_id}: an unanswered escalation is held as if it were a decision"
+            )
+
+
+def test_the_verifier_never_reads_as_instant(lot_id):
+    """Independent verification is the product; it must be visible as work."""
+    verifiers = [b for b in timings(lot_id) if b["beat_id"] == "verifier"]
+    if not verifiers:
+        pytest.skip("no verifier ran in this scenario")
+    for beat in verifiers:
+        assert beat["measured_s"] > 1.0, (
+            f"{lot_id}: verifier measured {beat['measured_s']}s — suspiciously fast"
+        )
+        assert beat["film_s"] >= 1.0

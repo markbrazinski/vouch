@@ -8,7 +8,10 @@
   "interaction_required": false,
   "minimum_readability": "orientation only",
   "safe_to_compress": true,
-  "event_types": []
+  "event_types": [],
+  "measured_s": 0.0,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "evidence_received",
@@ -21,7 +24,10 @@
   "safe_to_compress": true,
   "event_types": [
    "EVIDENCE_RECEIVED"
-  ]
+  ],
+  "measured_s": 0.0,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "security",
@@ -34,7 +40,10 @@
   "safe_to_compress": false,
   "event_types": [
    "EVIDENCE_SECURITY_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.663,
+  "measured_is_operator_latency": false,
+  "film_s": 0.66
  },
  {
   "beat_id": "binding",
@@ -47,7 +56,10 @@
   "safe_to_compress": false,
   "event_types": [
    "EVIDENCE_BINDING_COMPLETED"
-  ]
+  ],
+  "measured_s": 0.012,
+  "measured_is_operator_latency": false,
+  "film_s": 0.6
  },
  {
   "beat_id": "human_gate",
@@ -60,7 +72,10 @@
   "safe_to_compress": false,
   "event_types": [
    "QUALITY_DECISION_REQUIRED"
-  ]
+  ],
+  "measured_s": 0.014,
+  "measured_is_operator_latency": true,
+  "film_s": 0.6
  },
  {
   "beat_id": "terminal",
@@ -71,6 +86,9 @@
   "interaction_required": false,
   "minimum_readability": "Outcome / Why / Next Action; the frame that must be read",
   "safe_to_compress": false,
-  "event_types": []
+  "event_types": [],
+  "measured_s": 0.014,
+  "measured_is_operator_latency": false,
+  "film_s": 1.5
  }
 ]
