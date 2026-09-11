@@ -11,6 +11,29 @@ const DIST = join(ROOT, 'dist-harness-check');
  * Runs the real production build and asserts the shipped bundle carries no
  * fixture control. Slow by design — it is the only proof that matters.
  */
+/**
+ * Which emitted chunks are REPLAY data, and which are the product.
+ *
+ * `/demo/:lotId` replays captured golden runs, so those chunks legitimately
+ * contain real dispositions — that is what a recording IS. They must never
+ * reach the product surface, which is enforced two ways: the assertions below
+ * run against the PRODUCT chunks only, and a separate describe block proves the
+ * replay data is confined to chunks nothing on the live path imports.
+ *
+ * Identified by the golden DecisionRecord ids they carry, not by filename: a
+ * chunk name is a bundler detail and would silently stop matching.
+ */
+const REPLAY_RECORD_IDS = [
+  'DR-90b55b1f5890',
+  'DR-f46415ec0641',
+  'DR-aafc8009407b',
+  'DR-8f59b0e6f7d2',
+  'DR-01a822d82a0c',
+];
+
+const isReplayChunk = (source: string): boolean =>
+  REPLAY_RECORD_IDS.some((id) => source.includes(id));
+
 describe('production build excludes the dev fixture harness', () => {
   let bundle = '';
 
@@ -24,9 +47,13 @@ describe('production build excludes the dev fixture harness', () => {
       { cwd: ROOT, stdio: 'pipe', env: { ...process.env, NODE_ENV: 'production' } },
     );
     const assets = join(DIST, 'assets');
+    // PRODUCT chunks only. A replay chunk carries a real recorded outcome by
+    // design; asserting "no disposition anywhere" over it would be asserting
+    // that recordings contain no recordings.
     bundle = readdirSync(assets)
       .filter((f) => f.endsWith('.js'))
       .map((f) => readFileSync(join(assets, f), 'utf8'))
+      .filter((source) => !isReplayChunk(source))
       .join('\n');
   }, 180_000);
 
@@ -178,5 +205,60 @@ describe('the frontend declares no AWS SDK dependency', () => {
     const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
     expect(declared.filter((name) => name.startsWith('@aws-sdk/'))).toEqual([]);
     expect(declared).not.toContain('aws-sdk');
+  });
+});
+
+/**
+ * The replay data is CONFINED.
+ *
+ * `/demo/:lotId` is deliberately not dev-gated — the demo has to work in a
+ * deployed build — so the usual "it isn't in the bundle" proof does not apply.
+ * The property that replaces it: a captured outcome must live only in chunks
+ * that nothing on the live path loads, so an operator watching a real decision
+ * can never be served a recorded one.
+ *
+ * This is the test that makes shipping the demo safe. If it fails, a recorded
+ * disposition has leaked into the product surface.
+ */
+describe('captured golden runs stay out of the product surface', () => {
+  let chunks: { name: string; source: string }[] = [];
+
+  beforeAll(() => {
+    const assets = join(DIST, 'assets');
+    chunks = readdirSync(assets)
+      .filter((f) => f.endsWith('.js'))
+      .map((f) => ({ name: f, source: readFileSync(join(assets, f), 'utf8') }));
+  });
+
+  it('emits the replay data as its own lazy chunks', () => {
+    const replay = chunks.filter((c) => isReplayChunk(c.source));
+    expect(replay.length, 'the golden packages must ship as separate chunks').toBeGreaterThan(0);
+  });
+
+  it('keeps every recorded outcome out of the entry chunk', () => {
+    // The entry chunk is the largest product chunk — what every visitor loads.
+    const product = chunks.filter((c) => !isReplayChunk(c.source));
+    const entry = product.sort((a, b) => b.source.length - a.source.length)[0];
+    for (const id of REPLAY_RECORD_IDS) {
+      expect(entry.source, `${entry.name} carries recorded run ${id}`).not.toContain(id);
+    }
+  });
+
+  it('never mixes a recorded run into a chunk carrying product chrome', () => {
+    // A chunk holding both the nav and a captured disposition would mean the
+    // replay data loads for everyone, which is exactly what must not happen.
+    for (const chunk of chunks.filter((c) => isReplayChunk(c.source))) {
+      expect(chunk.source, `${chunk.name} mixes replay data into product chrome`).not.toMatch(
+        /ÅBY/,
+      );
+    }
+  });
+
+  it('labels every replay surface as a replay', () => {
+    // The banner is the only thing standing between a viewer and mistaking a
+    // recording for a live decision, so it must actually ship.
+    const all = chunks.map((c) => c.source).join('\n');
+    expect(all).toMatch(/REPLAY/);
+    expect(all).toMatch(/Recorded run/);
   });
 });

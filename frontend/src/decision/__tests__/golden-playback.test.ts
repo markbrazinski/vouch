@@ -76,7 +76,7 @@ describe.runIf(LOTS.length)('golden runs replay through the existing projection'
       const vm = projectAt(lot, i);
       const agents = vm.spine.find((n) => n.key === 'agents');
       const disposition = vm.spine.find((n) => n.key === 'disposition');
-      if (disposition?.state === 'complete') {
+      if (disposition?.state === 'completed' || disposition?.state === 'terminal') {
         expect(
           agents?.verifierLane,
           `${lot}: disposition complete at prefix ${i} with verifier lane ` +
@@ -92,12 +92,13 @@ describe.runIf(LOTS.length)('golden runs replay through the existing projection'
       const vm = projectAt(lot, i);
       const disposition = vm.spine.find((n) => n.key === 'disposition');
       const consequence = vm.spine.find((n) => n.key === 'consequence');
-      if (consequence?.state === 'complete' && disposition?.state !== 'halted') {
+      const settled = (n?: string) => n === 'completed' || n === 'terminal';
+      if (settled(consequence?.state) && disposition?.state !== 'halted') {
         expect(
-          disposition?.state,
-          `${lot}: consequence complete at prefix ${i} while disposition is ` +
+          settled(disposition?.state),
+          `${lot}: consequence settled at prefix ${i} while disposition is ` +
             `${String(disposition?.state)}`,
-        ).toBe('complete');
+        ).toBe(true);
       }
     }
   });

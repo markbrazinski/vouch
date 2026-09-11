@@ -1,0 +1,1359 @@
+{
+ "record_id": "DR-aafc8009407b",
+ "created_at": "2026-09-10T21:58:11.868522+00:00",
+ "run_count": 2,
+ "identity": {
+  "record_id": "DR-aafc8009407b",
+  "lot_id": "LOT-1003",
+  "material_id": "MAT-RESIN-3",
+  "supplier_id": "SUP-WEST",
+  "supplier_site": "SITE-W1"
+ },
+ "evidence": {
+  "source_artifact_hashes": [
+   "a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8"
+  ],
+  "document_identities": [
+   "COA"
+  ],
+  "receipt_timestamps": [
+   "2026-09-10T21:58:13.036832+00:00"
+  ],
+  "storage_refs": [
+   "s3://<evidence-bucket>/evidence/LOT-1003/ART-c2a3b0d59c33"
+  ],
+  "object_versions": [
+   "a9p8epFYJretYZZQsOa_5xY0YPLFJ9Ki"
+  ],
+  "claimed_identities": [
+   {
+    "claimed_lot": "LOT-1003",
+    "claimed_material": "MAT-RESIN-3",
+    "claimed_supplier": "SUP-WEST",
+    "claimed_supplier_site": "SITE-W1",
+    "claimed_supplier_batch": "",
+    "claimed_lots": [
+     "LOT-1003"
+    ],
+    "claimed_materials": [
+     "MAT-RESIN-3"
+    ],
+    "claimed_suppliers": [
+     "SUP-WEST"
+    ],
+    "claimed_supplier_sites": [
+     "SITE-W1"
+    ],
+    "claimed_supplier_batches": []
+   }
+  ],
+  "canonical_claims": [
+   {
+    "claim_id": "CLM-c2a3b0d59c33-00",
+    "evidence_artifact_id": "ART-c2a3b0d59c33",
+    "lot_id": "LOT-1003",
+    "material_id": "MAT-RESIN-3",
+    "claim_type": "measurement",
+    "characteristic": "viscosity",
+    "value": 178.0,
+    "units": "cP",
+    "method": "ASTM-D2196",
+    "condition": "25C",
+    "claimed_spec": "SPEC-R3 rev A",
+    "source_locator": "page:1/line:14",
+    "extraction_method": "DETERMINISTIC_PARSER",
+    "extraction_version": "coa-parser-1",
+    "extraction_confidence": 1.0,
+    "trust_label": "UNTRUSTED_SUPPLIER",
+    "source_hash": "a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8"
+   },
+   {
+    "claim_id": "CLM-c2a3b0d59c33-01",
+    "evidence_artifact_id": "ART-c2a3b0d59c33",
+    "lot_id": "LOT-1003",
+    "material_id": "MAT-RESIN-3",
+    "claim_type": "measurement",
+    "characteristic": "viscosity",
+    "value": 312.0,
+    "units": "cP",
+    "method": "ASTM-D445",
+    "condition": "25C",
+    "claimed_spec": "SPEC-R3 rev A",
+    "source_locator": "page:1/line:20",
+    "extraction_method": "DETERMINISTIC_PARSER",
+    "extraction_version": "coa-parser-1",
+    "extraction_confidence": 1.0,
+    "trust_label": "UNTRUSTED_SUPPLIER",
+    "source_hash": "a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8"
+   }
+  ],
+  "binding_statuses": [
+   "BOUND"
+  ],
+  "content_types": [
+   "application/pdf"
+  ],
+  "held_claims": []
+ },
+ "security": {
+  "inspection_performed": true,
+  "identity_unresolved_artifact_ids": [],
+  "unresolved_batch_identities": [],
+  "config_version": "vouch-sec-1",
+  "detector": "bedrock-guardrails:wok5lemdo1ze:DRAFT",
+  "guardrail_outcome": "CLEAN",
+  "guardrail_id": "wok5lemdo1ze",
+  "guardrail_version": "DRAFT",
+  "inspected_at": "2026-09-10T21:58:13.036378+00:00",
+  "malware_scan": "NOT_RUN",
+  "prompt_attack_detected": false,
+  "malware_found": false,
+  "blocked": false,
+  "quarantined_artifact_ids": [],
+  "binding_mismatches": [],
+  "rejected_artifact_ids": [],
+  "unbound_artifact_ids": [],
+  "identity_conflicts": []
+ },
+ "extraction": {
+  "per_claim": {
+   "CLM-c2a3b0d59c33-00": {
+    "method": "DETERMINISTIC_PARSER",
+    "version": "coa-parser-1",
+    "confidence": 1.0,
+    "locator": "page:1/line:14",
+    "source_hash": "a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8",
+    "trust_label": "UNTRUSTED_SUPPLIER"
+   },
+   "CLM-c2a3b0d59c33-01": {
+    "method": "DETERMINISTIC_PARSER",
+    "version": "coa-parser-1",
+    "confidence": 1.0,
+    "locator": "page:1/line:20",
+    "source_hash": "a23b91795ff0a9f3650db6a11ad55e8e29537007f204545920b5eae3abfcf8a8",
+    "trust_label": "UNTRUSTED_SUPPLIER"
+   }
+  },
+  "model_fallback_used": false,
+  "low_confidence_routed_to_human": false
+ },
+ "snapshot": {
+  "snapshot_id": "SNAP-c619f8b0d753",
+  "claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+  "lot_state_version": 20,
+  "order_state_versions": {
+   "C-419": 21
+  }
+ },
+ "investigator": {
+  "model_id": "us.amazon.nova-pro-v1:0",
+  "prompt_version": "investigator-v2.2",
+  "prompt_hash": "f054d21f62e34cbdd2565e4dd594b05472433804f5de9c46bdb5c1d73d2af0ad",
+  "temperature": 0.0,
+  "input_claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+  "brief_hash": "9a8963b9f83a52a7981021fa06fa5ef706a37f79ed1a94925cf8b63b85a2501f",
+  "tool_events": [
+   {
+    "agent": "investigator",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 4.15,
+    "status": "OK",
+    "arguments": {
+     "material_id": "MAT-RESIN-3"
+    },
+    "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+   },
+   {
+    "agent": "investigator",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.03,
+    "status": "OK",
+    "arguments": {
+     "spec_id": "SPEC-R3",
+     "revision": "A"
+    },
+    "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+   },
+   {
+    "agent": "investigator",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-c2a3b0d59c33-00",
+     "CLM-c2a3b0d59c33-01"
+    ],
+    "elapsed_ms": 0.02,
+    "status": "OK",
+    "arguments": {},
+    "result_ref": "340a5f15a89a7e6e90fdd6fbbd6a3cdacf091ee2b9385cad8ae47986714ee7d5"
+   },
+   {
+    "agent": "investigator",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.02,
+    "status": "OK",
+    "arguments": {
+     "material_id": "MAT-RESIN-3"
+    },
+    "result_ref": "8f020a26729fd3d69c15493b9785ea1232e107322fb0f8870b43dc5d0781f82c"
+   },
+   {
+    "agent": "investigator",
+    "tool": "list_applicable_deviations",
+    "category": "deviation",
+    "authority_class": "authoritative",
+    "result_count": 0,
+    "object_refs": [],
+    "elapsed_ms": 4.49,
+    "status": "OK",
+    "arguments": {
+     "material_id": "MAT-RESIN-3"
+    },
+    "result_ref": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+   }
+  ],
+  "schema_valid": true,
+  "precedent_consulted": [],
+  "failure": "",
+  "failure_category": "",
+  "attempts": 1,
+  "brief_rejected": false,
+  "brief": {
+   "governing_basis": {
+    "spec_id": "SPEC-R3",
+    "revision": "A"
+   },
+   "required_tests": [
+    {
+     "name": "viscosity",
+     "threshold": "[200.0, 400.0] cP",
+     "required_method": "ASTM-D2196",
+     "required_condition": "25C"
+    }
+   ],
+   "coverage": [
+    {
+     "test": "viscosity",
+     "evidence_ref": "CLM-c2a3b0d59c33-01",
+     "method_match": false,
+     "equivalence_record_id": "EQV-1",
+     "value": "\u2014",
+     "units": "cP"
+    }
+   ],
+   "deviations_applied": [],
+   "sufficiency": "SUFFICIENT",
+   "missing": [],
+   "investigation_notes": "The evidence using ASTM-D445 is considered applicable due to equivalence record EQV-1.",
+   "precedent_consulted": []
+  }
+ },
+ "verifier": {
+  "model_id": "us.amazon.nova-pro-v1:0",
+  "prompt_version": "verifier-v2.2",
+  "prompt_hash": "9637533a556a350387cbb5d88a3412c0f1d66211be0e782d9427381be05d57f9",
+  "temperature": 0.0,
+  "input_claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+  "brief_hash": "9a8963b9f83a52a7981021fa06fa5ef706a37f79ed1a94925cf8b63b85a2501f",
+  "tool_events": [
+   {
+    "agent": "verifier",
+    "tool": "list_candidate_specs",
+    "category": "specification",
+    "authority_class": "authoritative",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.02,
+    "status": "OK",
+    "arguments": {
+     "material_id": "MAT-RESIN-3"
+    },
+    "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+   },
+   {
+    "agent": "verifier",
+    "tool": "get_spec_requirement",
+    "category": "specification",
+    "authority_class": "authoritative",
+    "result_count": 1,
+    "object_refs": [
+     "SPEC-R3:A"
+    ],
+    "elapsed_ms": 0.02,
+    "status": "OK",
+    "arguments": {
+     "spec_id": "SPEC-R3",
+     "revision": "A"
+    },
+    "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+   },
+   {
+    "agent": "verifier",
+    "tool": "get_evidence_snapshot",
+    "category": "evidence",
+    "authority_class": "frozen_claims",
+    "result_count": 2,
+    "object_refs": [
+     "CLM-c2a3b0d59c33-00",
+     "CLM-c2a3b0d59c33-01"
+    ],
+    "elapsed_ms": 0.02,
+    "status": "OK",
+    "arguments": {},
+    "result_ref": "340a5f15a89a7e6e90fdd6fbbd6a3cdacf091ee2b9385cad8ae47986714ee7d5"
+   },
+   {
+    "agent": "verifier",
+    "tool": "list_equivalence_records",
+    "category": "equivalence",
+    "authority_class": "authoritative",
+    "result_count": 1,
+    "object_refs": [
+     "EQV-1"
+    ],
+    "elapsed_ms": 0.02,
+    "status": "OK",
+    "arguments": {
+     "material_id": "MAT-RESIN-3"
+    },
+    "result_ref": "8f020a26729fd3d69c15493b9785ea1232e107322fb0f8870b43dc5d0781f82c"
+   }
+  ],
+  "schema_valid": true,
+  "precedent_consulted": [],
+  "failure": "",
+  "failure_category": "",
+  "attempts": 2,
+  "brief_rejected": false,
+  "brief": {
+   "governing_basis": {
+    "spec_id": "SPEC-R3",
+    "revision": "A"
+   },
+   "required_tests": [
+    {
+     "name": "viscosity",
+     "threshold": "[200.0, 400.0] cP",
+     "required_method": "ASTM-D2196",
+     "required_condition": "25C"
+    }
+   ],
+   "coverage": [
+    {
+     "test": "viscosity",
+     "evidence_ref": "CLM-c2a3b0d59c33-01",
+     "method_match": false,
+     "equivalence_record_id": "EQV-1",
+     "value": "312.0",
+     "units": "cP"
+    }
+   ],
+   "deviations_applied": [],
+   "sufficiency": "SUFFICIENT",
+   "missing": [],
+   "investigation_notes": "Viscosity requirement is covered by CLM-c2a3b0d59c33-01 using equivalence record EQV-1.",
+   "precedent_consulted": []
+  }
+ },
+ "reconciliation": {
+  "outcome": "NON_MATERIAL_DIFFERENCE",
+  "differing_fields": [],
+  "investigator_values": {
+   "coverage": [
+    {
+     "test": "viscosity",
+     "evidence_ref": "CLM-c2a3b0d59c33-00",
+     "method_match": true,
+     "equivalence_record_id": null
+    }
+   ]
+  },
+  "verifier_values": {
+   "coverage": [
+    {
+     "test": "viscosity",
+     "evidence_ref": "CLM-c2a3b0d59c33-01",
+     "method_match": false,
+     "equivalence_record_id": "EQV-1"
+    }
+   ]
+  }
+ },
+ "corpus": {
+  "objects": {
+   "SPEC-R3:A": {
+    "kind": "spec_revision",
+    "spec_id": "SPEC-R3",
+    "revision": "A",
+    "status": "ACTIVE",
+    "effective_date": "2024-01-01",
+    "effective_to": null,
+    "effective_basis": "date_of_receipt"
+   },
+   "REQ-R3-A-1": {
+    "kind": "requirement",
+    "characteristic": "viscosity",
+    "method": "ASTM-D2196",
+    "condition": "25C",
+    "min_value": 200.0,
+    "max_value": 400.0
+   },
+   "EQV-1": {
+    "kind": "equivalence",
+    "status": "APPROVED",
+    "effective_date": "2024-01-01",
+    "expiry_date": null
+   }
+  },
+  "corpus_hash": "668b66c56af6caa6c369b1fc5e40b63716e93f3956ba5ca15f387a46869187c5"
+ },
+ "basis": {
+  "spec_id": "SPEC-R3",
+  "revision": "A",
+  "checks_passed": true,
+  "check_failures": []
+ },
+ "disposition": {
+  "disposition": "RELEASE",
+  "reason": "viscosity: 312.0cP within [200.0, 400.0] cP"
+ },
+ "policy": {
+  "policy_version": "vouch-policy-2.1",
+  "gate_decision": "ALLOWED",
+  "refusal_reason": "briefs differ materially on: coverage"
+ },
+ "capability": {
+  "capability_id": "CAP-ae85c11a8eb94609",
+  "issued": true,
+  "consumed": true,
+  "refusal_reason": ""
+ },
+ "mutation": {
+  "target_type": "lot",
+  "target_id": "LOT-1003",
+  "action": "release_lot",
+  "before_version": 20,
+  "after_version": 21,
+  "inventory_delta": 200.0,
+  "inventory_before": {
+   "usable": false,
+   "quantity": 200.0
+  },
+  "inventory_after": {
+   "usable": true,
+   "quantity": 200.0
+  },
+  "ledger_sequence": "DR-aafc8009407b#CAP-ae85c11a8eb94609",
+  "result": "lot LOT-1003 RELEASED"
+ },
+ "consequences": {
+  "coverage_changes": [
+   {
+    "order_id": "C-419",
+    "coverage": [
+     {
+      "material_id": "MAT-RESIN-3",
+      "required": 800.0,
+      "available": 800.0,
+      "short_by": 0.0,
+      "planned": 0.0,
+      "uncovered": 0.0,
+      "ratio": 1.0
+     }
+    ]
+   }
+  ],
+  "readiness_changes": [
+   {
+    "order_id": "C-419",
+    "from": "AT_RISK",
+    "to": "READY",
+    "reason": "all materials available",
+    "persisted": true,
+    "state_version": 22,
+    "ledger_sequence": "DR-aafc8009407b#CAP-3107cae39a7d456a"
+   }
+  ],
+  "recovery": {},
+  "caused_by": [
+   {
+    "cause": "lot_disposition",
+    "lot_id": "LOT-1003",
+    "inventory_delta": 200.0,
+    "material_id": "MAT-RESIN-3",
+    "effect": "order_readiness",
+    "order_id": "C-419",
+    "from": "AT_RISK",
+    "to": "READY",
+    "decision_record_id": "DR-aafc8009407b",
+    "ledger_sequence": "DR-aafc8009407b#CAP-3107cae39a7d456a"
+   }
+  ]
+ },
+ "human": {
+  "evidence_supplied": [],
+  "authority_source": "PLANT_QUALITY",
+  "content_hashes": [],
+  "resumed_run_ids": [
+   "DR-aafc8009407b#run2"
+  ],
+  "review_id": "QA-DR-aafc8009407b",
+  "review_status": "RESOLVED",
+  "final_outcome": ""
+ },
+ "quality_authority": {
+  "question": {
+   "question_id": "QQ-DR-aafc8009407b-viscosity",
+   "question_type": "EVIDENCE_APPLICABILITY",
+   "characteristic": "viscosity",
+   "options": [
+    {
+     "claim_id": "CLM-c2a3b0d59c33-00",
+     "value": 178.0,
+     "units": "cP",
+     "method": "ASTM-D2196",
+     "condition": "25C",
+     "equivalence_id": "",
+     "selected_by": "INVESTIGATOR",
+     "within_limits": false,
+     "threshold": "[200.0, 400.0] cP",
+     "would_disposition": "QUARANTINE"
+    },
+    {
+     "claim_id": "CLM-c2a3b0d59c33-01",
+     "value": 312.0,
+     "units": "cP",
+     "method": "ASTM-D445",
+     "condition": "25C",
+     "equivalence_id": "EQV-1",
+     "selected_by": "VERIFIER",
+     "within_limits": true,
+     "threshold": "[200.0, 400.0] cP",
+     "would_disposition": "RELEASE"
+    }
+   ],
+   "investigator_evidence_ref": "CLM-c2a3b0d59c33-00",
+   "verifier_evidence_ref": "CLM-c2a3b0d59c33-01",
+   "equivalence_id": "EQV-1",
+   "method_from": "ASTM-D445",
+   "method_to": "ASTM-D2196",
+   "condition": "25C",
+   "status": "RESOLVED",
+   "supplier_batch": "",
+   "internal_lot_id": "",
+   "artifact_id": "",
+   "content_hash": "",
+   "supplier_id": "",
+   "supplier_site": "",
+   "material_id": "",
+   "po_reference": ""
+  },
+  "decisions": [
+   {
+    "authority_decision_id": "HAD-42c3f66f471d",
+    "decision_record_id": "DR-aafc8009407b",
+    "lot_id": "LOT-1003",
+    "source_run": 1,
+    "evidence_snapshot_id": "SNAP-bd6f1530635d",
+    "claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+    "lot_state_version": 20,
+    "question_id": "QQ-DR-aafc8009407b-viscosity",
+    "question_type": "EVIDENCE_APPLICABILITY",
+    "characteristic": "viscosity",
+    "authorized_evidence_refs": [
+     "CLM-c2a3b0d59c33-01"
+    ],
+    "disputed_evidence_refs": [
+     "CLM-c2a3b0d59c33-00",
+     "CLM-c2a3b0d59c33-01"
+    ],
+    "equivalence_id": "EQV-1",
+    "method_from": "ASTM-D445",
+    "method_to": "ASTM-D2196",
+    "condition": "25C",
+    "established_value": 312.0,
+    "established_units": "cP",
+    "established_method": "ASTM-D445",
+    "established_condition": "25C",
+    "established_via_equivalence": "EQV-1",
+    "supplier_batch": "",
+    "bound_lot_id": "",
+    "artifact_id": "",
+    "content_hash": "",
+    "binding_ref": "",
+    "decision": "ESTABLISH_EVIDENCE",
+    "accountable_actor": "QA-LEAD",
+    "authority_source": "PLANT_QUALITY",
+    "created_at": "2026-09-10T21:59:33.610237+00:00"
+   }
+  ]
+ },
+ "storage": {
+  "evidence_store": "AWS_S3",
+  "record_store": "AWS_DYNAMODB",
+  "record_ref": "dynamodb://gatehouse-dev-state/RECORD#DR-aafc8009407b",
+  "event_count": 0,
+  "last_event_sequence": 74
+ },
+ "archived_runs": [
+  {
+   "run_number": 1,
+   "investigator": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "investigator-v2.2",
+    "prompt_hash": "f054d21f62e34cbdd2565e4dd594b05472433804f5de9c46bdb5c1d73d2af0ad",
+    "temperature": 0.0,
+    "input_claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+    "brief_hash": "7b6d4a157c10bcdffe5faf621e22f1c1a1ca5ef934b647b68795c9353ef90afb",
+    "tool_events": [
+     {
+      "agent": "investigator",
+      "tool": "list_candidate_specs",
+      "category": "specification",
+      "authority_class": "authoritative",
+      "result_count": 1,
+      "object_refs": [
+       "SPEC-R3:A"
+      ],
+      "elapsed_ms": 5.0,
+      "status": "OK",
+      "arguments": {
+       "material_id": "MAT-RESIN-3"
+      },
+      "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+     },
+     {
+      "agent": "investigator",
+      "tool": "get_spec_requirement",
+      "category": "specification",
+      "authority_class": "authoritative",
+      "result_count": 1,
+      "object_refs": [
+       "SPEC-R3:A"
+      ],
+      "elapsed_ms": 0.04,
+      "status": "OK",
+      "arguments": {
+       "spec_id": "SPEC-R3",
+       "revision": "A"
+      },
+      "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+     },
+     {
+      "agent": "investigator",
+      "tool": "get_evidence_snapshot",
+      "category": "evidence",
+      "authority_class": "frozen_claims",
+      "result_count": 2,
+      "object_refs": [
+       "CLM-c2a3b0d59c33-00",
+       "CLM-c2a3b0d59c33-01"
+      ],
+      "elapsed_ms": 0.03,
+      "status": "OK",
+      "arguments": {},
+      "result_ref": "340a5f15a89a7e6e90fdd6fbbd6a3cdacf091ee2b9385cad8ae47986714ee7d5"
+     },
+     {
+      "agent": "investigator",
+      "tool": "list_applicable_deviations",
+      "category": "deviation",
+      "authority_class": "authoritative",
+      "result_count": 0,
+      "object_refs": [],
+      "elapsed_ms": 5.85,
+      "status": "OK",
+      "arguments": {
+       "material_id": "MAT-RESIN-3"
+      },
+      "result_ref": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+     }
+    ],
+    "schema_valid": true,
+    "precedent_consulted": [],
+    "failure": "",
+    "failure_category": "",
+    "attempts": 1,
+    "brief_rejected": false,
+    "brief": {
+     "governing_basis": {
+      "spec_id": "SPEC-R3",
+      "revision": "A"
+     },
+     "required_tests": [
+      {
+       "name": "viscosity",
+       "threshold": "[200.0, 400.0] cP",
+       "required_method": "ASTM-D2196",
+       "required_condition": "25C"
+      }
+     ],
+     "coverage": [
+      {
+       "test": "viscosity",
+       "evidence_ref": "CLM-c2a3b0d59c33-00",
+       "method_match": true,
+       "equivalence_record_id": null,
+       "value": "178.0",
+       "units": "cP"
+      }
+     ],
+     "deviations_applied": [],
+     "sufficiency": "SUFFICIENT",
+     "missing": [],
+     "investigation_notes": "",
+     "precedent_consulted": []
+    }
+   },
+   "verifier": {
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "prompt_version": "verifier-v2.2",
+    "prompt_hash": "9637533a556a350387cbb5d88a3412c0f1d66211be0e782d9427381be05d57f9",
+    "temperature": 0.0,
+    "input_claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+    "brief_hash": "9a8963b9f83a52a7981021fa06fa5ef706a37f79ed1a94925cf8b63b85a2501f",
+    "tool_events": [
+     {
+      "agent": "verifier",
+      "tool": "list_candidate_specs",
+      "category": "specification",
+      "authority_class": "authoritative",
+      "result_count": 1,
+      "object_refs": [
+       "SPEC-R3:A"
+      ],
+      "elapsed_ms": 0.04,
+      "status": "OK",
+      "arguments": {
+       "material_id": "MAT-RESIN-3"
+      },
+      "result_ref": "37ccc32d13baf757a5812328ff87e4ea1a26ac29da7b837de7eb8e476ace1d9a"
+     },
+     {
+      "agent": "verifier",
+      "tool": "get_spec_requirement",
+      "category": "specification",
+      "authority_class": "authoritative",
+      "result_count": 1,
+      "object_refs": [
+       "SPEC-R3:A"
+      ],
+      "elapsed_ms": 0.03,
+      "status": "OK",
+      "arguments": {
+       "spec_id": "SPEC-R3",
+       "revision": "A"
+      },
+      "result_ref": "ee335d4bb0fd232d75a924e9ab2a43e1dd8a01d9c7f02c8dc46e97525ae73865"
+     },
+     {
+      "agent": "verifier",
+      "tool": "get_evidence_snapshot",
+      "category": "evidence",
+      "authority_class": "frozen_claims",
+      "result_count": 2,
+      "object_refs": [
+       "CLM-c2a3b0d59c33-00",
+       "CLM-c2a3b0d59c33-01"
+      ],
+      "elapsed_ms": 0.02,
+      "status": "OK",
+      "arguments": {},
+      "result_ref": "340a5f15a89a7e6e90fdd6fbbd6a3cdacf091ee2b9385cad8ae47986714ee7d5"
+     },
+     {
+      "agent": "verifier",
+      "tool": "list_applicable_deviations",
+      "category": "deviation",
+      "authority_class": "authoritative",
+      "result_count": 0,
+      "object_refs": [],
+      "elapsed_ms": 0.02,
+      "status": "OK",
+      "arguments": {
+       "material_id": "MAT-RESIN-3"
+      },
+      "result_ref": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+     },
+     {
+      "agent": "verifier",
+      "tool": "list_equivalence_records",
+      "category": "equivalence",
+      "authority_class": "authoritative",
+      "result_count": 1,
+      "object_refs": [
+       "EQV-1"
+      ],
+      "elapsed_ms": 6.64,
+      "status": "OK",
+      "arguments": {
+       "material_id": "MAT-RESIN-3"
+      },
+      "result_ref": "8f020a26729fd3d69c15493b9785ea1232e107322fb0f8870b43dc5d0781f82c"
+     }
+    ],
+    "schema_valid": true,
+    "precedent_consulted": [],
+    "failure": "",
+    "failure_category": "",
+    "attempts": 1,
+    "brief_rejected": false,
+    "brief": {
+     "governing_basis": {
+      "spec_id": "SPEC-R3",
+      "revision": "A"
+     },
+     "required_tests": [
+      {
+       "name": "viscosity",
+       "threshold": "[200.0, 400.0] cP",
+       "required_method": "ASTM-D2196",
+       "required_condition": "25C"
+      }
+     ],
+     "coverage": [
+      {
+       "test": "viscosity",
+       "evidence_ref": "CLM-c2a3b0d59c33-01",
+       "method_match": false,
+       "equivalence_record_id": "EQV-1",
+       "value": "312.0",
+       "units": "cP"
+      }
+     ],
+     "deviations_applied": [],
+     "sufficiency": "SUFFICIENT",
+     "missing": [],
+     "investigation_notes": "The first claim (CLM-c2a3b0d59c33-00) is out of limit but is still covered evidence. The second claim (CLM-c2a3b0d59c33-01) is used for coverage due to an equivalence record (EQV-1).",
+     "precedent_consulted": []
+    }
+   },
+   "reconciliation": {
+    "outcome": "MATERIAL_DISAGREEMENT",
+    "differing_fields": [
+     "coverage"
+    ],
+    "investigator_values": {
+     "coverage": [
+      {
+       "test": "viscosity",
+       "evidence_ref": "CLM-c2a3b0d59c33-00",
+       "method_match": true,
+       "equivalence_record_id": null
+      }
+     ]
+    },
+    "verifier_values": {
+     "coverage": [
+      {
+       "test": "viscosity",
+       "evidence_ref": "CLM-c2a3b0d59c33-01",
+       "method_match": false,
+       "equivalence_record_id": "EQV-1"
+      }
+     ]
+    }
+   },
+   "basis": {
+    "spec_id": "",
+    "revision": "",
+    "checks_passed": false,
+    "check_failures": []
+   },
+   "disposition": {
+    "disposition": "",
+    "reason": ""
+   },
+   "snapshot": {
+    "snapshot_id": "SNAP-bd6f1530635d",
+    "claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+    "lot_state_version": 20,
+    "order_state_versions": {
+     "C-419": 21
+    }
+   },
+   "failure_category": "MATERIAL_DISAGREEMENT",
+   "archived_at": "2026-09-10T21:59:33.627474+00:00"
+  }
+ ],
+ "failure_category": "MATERIAL_DISAGREEMENT",
+ "terminal": true,
+ "events": [
+  {
+   "event": "QUALITY_AUTHORITY_RECORDED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:33.610266+00:00",
+   "authority_decision_id": "HAD-42c3f66f471d",
+   "question_id": "QQ-DR-aafc8009407b-viscosity",
+   "decision": "ESTABLISH_EVIDENCE",
+   "accountable_actor": "QA-LEAD",
+   "authority_source": "PLANT_QUALITY",
+   "characteristic": "viscosity",
+   "equivalence_id": "EQV-1",
+   "authorized_evidence_refs": [
+    "CLM-c2a3b0d59c33-01"
+   ],
+   "evidence_snapshot_id": "SNAP-bd6f1530635d",
+   "claim_set_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+   "established_value": 312.0,
+   "established_units": "cP",
+   "established_method": "ASTM-D445",
+   "established_condition": "25C",
+   "established_via_equivalence": "EQV-1"
+  },
+  {
+   "event": "DECISION_RESUMED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:33.658265+00:00",
+   "lot_id": "LOT-1003",
+   "run_count": 2,
+   "resumed_run_ids": [
+    "DR-aafc8009407b#run2"
+   ],
+   "trigger": "QUALITY_AUTHORITY",
+   "authority_decision_id": "HAD-42c3f66f471d"
+  },
+  {
+   "event": "EVIDENCE_SNAPSHOT_CREATED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:33.682491+00:00",
+   "snapshot_id": "SNAP-c619f8b0d753",
+   "claim_count": 2,
+   "snapshot_hash": "e99e689b6a990ee8f8d9f2093f2fdbd2d4dfdc2a360e001549ab9e88dc4be18e",
+   "state_versions": {
+    "lot": 20,
+    "C-419": 21
+   }
+  },
+  {
+   "event": "INVESTIGATOR_STARTED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:33.698826+00:00",
+   "model_id": "us.amazon.nova-pro-v1:0",
+   "prompt_version": "investigator-v2.2",
+   "temperature": 0.0
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:35.755161+00:00",
+   "agent": "investigator",
+   "tool": "list_candidate_specs",
+   "category": "specification",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:35.776896+00:00",
+   "agent": "investigator",
+   "tool": "list_candidate_specs",
+   "result_count": 1,
+   "object_refs": [
+    "SPEC-R3:A"
+   ],
+   "elapsed_ms": 4.15
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:37.034851+00:00",
+   "agent": "investigator",
+   "tool": "get_spec_requirement",
+   "category": "specification",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:37.051341+00:00",
+   "agent": "investigator",
+   "tool": "get_spec_requirement",
+   "result_count": 1,
+   "object_refs": [
+    "SPEC-R3:A"
+   ],
+   "elapsed_ms": 0.03
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:38.106534+00:00",
+   "agent": "investigator",
+   "tool": "get_evidence_snapshot",
+   "category": "evidence",
+   "authority_class": "frozen_claims"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:38.124369+00:00",
+   "agent": "investigator",
+   "tool": "get_evidence_snapshot",
+   "result_count": 2,
+   "object_refs": [
+    "CLM-c2a3b0d59c33-00",
+    "CLM-c2a3b0d59c33-01"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:39.281323+00:00",
+   "agent": "investigator",
+   "tool": "list_equivalence_records",
+   "category": "equivalence",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:39.297417+00:00",
+   "agent": "investigator",
+   "tool": "list_equivalence_records",
+   "result_count": 1,
+   "object_refs": [
+    "EQV-1"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:40.460635+00:00",
+   "agent": "investigator",
+   "tool": "list_applicable_deviations",
+   "category": "deviation",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:40.477227+00:00",
+   "agent": "investigator",
+   "tool": "list_applicable_deviations",
+   "result_count": 0,
+   "object_refs": [],
+   "elapsed_ms": 4.49
+  },
+  {
+   "event": "APPLICABILITY_BRIEF_COMPLETED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:42.625916+00:00",
+   "brief_hash": "9a8963b9f83a52a7981021fa06fa5ef706a37f79ed1a94925cf8b63b85a2501f",
+   "sufficiency": "SUFFICIENT",
+   "basis": "SPEC-R3:A",
+   "required_test_count": 1
+  },
+  {
+   "event": "VERIFIER_STARTED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:42.643856+00:00",
+   "model_id": "us.amazon.nova-pro-v1:0",
+   "prompt_version": "verifier-v2.2",
+   "temperature": 0.0
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:44.248103+00:00",
+   "agent": "verifier",
+   "tool": "list_candidate_specs",
+   "category": "specification",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:44.271352+00:00",
+   "agent": "verifier",
+   "tool": "list_candidate_specs",
+   "result_count": 1,
+   "object_refs": [
+    "SPEC-R3:A"
+   ],
+   "elapsed_ms": 0.03
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:45.375783+00:00",
+   "agent": "verifier",
+   "tool": "get_spec_requirement",
+   "category": "specification",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:45.392881+00:00",
+   "agent": "verifier",
+   "tool": "get_spec_requirement",
+   "result_count": 1,
+   "object_refs": [
+    "SPEC-R3:A"
+   ],
+   "elapsed_ms": 0.03
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:46.373330+00:00",
+   "agent": "verifier",
+   "tool": "get_evidence_snapshot",
+   "category": "evidence",
+   "authority_class": "frozen_claims"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:46.390577+00:00",
+   "agent": "verifier",
+   "tool": "get_evidence_snapshot",
+   "result_count": 2,
+   "object_refs": [
+    "CLM-c2a3b0d59c33-00",
+    "CLM-c2a3b0d59c33-01"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "VERIFIER_BRIEF_COMPLETED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:49.850380+00:00",
+   "brief_hash": "7b6d4a157c10bcdffe5faf621e22f1c1a1ca5ef934b647b68795c9353ef90afb",
+   "sufficiency": "SUFFICIENT"
+  },
+  {
+   "event": "BRIEF_VALIDATION_FAILED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:49.869818+00:00",
+   "agent": "verifier",
+   "attempt": 1,
+   "errors": [
+    "Quality established CLM-c2a3b0d59c33-01 as the controlling evidence for viscosity. This brief cites ['CLM-c2a3b0d59c33-00']. Cite the established evidence in that requirement's coverage row and no other claim for it; the remaining claims stay in the snapshot but do not establish this requirement."
+   ],
+   "carried_forward": [
+    "Quality established CLM-c2a3b0d59c33-01 as the controlling evidence for viscosity. This brief cites ['CLM-c2a3b0d59c33-00']. Cite the established evidence in that requirement's coverage row and no other claim for it; the remaining claims stay in the snapshot but do not establish this requirement."
+   ]
+  },
+  {
+   "event": "VERIFIER_STARTED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:49.887138+00:00",
+   "model_id": "us.amazon.nova-pro-v1:0",
+   "prompt_version": "verifier-v2.2",
+   "temperature": 0.0
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:51.329935+00:00",
+   "agent": "verifier",
+   "tool": "list_candidate_specs",
+   "category": "specification",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:51.350273+00:00",
+   "agent": "verifier",
+   "tool": "list_candidate_specs",
+   "result_count": 1,
+   "object_refs": [
+    "SPEC-R3:A"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:52.396312+00:00",
+   "agent": "verifier",
+   "tool": "get_spec_requirement",
+   "category": "specification",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:52.415474+00:00",
+   "agent": "verifier",
+   "tool": "get_spec_requirement",
+   "result_count": 1,
+   "object_refs": [
+    "SPEC-R3:A"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:53.515647+00:00",
+   "agent": "verifier",
+   "tool": "get_evidence_snapshot",
+   "category": "evidence",
+   "authority_class": "frozen_claims"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:53.534066+00:00",
+   "agent": "verifier",
+   "tool": "get_evidence_snapshot",
+   "result_count": 2,
+   "object_refs": [
+    "CLM-c2a3b0d59c33-00",
+    "CLM-c2a3b0d59c33-01"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "TOOL_CALLED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:54.973879+00:00",
+   "agent": "verifier",
+   "tool": "list_equivalence_records",
+   "category": "equivalence",
+   "authority_class": "authoritative"
+  },
+  {
+   "event": "TOOL_RESULT_BOUND",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:54.991873+00:00",
+   "agent": "verifier",
+   "tool": "list_equivalence_records",
+   "result_count": 1,
+   "object_refs": [
+    "EQV-1"
+   ],
+   "elapsed_ms": 0.02
+  },
+  {
+   "event": "VERIFIER_BRIEF_COMPLETED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:57.832875+00:00",
+   "brief_hash": "9a8963b9f83a52a7981021fa06fa5ef706a37f79ed1a94925cf8b63b85a2501f",
+   "sufficiency": "SUFFICIENT"
+  },
+  {
+   "event": "RECONCILIATION_COMPLETED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:57.850649+00:00",
+   "outcome": "NON_MATERIAL_DIFFERENCE",
+   "differing_fields": []
+  },
+  {
+   "event": "DISPOSITION_COMPUTED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:57.866409+00:00",
+   "disposition": "RELEASE",
+   "basis": "SPEC-R3:A",
+   "failing_test_count": 0,
+   "missing_test_count": 0,
+   "failures": []
+  },
+  {
+   "event": "POLICY_EVALUATED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.041411+00:00",
+   "policy_version": "vouch-policy-2.1",
+   "gate_decision": "ALLOWED",
+   "action": "release_lot"
+  },
+  {
+   "event": "CAPABILITY_ISSUED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.057332+00:00",
+   "capability_id": "CAP-ae85c11a8eb94609",
+   "target": "LOT-1003",
+   "action": "release_lot",
+   "expiry": "2026-09-10T22:04:58.033980+00:00"
+  },
+  {
+   "event": "MUTATION_COMPLETED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.116451+00:00",
+   "before_version": 20,
+   "after_version": 21,
+   "ledger_seq": "DR-aafc8009407b#CAP-ae85c11a8eb94609",
+   "action": "release_lot",
+   "target": "LOT-1003"
+  },
+  {
+   "event": "POLICY_EVALUATED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.156305+00:00",
+   "policy_version": "vouch-policy-2.1",
+   "gate_decision": "ALLOWED",
+   "action": "set_order_readiness"
+  },
+  {
+   "event": "CAPABILITY_ISSUED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.173863+00:00",
+   "capability_id": "CAP-3107cae39a7d456a",
+   "target": "C-419",
+   "action": "set_order_readiness",
+   "expiry": "2026-09-10T22:04:58.148692+00:00"
+  },
+  {
+   "event": "MUTATION_COMPLETED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.224899+00:00",
+   "before_version": 21,
+   "after_version": 22,
+   "ledger_seq": "DR-aafc8009407b#CAP-3107cae39a7d456a",
+   "action": "set_order_readiness",
+   "target": "C-419"
+  },
+  {
+   "event": "READINESS_TRANSITIONED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.241673+00:00",
+   "order_id": "C-419",
+   "from": "AT_RISK",
+   "to": "READY",
+   "ledger_seq": "DR-aafc8009407b#CAP-3107cae39a7d456a",
+   "caused_by_lot": "LOT-1003"
+  },
+  {
+   "event": "CONSEQUENCE_RECALCULATED",
+   "decision_record_id": "DR-aafc8009407b",
+   "at": "2026-09-10T21:59:58.258513+00:00",
+   "order_id": "C-419",
+   "order_readiness": "READY",
+   "coverage_delta": 200.0,
+   "material_id": "MAT-RESIN-3",
+   "required": 800.0,
+   "available": 800.0,
+   "planned": 0.0,
+   "uncovered": 0.0
+  }
+ ],
+ "audit_hash": "e4d239bd7da83977cfa7a69990f776aa14e3d4402f3a597ba778abe4f3934d5c"
+}

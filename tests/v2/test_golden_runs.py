@@ -399,3 +399,49 @@ def test_the_verifier_never_reads_as_instant(lot_id):
             f"{lot_id}: verifier measured {beat['measured_s']}s — suspiciously fast"
         )
         assert beat["film_s"] >= 1.0
+
+
+# ==========================================================================
+# the frontend's copy must not drift from the capture
+# ==========================================================================
+
+
+FRONTEND_PACKAGES = (
+    ROOT / "frontend" / "src" / "decision" / "replay" / "packages"
+)
+
+
+@pytest.mark.skipif(not FRONTEND_PACKAGES.is_dir(), reason="frontend copy not synced")
+def test_the_frontend_copy_matches_the_capture(lot_id):
+    """`/demo/:lotId` must replay the SAME run the capture recorded.
+
+    Vite bundles only what lives under the frontend root, so the packages are
+    copied there by `scripts/sync_golden_to_frontend.py`. A copy is a place two
+    truths can disagree, and a replay showing a decision that differs from the
+    audited one would be the worst possible version of this feature — so the
+    copy is verified rather than trusted.
+
+    Resync with:  python scripts/sync_golden_to_frontend.py
+    """
+    for name in ("events.json", "result.json", "decision-record.json"):
+        shipped = FRONTEND_PACKAGES / lot_id / name
+        assert shipped.exists(), (
+            f"{lot_id}/{name} is missing from the frontend copy; "
+            f"run scripts/sync_golden_to_frontend.py"
+        )
+        assert json.loads(shipped.read_text()) == load(lot_id, name), (
+            f"{lot_id}/{name} differs from the capture; "
+            f"run scripts/sync_golden_to_frontend.py"
+        )
+
+
+@pytest.mark.skipif(not FRONTEND_PACKAGES.is_dir(), reason="frontend copy not synced")
+def test_the_frontend_copy_carries_no_secrets(lot_id):
+    """The copy ships to a browser, so it is scanned in its own right."""
+    import re
+
+    for path in (FRONTEND_PACKAGES / lot_id).glob("*.json"):
+        text = path.read_text()
+        assert not re.search(r"\b\d{12}\b", text), f"{path.name}: AWS account id"
+        assert "X-Amz-Signature" not in text, f"{path.name}: presigned URL"
+        assert "AKIA" not in text and "ASIA" not in text, f"{path.name}: access key"

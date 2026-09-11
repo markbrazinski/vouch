@@ -47,13 +47,43 @@ describe('the product surface carries no demo apparatus', () => {
     // what happened next is demo apparatus; a timer that asks the server what
     // happened is a poll, and polling is how the live event path works at all.
     //
-    // So exactly one file may hold an interval — the decision run — and it is
-    // separately constrained below to prove the interval only fetches.
+    // So exactly two files may hold one, and each is separately constrained
+    // below to prove what its timer does:
+    //
+    //   useDecisionRun.ts    the live poll — the interval only fetches
+    //   useGoldenReplay.ts   the replay clock — the timer only REVEALS events
+    //                        that were already captured, and authors none
     const POLLER = join('src', 'decision', 'useDecisionRun.ts');
-    for (const f of productFiles.filter((p) => !p.endsWith(POLLER))) {
+    const REPLAY = join('src', 'decision', 'replay', 'useGoldenReplay.ts');
+    for (const f of productFiles.filter((p) => !p.endsWith(POLLER) && !p.endsWith(REPLAY))) {
       const src = readFileSync(f, 'utf8');
       expect(src, f).not.toMatch(/setTimeout|setInterval/);
     }
+  });
+
+  /**
+   * The replay clock reveals; it never authors.
+   *
+   * This is the property that makes a timer legitimate on the product surface.
+   * A demo that fabricated lifecycle events would be indistinguishable from one
+   * that replays real ones unless the difference is enforced — so it is: the
+   * replay may only FILTER a loaded package by sequence, and may not contain a
+   * literal event name, disposition, or outcome of its own.
+   */
+  it('the replay clock only reveals captured events', () => {
+    const src = readFileSync(join(SRC, 'decision', 'replay', 'useGoldenReplay.ts'), 'utf8');
+
+    // Reveals by filtering the captured stream on sequence. Nothing is built.
+    expect(src).toMatch(/pkg\.events\.filter/);
+
+    // No authored lifecycle events, dispositions or outcomes. A replay that
+    // could name one could invent one.
+    expect(src).not.toMatch(/INVESTIGATOR_STARTED|VERIFIER_STARTED|DISPOSITION_COMPUTED/);
+    expect(src).not.toMatch(/'RELEASE'|"RELEASE"|'QUARANTINE'|"QUARANTINE"/);
+
+    // No writes. A replay is a recording; it cannot mutate authoritative state.
+    expect(src).not.toMatch(/fetch\s*\(/);
+    expect(src).not.toMatch(/evaluate|submitQuality|decide\(/);
   });
 
   it('the one permitted interval only polls the backend', () => {

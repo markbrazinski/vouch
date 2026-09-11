@@ -486,7 +486,13 @@ describe('the trust badge only marks what is exceptional', () => {
 
   const chipText = (trustClass: SourceArtifactVM['trustClass']) => {
     cleanup();
-    render(<SourceDocumentViewer artifact={artifact(trustClass)} onClose={() => {}} />);
+    render(
+      <SourceDocumentViewer
+        artifact={artifact(trustClass)}
+        decisionRecordId="DR-polish"
+        onClose={() => {}}
+      />,
+    );
     return screen.getByTestId('source-viewer').textContent ?? '';
   };
 

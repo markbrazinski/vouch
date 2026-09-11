@@ -19,7 +19,7 @@
  * the same way.
  */
 
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { fetchAssetAsBase64, newDecisionRecordId } from '../adapter/client';
 import { IncomingSurface } from '../features/Surfaces';
 import { pendingRun } from './pendingRun';
@@ -27,6 +27,19 @@ import type { ArrivalDocuments } from './entry';
 
 export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
   const navigate = useNavigate();
+  /**
+   * `?demo=true` replays the captured golden run for the lot instead of
+   * evaluating it live.
+   *
+   * The flag rides on the EXISTING surface rather than a parallel demo screen:
+   * the arrivals list, the lots and the certificates a viewer sees are the real
+   * ones either way, and only what a click does changes. A second screen would
+   * drift from the product it is meant to be showing.
+   *
+   * Read from the live location on each render, so toggling the parameter in
+   * the address bar takes effect without a reload.
+   */
+  const demo = new URLSearchParams(useLocation().search).get('demo') === 'true';
 
   return (
     // The same scroll wrapper Records uses. The extra `display: flex` this
@@ -37,6 +50,14 @@ export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <IncomingSurface
         onEvaluate={(lotId) => {
+          // Demo mode replays what this lot ALREADY did. No evaluation is
+          // started, nothing is posted, and no state is mutated — the run being
+          // shown finished days ago and is read from its captured package.
+          if (demo) {
+            navigate(`/demo/${lotId}`);
+            return;
+          }
+
           const recordId = newDecisionRecordId();
 
           /**

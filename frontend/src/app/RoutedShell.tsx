@@ -30,6 +30,7 @@ import {
   useParams,
 } from 'react-router-dom';
 import { DecisionRoute } from '../decision/DecisionRoute';
+import { ReplayRoute } from '../decision/replay/ReplayRoute';
 import { IncomingRoute } from '../decision/IncomingRoute';
 import type { ArrivalDocuments, HeroAEntry } from '../decision/entry';
 import { INK, MONO, N, SANS, HAIR } from '../decision/primitives';
@@ -60,6 +61,10 @@ function titleFor(pathname: string): [string, string] {
   if (pathname.startsWith('/today')) return ['Today', 'Production readiness'];
   if (pathname.startsWith('/incoming')) return ['Incoming', 'Quality · arrivals awaiting decision'];
   if (pathname.startsWith('/decisions')) return ['Decision', 'Live authority workspace'];
+  // Never "Live" on a replay: the subtitle is the first thing read under the
+  // title, and calling a recording live is the exact confusion the banner
+  // downstream exists to prevent.
+  if (pathname.startsWith('/demo')) return ['Decision', 'Recorded run · replay'];
   if (pathname.startsWith('/suppliers')) return ['Suppliers', 'Approved material sources'];
   if (pathname.startsWith('/records')) return ['Records', 'Every disposition, searchable'];
   return ['Vouch', ''];
@@ -322,6 +327,11 @@ export function RoutedShell({
             />
             <Route path="/incoming" element={<IncomingRoute arrivals={arrivals} />} />
             <Route path="/decisions/:recordId" element={<DecisionRoute entry={entry} />} />
+            {/* A recorded run, replayed at film pace. Reached from
+                `/incoming?demo=true`, and deliberately NOT dev-gated: the
+                demo has to work in a deployed build. What keeps that honest is
+                the permanent REPLAY banner the route renders, not a flag. */}
+            <Route path="/demo/:lotId" element={<ReplayRoute />} />
             <Route
               path="/suppliers"
               element={
