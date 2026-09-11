@@ -14,11 +14,11 @@ const DIST = join(ROOT, 'dist-harness-check');
 /**
  * Which emitted chunks are REPLAY data, and which are the product.
  *
- * `/demo/:lotId` replays captured golden runs, so those chunks legitimately
- * contain real dispositions — that is what a recording IS. They must never
- * reach the product surface, which is enforced two ways: the assertions below
- * run against the PRODUCT chunks only, and a separate describe block proves the
- * replay data is confined to chunks nothing on the live path imports.
+ * `/film/:lotId` plays back captured runs, so those chunks legitimately contain
+ * real dispositions — that is what a recording IS. They must never load on the
+ * live path, which is enforced two ways: the assertions below run against the
+ * PRODUCT chunks only, and a separate describe block proves the recorded data is
+ * confined to lazy chunks nothing on the live path imports.
  *
  * Identified by the golden DecisionRecord ids they carry, not by filename: a
  * chunk name is a bundler detail and would silently stop matching.
@@ -211,14 +211,14 @@ describe('the frontend declares no AWS SDK dependency', () => {
 /**
  * The replay data is CONFINED.
  *
- * `/demo/:lotId` is deliberately not dev-gated — the demo has to work in a
- * deployed build — so the usual "it isn't in the bundle" proof does not apply.
- * The property that replaces it: a captured outcome must live only in chunks
- * that nothing on the live path loads, so an operator watching a real decision
- * can never be served a recorded one.
+ * `/film/:lotId` is deliberately not dev-gated — filming happens against a real
+ * build — so the usual "it isn't in the bundle" proof does not apply. The
+ * property that replaces it: a captured outcome must live only in chunks that
+ * nothing on the live path loads, so an operator evaluating their own material
+ * can never be served a recorded decision instead.
  *
- * This is the test that makes shipping the demo safe. If it fails, a recorded
- * disposition has leaked into the product surface.
+ * This is the test that makes shipping film view safe. If it fails, a recorded
+ * disposition has leaked onto the live path.
  */
 describe('captured golden runs stay out of the product surface', () => {
   let chunks: { name: string; source: string }[] = [];
@@ -254,11 +254,12 @@ describe('captured golden runs stay out of the product surface', () => {
     }
   });
 
-  it('labels every replay surface as a replay', () => {
-    // The banner is the only thing standing between a viewer and mistaking a
-    // recording for a live decision, so it must actually ship.
+  it('ships no replay badge or watermark in any chunk', () => {
+    // Film view renders the product, unmarked, because the footage is of a real
+    // decision and an overlay would both spoil the shot and mislabel it. A
+    // badge appearing here means someone added demo chrome to the frame.
     const all = chunks.map((c) => c.source).join('\n');
-    expect(all).toMatch(/REPLAY/);
-    expect(all).toMatch(/Recorded run/);
+    expect(all).not.toMatch(/data-testid="replay-banner"/);
+    expect(all).not.toMatch(/Recorded run ·/);
   });
 });

@@ -26,6 +26,18 @@ export interface BeatTiming {
   to: number;
   /** Seconds to hold before revealing the next beat. */
   seconds: number;
+  /**
+   * Playback STOPS here until the operator presses the authority button.
+   *
+   * Only true where a question was genuinely asked. `seconds` is ignored on
+   * such a beat: the pause is however long the person takes, which is the
+   * point — the decision is being filmed being made, not waited out.
+   *
+   * LOT-1005 deliberately does NOT set it. Its security halt emits the same
+   * escalation event with no question and no options, so there is no button to
+   * press; pausing there would stage a deliberation that never happened.
+   */
+  awaitsOperator?: boolean;
 }
 
 /**
@@ -90,7 +102,7 @@ export const BEAT_TIMINGS: Record<string, BeatTiming[]> = {
     { beatId: 'investigator', run: 1, from: 6, to: 15, seconds: 3.5 },
     { beatId: 'verifier', run: 1, from: 16, to: 27, seconds: 3.5 },
     { beatId: 'reconciliation', run: 1, from: 28, to: 28, seconds: 0.6 },
-    { beatId: 'human_gate', run: 1, from: 29, to: 30, seconds: 1.5 },
+    { beatId: 'human_gate', run: 1, from: 29, to: 30, seconds: 1.5, awaitsOperator: true },
     { beatId: 'human_authority', run: 2, from: 31, to: 31, seconds: 1.5 },
     { beatId: 'run_2_start', run: 2, from: 32, to: 32, seconds: 0.6 },
     { beatId: 'extraction', run: 2, from: 33, to: 33, seconds: 0.6 },
@@ -110,7 +122,7 @@ export const BEAT_TIMINGS: Record<string, BeatTiming[]> = {
     { beatId: 'security', run: 1, from: 2, to: 2, seconds: 0.85 },
     { beatId: 'binding', run: 1, from: 3, to: 3, seconds: 0.6 },
     { beatId: 'extraction', run: 1, from: 4, to: 4, seconds: 0.6 },
-    { beatId: 'human_gate', run: 1, from: 5, to: 6, seconds: 1.5 },
+    { beatId: 'human_gate', run: 1, from: 5, to: 6, seconds: 1.5, awaitsOperator: true },
     { beatId: 'human_authority', run: 2, from: 7, to: 7, seconds: 1.5 },
     { beatId: 'binding', run: 2, from: 8, to: 8, seconds: 0.6 },
     { beatId: 'run_2_start', run: 2, from: 9, to: 9, seconds: 0.6 },

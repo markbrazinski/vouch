@@ -39,7 +39,8 @@ fast:
 	$(PY) -m pytest tests/ -q --deselect tests/v2/test_inflight_discovery.py
 	cd frontend && npx vitest run \
 	  --exclude '**/build-excludes-harness.test.ts' \
-	  --exclude '**/async-transport.test.tsx'
+	  --exclude '**/async-transport.test.tsx' \
+	  --exclude '**/film-gate.test.tsx'
 
 ## TIER 2 — Vouch feature gate (<5min budget; ~6s actual). The normal
 ## "commission complete" gate: the demo-critical product contract only.
@@ -64,7 +65,9 @@ gate:
 	  src/decision/__tests__/stored-decision.test.ts \
 	  src/decision/__tests__/quality-authority.test.tsx \
 	  src/decision/__tests__/adapter.test.ts \
-	  src/app/__tests__/routing.test.tsx
+	  src/app/__tests__/routing.test.tsx \
+	  src/decision/replay/__tests__/film.test.tsx \
+	  src/decision/replay/__tests__/film-gate.test.tsx
 
 ## TIER 3 — full regression (~26s). Shared contracts, authority/mutation code,
 ## canonical fixtures, PDF/evidence pipeline, merge, deploy, film freeze.

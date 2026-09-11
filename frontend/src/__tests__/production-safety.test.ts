@@ -74,7 +74,7 @@ describe('the product surface carries no demo apparatus', () => {
     const src = readFileSync(join(SRC, 'decision', 'replay', 'useGoldenReplay.ts'), 'utf8');
 
     // Reveals by filtering the captured stream on sequence. Nothing is built.
-    expect(src).toMatch(/pkg\.events\.filter/);
+    expect(src).toMatch(/\.events\.filter\(/);
 
     // No authored lifecycle events, dispositions or outcomes. A replay that
     // could name one could invent one.

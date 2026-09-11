@@ -28,18 +28,21 @@ import type { ArrivalDocuments } from './entry';
 export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
   const navigate = useNavigate();
   /**
-   * `?demo=true` replays the captured golden run for the lot instead of
-   * evaluating it live.
+   * `?film=true` opens each lot's recorded run instead of starting a live one.
    *
-   * The flag rides on the EXISTING surface rather than a parallel demo screen:
-   * the arrivals list, the lots and the certificates a viewer sees are the real
-   * ones either way, and only what a click does changes. A second screen would
-   * drift from the product it is meant to be showing.
+   * For filming: a live evaluation takes 17-45s per lot, which no five-minute
+   * demo and no single take can absorb. The recorded runs are the same
+   * decisions, made by the deployed runtime, played at a watchable pace.
    *
-   * Read from the live location on each render, so toggling the parameter in
-   * the address bar takes effect without a reload.
+   * The flag rides on the EXISTING surface rather than a parallel screen: the
+   * arrivals, the lots and the certificates are the real ones either way, and
+   * only what a click opens changes. A second screen would drift from the
+   * product it exists to show.
+   *
+   * Read from the live location each render, so toggling it in the address bar
+   * takes effect without a reload.
    */
-  const demo = new URLSearchParams(useLocation().search).get('demo') === 'true';
+  const film = new URLSearchParams(useLocation().search).get('film') === 'true';
 
   return (
     // The same scroll wrapper Records uses. The extra `display: flex` this
@@ -50,11 +53,11 @@ export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <IncomingSurface
         onEvaluate={(lotId) => {
-          // Demo mode replays what this lot ALREADY did. No evaluation is
-          // started, nothing is posted, and no state is mutated — the run being
-          // shown finished days ago and is read from its captured package.
-          if (demo) {
-            navigate(`/demo/${lotId}`);
+          // Film view opens the run this lot already made. Nothing is
+          // posted and no authoritative state is mutated: the decision was
+          // committed when it was captured, and this is that record playing.
+          if (film) {
+            navigate(`/film/${lotId}`);
             return;
           }
 
