@@ -2,7 +2,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import './app/global.css';
+import { Authenticated } from './app/Authenticated';
 import { RoutedShell } from './app/RoutedShell';
+import { DEMO_AVAILABLE, applyDemoParam, demoEnabled } from './demo/mode';
 import type { ArrivalDocuments, HeroAEntry } from './decision/entry';
 // Vite emits this as a fingerprinted asset URL. The file is a symlink to the
 // canonical tracked evidence, so the build cannot ship different bytes.
@@ -11,6 +13,41 @@ import HERO_A_COA from './evidence/eastern-metals-coa-lot-1002.pdf?url';
 import COA_BATCH_WP from './evidence/northern-alloys-coa-batch-wp-26-0317-b.pdf?url';
 import COA_1004 from './evidence/central-forgeworks-coa-lot-1005.pdf?url';
 import COA_1006 from './evidence/western-polymers-coa-lot-1003.pdf?url';
+
+/**
+ * Demo Mode, decided ONCE before anything renders.
+ *
+ * `?demo=1` writes the same stored preference the left-nav toggle writes, so
+ * there is one mechanism rather than two; both are gated on the build-time
+ * `VITE_ENABLE_DEMO_MODE`, so neither can enable demo mode in the judge
+ * deployment.
+ *
+ * When it is on, `/api/*` is answered from the checked-in archive for the rest
+ * of the session and no request leaves the browser. That is an explicit user
+ * choice every time — never a fallback from a failed live call, which would
+ * tell an operator the plant answered when it did not.
+ *
+ * Installed here, before the first render, so no surface can start a live read
+ * that the interceptor would then have to race.
+ */
+/**
+ * `DEMO_AVAILABLE &&` FIRST, and it is not redundant.
+ *
+ * `demoEnabled()` is a function call, so a bundler cannot prove the branch is
+ * dead and keeps both dynamic imports — which emitted the archived packages and
+ * the opening board into the judge bundle. `DEMO_AVAILABLE` is replaced by a
+ * literal `false` at build time, so this whole block is eliminated and the
+ * chunks are never emitted. `judge-build-excludes-demo.test.ts` builds the real
+ * production bundle and asserts exactly that.
+ */
+if (DEMO_AVAILABLE) {
+  applyDemoParam(window.location.search);
+  if (demoEnabled()) {
+    const { installDemoBackend } = await import('./demo/backend');
+    const { archivedRecordRoutes } = await import('./demo/records');
+    installDemoBackend(archivedRecordRoutes);
+  }
+}
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -136,9 +173,11 @@ if (import.meta.env.DEV && window.location.pathname === '/dev/vouch-states') {
   // routed path reconstructs that surface from authoritative state.
   root.render(
     <StrictMode>
-      <BrowserRouter>
-        <RoutedShell entry={HERO_A} arrivals={ARRIVALS} />
-      </BrowserRouter>
+      <Authenticated>
+        <BrowserRouter>
+          <RoutedShell entry={HERO_A} arrivals={ARRIVALS} />
+        </BrowserRouter>
+      </Authenticated>
     </StrictMode>,
   );
 }

@@ -10,7 +10,7 @@ that exists solely to avoid a copy. The copy is cheaper and more obvious.
 
 Only the three files playback reads are copied. `beats.json` is deliberately NOT
 among them: the frontend's timing table is hard-coded in
-`src/decision/replay/timing.ts` so playback needs no second parameter, and
+`src/demo/timing.ts` so playback needs no second parameter, and
 shipping a second copy of the boundaries would invite the two to disagree.
 
 Verified by `tests/v2/test_golden_runs.py`, which fails if the copy drifts from
@@ -26,7 +26,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDEN = ROOT / "golden-runs"
-DEST = ROOT / "frontend" / "src" / "decision" / "replay" / "packages"
+DEST = ROOT / "frontend" / "src" / "demo" / "packages"
 
 #: What the browser needs. The DecisionRecord and the terminal response are
 #: both required: `project()` reads the disposition off the response and the

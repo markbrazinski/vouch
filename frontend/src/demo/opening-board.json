@@ -1,0 +1,256 @@
+{
+ "today": {
+  "ok": true,
+  "action": "get_today",
+  "backend": {
+   "mode": "local",
+   "corpus": "IN_MEMORY_FIXTURES",
+   "evidence_store": "LOCAL_SIMULATION",
+   "capability_store": "IN_MEMORY_NOT_DURABLE",
+   "record_store": "IN_MEMORY_NOT_DURABLE",
+   "event_store": "IN_MEMORY_NOT_DURABLE",
+   "reasoners": "LOCAL_SCRIPTED_REASONERS",
+   "durable": false
+  },
+  "readiness_counts": {
+   "READY": 0,
+   "AWAITING_QUALITY": 3,
+   "AT_RISK": 0,
+   "BLOCKED": 0,
+   "COMPLETE": 0
+  },
+  "lines": [
+   {
+    "line_id": "LINE-1",
+    "orders": [
+     {
+      "order_id": "C-417",
+      "product": "P-417",
+      "planned_slot": "2026-08-15T08:00",
+      "status": "READY",
+      "readiness": "AWAITING_QUALITY",
+      "reason": "MAT-ALLOY-7 short by 900.0 (need 900.0, have 0, 900.0 queued)",
+      "coverage": [
+       {
+        "material_id": "MAT-ALLOY-7",
+        "required": 900.0,
+        "available": 0,
+        "short_by": 900.0,
+        "planned": 900.0,
+        "uncovered": 0.0,
+        "ratio": 0.0,
+        "planned_sources": [
+         {
+          "lot_id": "LOT-1002",
+          "quantity": 400.0,
+          "lot_status": "RECEIVED"
+         },
+         {
+          "lot_id": "LOT-1001",
+          "quantity": 500.0,
+          "lot_status": "RECEIVED"
+         }
+        ]
+       }
+      ],
+      "requirements": [
+       {
+        "material_id": "MAT-ALLOY-7",
+        "quantity": 900.0
+       }
+      ],
+      "customer_committed": true,
+      "need_by": "2026-08-20",
+      "state_version": 1
+     },
+     {
+      "order_id": "C-418",
+      "product": "P-418",
+      "planned_slot": "2026-08-15T14:00",
+      "status": "READY",
+      "readiness": "AWAITING_QUALITY",
+      "reason": "MAT-ALLOY-7 short by 500.0 (need 500.0, have 0, 500.0 queued)",
+      "coverage": [
+       {
+        "material_id": "MAT-ALLOY-7",
+        "required": 500.0,
+        "available": 0,
+        "short_by": 500.0,
+        "planned": 500.0,
+        "uncovered": 0.0,
+        "ratio": 0.0,
+        "planned_sources": [
+         {
+          "lot_id": "LOT-1001",
+          "quantity": 500.0,
+          "lot_status": "RECEIVED"
+         }
+        ]
+       }
+      ],
+      "requirements": [
+       {
+        "material_id": "MAT-ALLOY-7",
+        "quantity": 500.0
+       }
+      ],
+      "customer_committed": false,
+      "need_by": "2026-08-25",
+      "state_version": 1
+     }
+    ]
+   },
+   {
+    "line_id": "LINE-2",
+    "orders": [
+     {
+      "order_id": "C-419",
+      "product": "P-419",
+      "planned_slot": "2026-08-15T09:00",
+      "status": "AT_RISK",
+      "readiness": "AWAITING_QUALITY",
+      "reason": "MAT-RESIN-3 short by 200.0 (need 800.0, have 600.0, 200.0 queued)",
+      "coverage": [
+       {
+        "material_id": "MAT-RESIN-3",
+        "required": 800.0,
+        "available": 600.0,
+        "short_by": 200.0,
+        "planned": 200.0,
+        "uncovered": 0.0,
+        "ratio": 0.75,
+        "planned_sources": [
+         {
+          "lot_id": "LOT-1003",
+          "quantity": 200.0,
+          "lot_status": "RECEIVED"
+         }
+        ]
+       }
+      ],
+      "requirements": [
+       {
+        "material_id": "MAT-RESIN-3",
+        "quantity": 800.0
+       }
+      ],
+      "customer_committed": true,
+      "need_by": "2026-08-18",
+      "state_version": 1
+     }
+    ]
+   }
+  ],
+  "causal_history": []
+ },
+ "decisions": {
+  "ok": true,
+  "action": "list_decisions",
+  "backend": {
+   "mode": "local",
+   "corpus": "IN_MEMORY_FIXTURES",
+   "evidence_store": "LOCAL_SIMULATION",
+   "capability_store": "IN_MEMORY_NOT_DURABLE",
+   "record_store": "IN_MEMORY_NOT_DURABLE",
+   "event_store": "IN_MEMORY_NOT_DURABLE",
+   "reasoners": "LOCAL_SCRIPTED_REASONERS",
+   "durable": false
+  },
+  "rows": [
+   {
+    "decision_record_id": "",
+    "lot_id": "LOT-1001",
+    "material_id": "MAT-ALLOY-7",
+    "material_name": "Alloy 7 billet",
+    "supplier_id": "SUP-NORTH",
+    "supplier_name": "Northern Alloys",
+    "supplier_site": "SITE-N1",
+    "received_at": "2026-03-01",
+    "quantity": 500.0,
+    "units": "kg",
+    "lot_status": "RECEIVED",
+    "disposition": "",
+    "failure_category": "",
+    "row_state": "EVIDENCE_RECEIVED",
+    "attention_required": false,
+    "decided_at": "2026-03-01"
+   },
+   {
+    "decision_record_id": "",
+    "lot_id": "LOT-1002",
+    "material_id": "MAT-ALLOY-7",
+    "material_name": "Alloy 7 billet",
+    "supplier_id": "SUP-EAST",
+    "supplier_name": "Eastern Metals",
+    "supplier_site": "SITE-E1",
+    "received_at": "2026-03-02",
+    "quantity": 400.0,
+    "units": "kg",
+    "lot_status": "RECEIVED",
+    "disposition": "",
+    "failure_category": "",
+    "row_state": "EVIDENCE_RECEIVED",
+    "attention_required": false,
+    "decided_at": "2026-03-02"
+   },
+   {
+    "decision_record_id": "",
+    "lot_id": "LOT-1004",
+    "material_id": "MAT-ALLOY-7",
+    "material_name": "Alloy 7 billet",
+    "supplier_id": "SUP-NORTH",
+    "supplier_name": "Northern Alloys",
+    "supplier_site": "SITE-N1",
+    "received_at": "2026-03-06",
+    "quantity": 450.0,
+    "units": "kg",
+    "lot_status": "RECEIVED",
+    "disposition": "",
+    "failure_category": "",
+    "row_state": "EVIDENCE_RECEIVED",
+    "attention_required": false,
+    "decided_at": "2026-03-06"
+   },
+   {
+    "decision_record_id": "",
+    "lot_id": "LOT-1005",
+    "material_id": "MAT-ALLOY-7",
+    "material_name": "Alloy 7 billet",
+    "supplier_id": "SUP-CENTRAL",
+    "supplier_name": "Central Forgeworks",
+    "supplier_site": "SITE-C1",
+    "received_at": "2026-03-04",
+    "quantity": 200.0,
+    "units": "kg",
+    "lot_status": "RECEIVED",
+    "disposition": "",
+    "failure_category": "",
+    "row_state": "EVIDENCE_RECEIVED",
+    "attention_required": false,
+    "decided_at": "2026-03-04"
+   },
+   {
+    "decision_record_id": "",
+    "lot_id": "LOT-1003",
+    "material_id": "MAT-RESIN-3",
+    "material_name": "Resin 3",
+    "supplier_id": "SUP-WEST",
+    "supplier_name": "Western Polymers",
+    "supplier_site": "SITE-W1",
+    "received_at": "2026-03-08",
+    "quantity": 200.0,
+    "units": "kg",
+    "lot_status": "RECEIVED",
+    "disposition": "",
+    "failure_category": "",
+    "row_state": "EVIDENCE_RECEIVED",
+    "attention_required": false,
+    "decided_at": "2026-03-08"
+   }
+  ],
+  "cursor": null,
+  "counts": {
+   "returned": 5
+  }
+ }
+}

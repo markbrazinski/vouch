@@ -166,6 +166,9 @@ graphify-out/
 # ---- frontend build output --------------------------------------------------
 frontend/dist/
 frontend/dist-harness-check/
+frontend/dist-judge/
+frontend/dist-judge-check/
+frontend/dist-demo-check/
 *.tsbuildinfo
 
 # ---- e2e run artifacts ------------------------------------------------------

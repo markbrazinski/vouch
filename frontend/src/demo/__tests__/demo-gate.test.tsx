@@ -1,7 +1,7 @@
 /**
  * The human gate, played on the REAL beat clock.
  *
- * Split from `film.test.tsx` because these run the actual timers — ~84s for the
+ * Split from `demo-playback.test.tsx` because these run the actual timers — ~84s for the
  * four of them. They are excluded from the inner loop (`make fast`) and run in
  * `make gate` and `make full`, the same treatment `async-transport.test.tsx`
  * gets for the same reason.
@@ -13,16 +13,16 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { act, cleanup, render, renderHook } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { FilmRoute } from '../FilmRoute';
+import { DemoRoute } from '../DemoRoute';
 import { useGoldenReplay } from '../useGoldenReplay';
 
 afterEach(cleanup);
 
-const renderFilm = (lot: string) =>
+const renderDemo = (lot: string) =>
   render(
-    <MemoryRouter initialEntries={[`/film/${lot}`]}>
+    <MemoryRouter initialEntries={[`/demo/${lot}`]}>
       <Routes>
-        <Route path="/film/:lotId" element={<FilmRoute />} />
+        <Route path="/demo/:lotId" element={<DemoRoute />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -68,7 +68,7 @@ const playUntil = async (
 };
 
 /**
- * The gate is the whole reason film view exists as more than a fast-forward.
+ * The gate is the whole reason Demo Mode exists as more than a fast-forward.
  *
  * These are slow tests on purpose: they play the real beat clock up to the
  * question, prove it does not move on, press the real button, and prove the run
@@ -79,7 +79,7 @@ describe('the run parks on the question and the button resumes it', () => {
     Array.from(container.querySelectorAll('button')).map((b) => b.textContent?.trim() ?? '');
 
   it('LOT-1003 offers the real authority controls and waits', async () => {
-    const { container } = renderFilm('LOT-1003');
+    const { container } = renderDemo('LOT-1003');
     expect(await playUntil(container, /Establish this evidence/)).toBeTruthy();
 
     // The operator's actual choice, as the run recorded it.
@@ -96,7 +96,7 @@ describe('the run parks on the question and the button resumes it', () => {
   }, 120000);
 
   it('LOT-1003 continues to RELEASE once the button is pressed', async () => {
-    const { container } = renderFilm('LOT-1003');
+    const { container } = renderDemo('LOT-1003');
     const establish = await playUntil(container, /Establish this evidence/);
     expect(establish, 'the gate must offer a button to press').toBeTruthy();
 
@@ -111,7 +111,7 @@ describe('the run parks on the question and the button resumes it', () => {
   }, 120000);
 
   it('LOT-1004 asks the identity question and never pre-announces run 2', async () => {
-    const { container } = renderFilm('LOT-1004');
+    const { container } = renderDemo('LOT-1004');
     expect(await playUntil(container, /Confirm binding/)).toBeTruthy();
 
     const labels = buttonsOf(container);
@@ -126,7 +126,7 @@ describe('the run parks on the question and the button resumes it', () => {
   }, 120000);
 
   it('LOT-1004 confirms the binding and reaches RELEASE', async () => {
-    const { container } = renderFilm('LOT-1004');
+    const { container } = renderDemo('LOT-1004');
     const confirm = await playUntil(container, /Confirm binding/);
     expect(confirm).toBeTruthy();
 

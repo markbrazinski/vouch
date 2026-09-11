@@ -53,12 +53,24 @@ describe('the product surface carries no demo apparatus', () => {
     //   useDecisionRun.ts    the live poll — the interval only fetches
     //   useGoldenReplay.ts   the replay clock — the timer only REVEALS events
     //                        that were already captured, and authors none
+    //   RoutedShell.tsx      dismisses a confirmation toast after 2.6s. It
+    //                        decides nothing about a decision; the assertion
+    //                        below pins it to exactly that.
     const POLLER = join('src', 'decision', 'useDecisionRun.ts');
-    const REPLAY = join('src', 'decision', 'replay', 'useGoldenReplay.ts');
-    for (const f of productFiles.filter((p) => !p.endsWith(POLLER) && !p.endsWith(REPLAY))) {
+    const REPLAY = join('src', 'demo', 'useGoldenReplay.ts');
+    const SHELL = join('src', 'app', 'RoutedShell.tsx');
+    for (const f of productFiles.filter(
+      (p) => !p.endsWith(POLLER) && !p.endsWith(REPLAY) && !p.endsWith(SHELL),
+    )) {
       const src = readFileSync(f, 'utf8');
       expect(src, f).not.toMatch(/setTimeout|setInterval/);
     }
+
+    // The shell's only timer clears a toast. It never touches decision state.
+    const shell = readFileSync(join(SRC, 'app', 'RoutedShell.tsx'), 'utf8');
+    const timers = shell.match(/setTimeout|setInterval/g) ?? [];
+    expect(timers).toHaveLength(1);
+    expect(shell).toMatch(/setTimeout\(\(\) => setResetToast\(null\)/);
   });
 
   /**
@@ -71,7 +83,7 @@ describe('the product surface carries no demo apparatus', () => {
    * literal event name, disposition, or outcome of its own.
    */
   it('the replay clock only reveals captured events', () => {
-    const src = readFileSync(join(SRC, 'decision', 'replay', 'useGoldenReplay.ts'), 'utf8');
+    const src = readFileSync(join(SRC, 'demo', 'useGoldenReplay.ts'), 'utf8');
 
     // Reveals by filtering the captured stream on sequence. Nothing is built.
     expect(src).toMatch(/\.events\.filter\(/);
@@ -163,9 +175,22 @@ describe('the product surface carries no demo apparatus', () => {
       // Nothing anywhere WRITES to persistent storage. A view ref could only
       // leak through a write, and banning writes outright is stronger than
       // trying to prove a particular value never reaches one.
+      //
+      // ONE exception, and it is narrow: `demo/mode.ts` persists the operator's
+      // choice of execution mode. That is a UI preference with no decision
+      // content, it is written nowhere near a source document, and the
+      // assertion below pins it to a single literal key so the exemption cannot
+      // widen into "the demo module may store things".
+      if (f.endsWith(join('src', 'demo', 'mode.ts'))) continue;
       expect(src, f).not.toMatch(/(localStorage|sessionStorage)\.setItem/);
       expect(src, f).not.toMatch(/document\.cookie\s*=/);
     }
+    // The mode preference stores one literal flag and nothing else.
+    const mode = readFileSync(join(SRC, 'demo', 'mode.ts'), 'utf8');
+    const writes = mode.match(/setItem\([^)]*\)/g) ?? [];
+    expect(writes).toEqual(["setItem(KEY, '1')"]);
+    expect(mode).toMatch(/const KEY = 'vouch\.demoMode'/);
+
     const viewer = readFileSync(join(SRC, 'decision', 'SourceDocumentViewer.tsx'), 'utf8');
     // Held in a ref, never in state that a render tree would retain.
     expect(viewer).toMatch(/viewRef = useRef<string \| null>\(null\)/);

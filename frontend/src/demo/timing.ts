@@ -150,24 +150,35 @@ export const filmSeconds = (lotId: string): number =>
   (BEAT_TIMINGS[lotId] ?? []).reduce((total, beat) => total + beat.seconds, 0);
 
 /**
- * What each lot must occupy on screen, set by the edit.
+ * Demo pace: the film cadence, played faster.
  *
- * LOT-1003 and LOT-1004 pause indefinitely for the operator, so their number is
- * the shot length MINUS a nominal 3s press: 49 -> 46 and 23 -> 20. Holding the
- * button longer makes that take longer, which is the intended trade — the pause
- * belongs to the person being filmed.
+ * Two audiences, one beat table. The captured timings were fitted to a camera,
+ * where a shot must hold long enough to be cut; someone exploring a cloned repo
+ * is driving, and a 52s LOT-1001 is a long time to watch a board you can
+ * already read.
  *
- * Every target is longer than both the raw pacing and the real machine time, so
- * fitting ADDS time rather than compressing it. `scripts/time_golden_runs.py`
- * distributes the slack by weight: agents and the terminal frame grow, mutation
- * and extraction stay brisk.
+ * So this scales the SHAPE rather than replacing it. Every proportion the
+ * capture established survives — a longer real pause is still a longer pause,
+ * an agent still reaches for its tools one at a time — and only the overall
+ * rate changes. A second hand-tuned table would drift from the first and would
+ * be a second thing to regenerate whenever a run is recaptured.
+ *
+ * 0.55 puts LOT-1001 at ~29s and LOT-1005 at ~4s: brisk enough to explore all
+ * five, slow enough that each beat is still legible. The floor keeps the
+ * shortest beats from flashing past once scaled.
  */
-export const FILM_TARGET_S: Record<string, number> = {
-  'LOT-1001': 52,
-  'LOT-1002': 48,
-  'LOT-1003': 46,
-  'LOT-1004': 20,
-  'LOT-1005': 7,
-};
+const DEMO_SCALE = 0.55;
+const DEMO_FLOOR_S = 0.45;
+
+/** The beat table at demo pace. Human gates are untouched: they wait for a person. */
+export const DEMO_TIMINGS: Record<string, BeatTiming[]> = Object.fromEntries(
+  Object.entries(BEAT_TIMINGS).map(([lot, beats]) => [
+    lot,
+    beats.map((beat) => ({
+      ...beat,
+      seconds: Math.max(beat.seconds * DEMO_SCALE, DEMO_FLOOR_S),
+    })),
+  ]),
+);
 
 export const GOLDEN_LOTS = Object.keys(BEAT_TIMINGS);

@@ -19,30 +19,27 @@
  * the same way.
  */
 
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { fetchAssetAsBase64, newDecisionRecordId } from '../adapter/client';
 import { IncomingSurface } from '../features/Surfaces';
 import { pendingRun } from './pendingRun';
+import { DEMO_AVAILABLE, demoEnabled } from '../demo/mode';
 import type { ArrivalDocuments } from './entry';
 
 export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
   const navigate = useNavigate();
   /**
-   * `?film=true` opens each lot's recorded run instead of starting a live one.
+   * In Demo Mode a lot opens its ARCHIVED run instead of starting a live one.
    *
-   * For filming: a live evaluation takes 17-45s per lot, which no five-minute
-   * demo and no single take can absorb. The recorded runs are the same
-   * decisions, made by the deployed runtime, played at a watchable pace.
-   *
-   * The flag rides on the EXISTING surface rather than a parallel screen: the
-   * arrivals, the lots and the certificates are the real ones either way, and
-   * only what a click opens changes. A second screen would drift from the
-   * product it exists to show.
-   *
-   * Read from the live location each render, so toggling it in the address bar
-   * takes effect without a reload.
+   * The mode rides on the EXISTING surface rather than a parallel "demo
+   * gallery": the arrivals, the lots and the certificates are the real ones
+   * either way, and only what a click opens changes. A second screen would
+   * drift from the product it exists to show, and a cloned repo is supposed to
+   * behave like Vouch, not like a video player.
    */
-  const film = new URLSearchParams(useLocation().search).get('film') === 'true';
+  // `DEMO_AVAILABLE &&` first so a judge build folds this to `false` and drops
+  // the branch — and with it the `/demo/` route string — as dead code.
+  const demo = DEMO_AVAILABLE && demoEnabled();
 
   return (
     // The same scroll wrapper Records uses. The extra `display: flex` this
@@ -53,11 +50,11 @@ export function IncomingRoute({ arrivals }: { arrivals: ArrivalDocuments }) {
     <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
       <IncomingSurface
         onEvaluate={(lotId) => {
-          // Film view opens the run this lot already made. Nothing is
-          // posted and no authoritative state is mutated: the decision was
-          // committed when it was captured, and this is that record playing.
-          if (film) {
-            navigate(`/film/${lotId}`);
+          // Demo Mode opens the run this lot already made. Nothing is posted
+          // and no authoritative state is mutated: the decision was committed
+          // when it was captured, and this is that record playing.
+          if (demo) {
+            navigate(`/demo/${lotId}`);
             return;
           }
 

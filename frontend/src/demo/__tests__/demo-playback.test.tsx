@@ -17,22 +17,22 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import {
   BEAT_TIMINGS,
-  FILM_TARGET_S,
+  DEMO_TIMINGS,
   GOLDEN_LOTS,
   MACHINE_SECONDS,
   filmSeconds,
 } from '../timing';
-import { FilmRoute } from '../FilmRoute';
+import { DemoRoute } from '../DemoRoute';
 import events1001 from '../packages/LOT-1001/events.json';
 import events1005 from '../packages/LOT-1005/events.json';
 
 afterEach(cleanup);
 
-const renderFilm = (lot: string) =>
+const renderDemo = (lot: string) =>
   render(
-    <MemoryRouter initialEntries={[`/film/${lot}`]}>
+    <MemoryRouter initialEntries={[`/demo/${lot}`]}>
       <Routes>
-        <Route path="/film/:lotId" element={<FilmRoute />} />
+        <Route path="/demo/:lotId" element={<DemoRoute />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -116,7 +116,7 @@ describe('only a real question waits for the operator', () => {
 
 describe('a run with no human gate plays straight through', () => {
   it('LOT-1005 reaches its terminal beat unattended', async () => {
-    renderFilm('LOT-1005');
+    renderDemo('LOT-1005');
     await wait(50);
     await wait(5200);
     // Nothing was pressed, and the run finished: the security halt must not
@@ -125,9 +125,9 @@ describe('a run with no human gate plays straight through', () => {
   }, 30000);
 });
 
-describe('the film frame carries no demo apparatus', () => {
+describe('the demo frame is the product frame', () => {
   it('shows no replay badge, watermark or transport control', async () => {
-    const { container } = renderFilm('LOT-1001');
+    const { container } = renderDemo('LOT-1001');
     await wait(50);
     const text = container.textContent ?? '';
     // Any of these in frame would make the footage unusable, and would label a
@@ -140,44 +140,65 @@ describe('the film frame carries no demo apparatus', () => {
   }, 20000);
 
   it('refuses a lot with no recorded run, naming the ones that exist', () => {
-    renderFilm('LOT-9999');
-    expect(screen.getByText(/No recorded run/i)).toBeTruthy();
+    renderDemo('LOT-9999');
+    expect(screen.getByText(/No archived run/i)).toBeTruthy();
     expect(screen.getByText(/LOT-1001/)).toBeTruthy();
   });
 });
 
 /**
- * Each lot occupies the length the edit allocated.
+ * Demo pace keeps the capture's SHAPE and only changes the rate.
  *
- * Asserted on the timing table rather than by playing 3 minutes of beats: the
- * table IS the schedule the hook reads, and `film-gate.test.tsx` separately
+ * Asserted on the timing table rather than by playing minutes of beats: the
+ * table IS the schedule the hook reads, and `demo-gate.test.tsx` separately
  * proves the hook honours it on the real clock.
  */
-describe('the film fits its allocated time', () => {
-  it.each(Object.keys(FILM_TARGET_S))('%s totals its target', (lot) => {
-    expect(filmSeconds(lot)).toBeCloseTo(FILM_TARGET_S[lot], 1);
+describe('demo pace is the captured shape, faster', () => {
+  const LOTS = Object.keys(BEAT_TIMINGS);
+
+  it.each(LOTS)('%s is quicker than the captured cadence', (lot) => {
+    const captured = BEAT_TIMINGS[lot].reduce((t, b) => t + b.seconds, 0);
+    const demo = DEMO_TIMINGS[lot].reduce((t, b) => t + b.seconds, 0);
+    expect(demo).toBeLessThan(captured);
+  });
+
+  it.each(LOTS)('%s keeps every beat, in order, with the same spans', (lot) => {
+    expect(DEMO_TIMINGS[lot].map((b) => [b.beatId, b.from, b.to])).toEqual(
+      BEAT_TIMINGS[lot].map((b) => [b.beatId, b.from, b.to]),
+    );
   });
 
   /**
-   * A gated lot's target is the shot MINUS the press, so the automated beats
-   * must leave room for it. If they filled the whole target the operator's
-   * pause would push every take over.
+   * The relative rhythm survives scaling.
+   *
+   * This is the property that makes demo pace a presentation choice rather than
+   * a rewrite: a beat the capture held longer is still held longer. Only beats
+   * clamped by the readability floor are exempt, and they are the shortest ones.
    */
-  it.each(['LOT-1003', 'LOT-1004'])('%s leaves the press outside its budget', (lot) => {
-    const waiting = BEAT_TIMINGS[lot].filter((b) => b.awaitsOperator);
-    expect(waiting.length).toBe(1);
-    // The waiting beat's `seconds` is a placeholder — the clock is stopped —
-    // so the automated remainder is what actually plays.
-    const automated = filmSeconds(lot) - waiting[0].seconds;
-    expect(automated).toBeLessThan(FILM_TARGET_S[lot]);
+  it.each(LOTS)('%s preserves the captured ordering of beat lengths', (lot) => {
+    const pairs = BEAT_TIMINGS[lot].map((b, i) => ({ captured: b.seconds, demo: DEMO_TIMINGS[lot][i].seconds }));
+    const unclamped = pairs.filter((p) => p.demo > 0.451);
+    for (let i = 1; i < unclamped.length; i += 1) {
+      const a = unclamped[i - 1];
+      const b = unclamped[i];
+      if (a.captured < b.captured) expect(a.demo).toBeLessThanOrEqual(b.demo + 1e-9);
+      if (a.captured > b.captured) expect(a.demo).toBeGreaterThanOrEqual(b.demo - 1e-9);
+    }
+  });
+
+  /** Nothing flashes past unreadably once scaled down. */
+  it.each(LOTS)('%s holds every beat long enough to read', (lot) => {
+    for (const beat of DEMO_TIMINGS[lot]) expect(beat.seconds).toBeGreaterThanOrEqual(0.45);
+  });
+
+  /** A human gate still waits for a person, whatever the scale says. */
+  it.each(['LOT-1003', 'LOT-1004'])('%s still stops for the operator', (lot) => {
+    expect(DEMO_TIMINGS[lot].filter((b) => b.awaitsOperator).length).toBe(1);
   });
 
   it('never holds a mechanical beat longer than an agent reasoning', () => {
-    // Weighted distribution exists for this: spreading the slack evenly would
-    // hold a version bump as long as the investigator, which inverts what the
-    // viewer is meant to be looking at.
-    for (const lot of Object.keys(FILM_TARGET_S)) {
-      const beats = BEAT_TIMINGS[lot];
+    for (const lot of LOTS) {
+      const beats = DEMO_TIMINGS[lot];
       const agents = beats.filter((b) => b.beatId === 'investigator' || b.beatId === 'verifier');
       if (!agents.length) continue;
       const shortestAgent = Math.min(...agents.map((b) => b.seconds));

@@ -19,9 +19,8 @@
  * answer "what is happening in the product", not "where am I".
  */
 
-import { useEffect } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import {
-  NavLink,
   Navigate,
   Route,
   Routes,
@@ -30,12 +29,13 @@ import {
   useParams,
 } from 'react-router-dom';
 import { DecisionRoute } from '../decision/DecisionRoute';
-import { FilmRoute } from '../decision/replay/FilmRoute';
 import { IncomingRoute } from '../decision/IncomingRoute';
 import type { ArrivalDocuments, HeroAEntry } from '../decision/entry';
 import { INK, MONO, N, SANS, HAIR } from '../decision/primitives';
 import { getToday, listDecisions } from '../adapter/client';
-import { useFilmReset } from '../dev/useFilmReset';
+import { ResetDemo } from './ResetDemo';
+import { DemoBadge, DemoToggle } from './DemoToggle';
+import { DEMO_AVAILABLE } from '../demo/mode';
 import {
   prefetchSurfaces,
   RecordSurface,
@@ -43,6 +43,18 @@ import {
   SuppliersSurface,
   TodaySurface,
 } from '../features/Surfaces';
+
+/**
+ * The archived-run view, loaded only when this build enables Demo Mode.
+ *
+ * `lazy` puts it in its own chunk and `DEMO_AVAILABLE` is a build-time
+ * constant, so a judge build never emits that chunk and never registers the
+ * route. The judge bundle does not contain a disabled demo mode; it does not
+ * contain demo mode. See `demo/mode.ts`.
+ */
+const DemoRoute = DEMO_AVAILABLE
+  ? lazy(() => import('../demo/DemoRoute').then((m) => ({ default: m.DemoRoute })))
+  : null;
 
 const NAV = [
   { to: '/today', label: 'Today' },
@@ -61,7 +73,8 @@ function titleFor(pathname: string): [string, string] {
   if (pathname.startsWith('/today')) return ['Today', 'Production readiness'];
   if (pathname.startsWith('/incoming')) return ['Incoming', 'Quality · arrivals awaiting decision'];
   if (pathname.startsWith('/decisions')) return ['Decision', 'Live authority workspace'];
-  if (pathname.startsWith('/film')) return ['Decision', 'Live authority workspace'];
+  if (DEMO_AVAILABLE && pathname.startsWith('/demo/'))
+    return ['Decision', 'Authority workspace'];
   if (pathname.startsWith('/suppliers')) return ['Suppliers', 'Approved material sources'];
   if (pathname.startsWith('/records')) return ['Records', 'Every disposition, searchable'];
   return ['Vouch', ''];
@@ -142,21 +155,33 @@ export function RoutedShell({
     ]);
   }, []);
 
+  /** Confirmation that a reset landed. Whose reset it was is ResetDemo's call. */
+  const [resetToast, setResetToast] = useState<string | null>(null);
+
   /**
-   * Shift+R resets the LOT-1003 scenario while filming. DEV-only: the hook
-   * registers no listener in a production build.
+   * Re-read everything after a reset, then land on Today.
    *
-   * After a reset the shell routes to Incoming, which re-reads authoritative
-   * state — the lot is RECEIVED again and C-419 is back to AT_RISK, so the
-   * next take starts from the canonical picture rather than a cached one.
+   * The authoritative read models must be refetched, not just re-rendered: the
+   * server state changed underneath a UI that had already cached it, and
+   * showing the old board after a reset is exactly the bug this avoids.
    */
-  const { toast } = useFilmReset(() => {
-    prefetchSurfaces([
-      { key: 'today', load: getToday },
-      { key: 'decisions', load: () => listDecisions(50) },
-    ]);
-    navigate('/incoming');
-  });
+  const afterReset = useCallback(
+    (message: string) => {
+      prefetchSurfaces([
+        { key: 'today', load: getToday },
+        { key: 'decisions', load: () => listDecisions(50) },
+      ]);
+      navigate('/today');
+      setResetToast(message);
+    },
+    [navigate],
+  );
+
+  useEffect(() => {
+    if (!resetToast) return;
+    const timer = window.setTimeout(() => setResetToast(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [resetToast]);
 
   return (
     <div
@@ -170,9 +195,9 @@ export function RoutedShell({
         background: '#CFC9BD',
       }}
     >
-      {toast && (
+      {resetToast && (
         <div
-          data-testid="film-reset-toast"
+          data-testid="reset-toast"
           role="status"
           style={{
             position: 'fixed',
@@ -188,7 +213,7 @@ export function RoutedShell({
             boxShadow: '0 8px 24px rgba(0,0,0,.3)',
           }}
         >
-          {toast}
+          {resetToast}
         </div>
       )}
 
@@ -243,31 +268,57 @@ export function RoutedShell({
           </div>
 
           <nav style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                /* A nav click is a navigation, not a request to reset someone
-                   else's state. `/incoming` means "show current arrivals"
-                   whatever the operator was looking at — including a decision
-                   that was opened from Incoming, which is the case the old
-                   state-based shell could not express. */
-                style={({ isActive }) => ({
-                  textAlign: 'left',
-                  background: isActive ? 'rgba(255,255,255,.08)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 9,
-                  padding: '9px 12px',
-                  cursor: 'pointer',
-                  font: `600 12.5px ${SANS}`,
-                  color: isActive ? '#FAFAFA' : '#B3AC9E',
-                  textDecoration: 'none',
-                })}
-              >
-                {item.label}
-              </NavLink>
-            ))}
+            {NAV.map((item) => {
+              const isActive = location.pathname.startsWith(item.to);
+              return (
+                /* A BUTTON, not an anchor.
+                 *
+                 * An `<a href>` makes the browser paint its own status bubble —
+                 * "localhost:5173/today" — in the bottom-left corner on hover.
+                 * Nothing on the page can suppress it (that is deliberate,
+                 * anti-phishing), and it lands in every frame of a screen
+                 * recording where the cursor crosses the nav.
+                 *
+                 * Navigation itself is unchanged: `navigate()` pushes the same
+                 * history entry the link did, so Back, Forward and a refresh on
+                 * any routed path all behave exactly as before. What is lost is
+                 * middle-click-to-new-tab, which this app has no use for — it is
+                 * a single-window operator console.
+                 *
+                 * A nav click is a navigation, not a request to reset someone
+                 * else's state. `/incoming` means "show current arrivals"
+                 * whatever the operator was looking at — including a decision
+                 * that was opened from Incoming, which is the case the old
+                 * state-based shell could not express. */
+                <button
+                  key={item.to}
+                  type="button"
+                  onClick={() => navigate(item.to)}
+                  aria-current={isActive ? 'page' : undefined}
+                  style={{
+                    textAlign: 'left',
+                    background: isActive ? 'rgba(255,255,255,.08)' : 'transparent',
+                    border: 'none',
+                    borderRadius: 9,
+                    padding: '9px 12px',
+                    cursor: 'pointer',
+                    font: `600 12.5px ${SANS}`,
+                    color: isActive ? '#FAFAFA' : '#B3AC9E',
+                    textDecoration: 'none',
+                  }}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </nav>
+
+          {/* Bottom of the left nav. The toggle chooses the execution mode;
+              the reset below it IS that mode's reset — server-side and
+              authoritative in live mode, local and request-free in demo mode.
+              See ResetDemo for why the two cannot reach each other. */}
+          <DemoToggle />
+          <ResetDemo onReset={afterReset} />
         </aside>
 
         <main
@@ -302,6 +353,11 @@ export function RoutedShell({
               {title}
             </h1>
             <div style={{ font: `400 12px ${MONO}`, color: INK.label }}>{sub}</div>
+            {/* Never "LIVE" during archived playback. What is on screen really
+                happened, but it is not happening now, and the header says so. */}
+            <div style={{ marginLeft: 'auto' }}>
+              <DemoBadge />
+            </div>
           </header>
 
           <Routes>
@@ -324,11 +380,19 @@ export function RoutedShell({
             />
             <Route path="/incoming" element={<IncomingRoute arrivals={arrivals} />} />
             <Route path="/decisions/:recordId" element={<DecisionRoute entry={entry} />} />
-            {/* A real recorded run, played at a speed a camera can use.
-                Reached from `/incoming?film=true`. Renders the product, so the
-                footage is of the product — see FilmRoute for why there is no
-                badge and why the authority buttons work. */}
-            <Route path="/film/:lotId" element={<FilmRoute />} />
+            {/* One archived run, replayed in the real workspace. Reached by
+                clicking a lot while Demo Mode is on — the same click that
+                starts a live evaluation when it is off. */}
+            {DemoRoute && (
+              <Route
+                path="/demo/:lotId"
+                element={
+                  <Suspense fallback={null}>
+                    <DemoRoute />
+                  </Suspense>
+                }
+              />
+            )}
             <Route
               path="/suppliers"
               element={

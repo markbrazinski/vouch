@@ -44,7 +44,27 @@ describe('production build excludes the dev fixture harness', () => {
     execFileSync(
       'npx',
       ['vite', 'build', '--mode', 'production', '--outDir', 'dist-harness-check', '--emptyOutDir'],
-      { cwd: ROOT, stdio: 'pipe', env: { ...process.env, NODE_ENV: 'production' } },
+      {
+        cwd: ROOT,
+        stdio: 'pipe',
+        /**
+         * Demo Mode OFF, explicitly.
+         *
+         * This block asserts what the LIVE product surface may contain — most
+         * sharply, that it carries no pre-computed decision outcome. Demo Mode
+         * legitimately ships archived outcomes and the canonical opening board;
+         * that is the whole point of it, and judging the live rules over a demo
+         * build would either fail honestly-archived data or force the rules to
+         * be loosened for everyone.
+         *
+         * So the two concerns are separated at the BUILD rather than by
+         * filtering chunks: this builds the judge/live bundle, and
+         * `judge-build-excludes-demo.test.ts` separately proves demo mode is
+         * absent from it. `frontend/.env` sets the flag true for clones, so it
+         * must be overridden here rather than merely omitted.
+         */
+        env: { ...process.env, NODE_ENV: 'production', VITE_ENABLE_DEMO_MODE: 'false' },
+      },
     );
     const assets = join(DIST, 'assets');
     // PRODUCT chunks only. A replay chunk carries a real recorded outcome by
@@ -209,28 +229,41 @@ describe('the frontend declares no AWS SDK dependency', () => {
 });
 
 /**
- * The replay data is CONFINED.
+ * In a DEMO build, the archived data is CONFINED to its own chunks.
  *
- * `/film/:lotId` is deliberately not dev-gated — filming happens against a real
- * build — so the usual "it isn't in the bundle" proof does not apply. The
- * property that replaces it: a captured outcome must live only in chunks that
- * nothing on the live path loads, so an operator evaluating their own material
- * can never be served a recorded decision instead.
+ * The judge/live build is covered by a stronger property elsewhere: Demo Mode
+ * is a build-time constant, so `judge-build-excludes-demo.test.ts` proves the
+ * archived runs are absent from that bundle entirely rather than merely
+ * unreachable within it.
  *
- * This is the test that makes shipping film view safe. If it fails, a recorded
- * disposition has leaked onto the live path.
+ * This block covers the other build — the one a cloned repo runs, where the
+ * archive is present ON PURPOSE. The property that matters there is that a
+ * recorded outcome lives only in chunks loaded when someone opens an archived
+ * run, never in the entry chunk every visitor downloads. Demo Mode is explicit,
+ * and the code that answers it should not be sitting in the first payload.
  */
-describe('captured golden runs stay out of the product surface', () => {
+describe('a demo build confines the archived runs to lazy chunks', () => {
+  const DEMO_DIST = join(ROOT, 'dist-demo-check');
   let chunks: { name: string; source: string }[] = [];
 
   beforeAll(() => {
-    const assets = join(DIST, 'assets');
+    rmSync(DEMO_DIST, { recursive: true, force: true });
+    execFileSync(
+      'npx',
+      ['vite', 'build', '--mode', 'production', '--outDir', 'dist-demo-check', '--emptyOutDir'],
+      {
+        cwd: ROOT,
+        stdio: 'pipe',
+        env: { ...process.env, NODE_ENV: 'production', VITE_ENABLE_DEMO_MODE: 'true' },
+      },
+    );
+    const assets = join(DEMO_DIST, 'assets');
     chunks = readdirSync(assets)
       .filter((f) => f.endsWith('.js'))
       .map((f) => ({ name: f, source: readFileSync(join(assets, f), 'utf8') }));
-  });
+  }, 180_000);
 
-  it('emits the replay data as its own lazy chunks', () => {
+  it('emits the archived data as its own lazy chunks', () => {
     const replay = chunks.filter((c) => isReplayChunk(c.source));
     expect(replay.length, 'the golden packages must ship as separate chunks').toBeGreaterThan(0);
   });
@@ -246,18 +279,22 @@ describe('captured golden runs stay out of the product surface', () => {
 
   it('never mixes a recorded run into a chunk carrying product chrome', () => {
     // A chunk holding both the nav and a captured disposition would mean the
-    // replay data loads for everyone, which is exactly what must not happen.
+    // archived data loads for everyone, which is exactly what must not happen.
     for (const chunk of chunks.filter((c) => isReplayChunk(c.source))) {
-      expect(chunk.source, `${chunk.name} mixes replay data into product chrome`).not.toMatch(
+      expect(chunk.source, `${chunk.name} mixes archived data into product chrome`).not.toMatch(
         /ÅBY/,
       );
     }
   });
 
-  it('ships no replay badge or watermark in any chunk', () => {
-    // Film view renders the product, unmarked, because the footage is of a real
-    // decision and an overlay would both spoil the shot and mislabel it. A
-    // badge appearing here means someone added demo chrome to the frame.
+  /**
+   * The workspace renders unmarked, because what it shows is a real decision.
+   *
+   * Demo Mode's honesty lives in the nav badge and the mode toggle, not in a
+   * watermark across a recording of something that actually happened. A badge
+   * appearing HERE means someone added demo chrome into the decision frame.
+   */
+  it('ships no replay banner or watermark in any chunk', () => {
     const all = chunks.map((c) => c.source).join('\n');
     expect(all).not.toMatch(/data-testid="replay-banner"/);
     expect(all).not.toMatch(/Recorded run ·/);

@@ -13,7 +13,7 @@ PY  := .venv/bin/python
 reseed:
 	$(AWS) $(PY) scripts/seed_demo_corpus.py
 
-## Prove the corpus is film-ready: LOT-1002 RECEIVED, C-417 READY.
+## Prove the corpus is demo-ready: LOT-1002 RECEIVED, C-417 READY.
 check-seed:
 	@curl -s "http://127.0.0.1:8787/api/decisions?limit=50" | $(PY) -c "import json,sys; r=[x for x in json.load(sys.stdin)['rows'] if x['lot_id']=='LOT-1002'][0]; print('LOT-1002', r['lot_status'], '<- expect RECEIVED')"
 	@curl -s http://127.0.0.1:8787/api/today | $(PY) -c "import json,sys; o=[o for l in json.load(sys.stdin)['lines'] for o in l['orders'] if o['order_id']=='C-417'][0]; print('C-417   ', o['status'], '<- expect READY')"
@@ -40,7 +40,9 @@ fast:
 	cd frontend && npx vitest run \
 	  --exclude '**/build-excludes-harness.test.ts' \
 	  --exclude '**/async-transport.test.tsx' \
-	  --exclude '**/film-gate.test.tsx'
+	  --exclude '**/demo-gate.test.tsx' \
+	  --exclude '**/demo-playback.test.tsx' \
+	  --exclude '**/judge-build-excludes-demo.test.ts'
 
 ## TIER 2 — Vouch feature gate (<5min budget; ~6s actual). The normal
 ## "commission complete" gate: the demo-critical product contract only.
@@ -66,10 +68,12 @@ gate:
 	  src/decision/__tests__/quality-authority.test.tsx \
 	  src/decision/__tests__/adapter.test.ts \
 	  src/app/__tests__/routing.test.tsx \
-	  src/decision/replay/__tests__/film.test.tsx
+	  src/demo/__tests__/demo-playback.test.tsx \
+	  src/demo/__tests__/mode-isolation.test.tsx \
+	  src/demo/__tests__/scenarios.test.ts
 
 ## TIER 3 — full regression (~26s). Shared contracts, authority/mutation code,
-## canonical fixtures, PDF/evidence pipeline, merge, deploy, film freeze.
+## canonical fixtures, PDF/evidence pipeline, merge, deploy, release freeze.
 full test:
 	$(PY) -m pytest tests/ -q
 	cd frontend && npx vitest run

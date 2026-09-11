@@ -1,29 +1,29 @@
 /**
- * Play back a real recorded run at a speed a camera can use.
+ * Play back a real recorded run at a speed a person can follow.
  *
  * These are not simulations. Every event replayed here was produced by the
  * deployed runtime against the real reasoners and the real authoritative
  * stores, and each one carries the timestamp and audit record it was written
  * with. What this changes is WHEN each already-real event appears, so a 44.7s
- * decision fits a five-minute film.
+ * decision fits an interactive walkthrough.
  *
  * It returns the SAME `DecisionRunState` that `useDecisionRun` returns, so the
  * workspace cannot tell the two apart and nothing downstream branches on which
- * one it got. The footage is of the product, not of a mock of it.
+ * one it got. What is shown is the product, not a mock of it.
  *
  * THE HUMAN GATE REALLY WAITS. On LOT-1003 and LOT-1004 playback stops at the
  * quality question and does not resume until the operator presses the button,
- * however long that takes — the pause belongs to the person being filmed, not
- * to a timer. `advance()` is what the button calls. Without this the take would
- * be mimed: the decision would arrive on its own while an operator pretended to
+ * however long that takes — the pause belongs to the person deciding, not
+ * to a timer. `advance()` is what the button calls. Without this the demo would
+ * mime the decision: it would arrive on its own while a person pretended to
  * make it.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DecisionRunState } from '../useDecisionRun';
-import { normalizeEvent } from '../useDecisionRun';
-import type { EvaluateDTO, LifecycleEventDTO, SourceArtifactDTO } from '../dto';
-import { BEAT_TIMINGS, type BeatTiming } from './timing';
+import type { DecisionRunState } from '../decision/useDecisionRun';
+import { normalizeEvent } from '../decision/useDecisionRun';
+import type { EvaluateDTO, LifecycleEventDTO, SourceArtifactDTO } from '../decision/dto';
+import { DEMO_TIMINGS, type BeatTiming } from './timing';
 
 /** One recorded run, as the files playback needs. */
 interface GoldenPackage {
@@ -240,7 +240,7 @@ export function useGoldenReplay(lotId: string | null): GoldenReplayState {
   const schedule = useCallback((startIndex: number, lot: string) => {
     const loaded = pkg.current;
     if (!loaded) return;
-    const beats = BEAT_TIMINGS[lot] ?? [];
+    const beats = DEMO_TIMINGS[lot] ?? [];
     clearTimers();
 
     let elapsed = 0;
@@ -359,7 +359,7 @@ export function useGoldenReplay(lotId: string | null): GoldenReplayState {
         replayingLot: lotId,
         decisionRecordId: (loaded.result.decision_record_id as string) || '',
         running: true,
-        beatCount: (BEAT_TIMINGS[lotId] ?? []).length,
+        beatCount: (DEMO_TIMINGS[lotId] ?? []).length,
       });
       schedule(0, lotId);
     });
