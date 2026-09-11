@@ -11,7 +11,7 @@
   "event_types": [],
   "measured_s": 0.0,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.09
  },
  {
   "beat_id": "evidence_received",
@@ -27,7 +27,7 @@
   ],
   "measured_s": 0.0,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.82
  },
  {
   "beat_id": "security",
@@ -43,7 +43,7 @@
   ],
   "measured_s": 1.004,
   "measured_is_operator_latency": false,
-  "film_s": 1.0
+  "film_s": 2.46
  },
  {
   "beat_id": "binding",
@@ -59,7 +59,7 @@
   ],
   "measured_s": 0.02,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 2.06
  },
  {
   "beat_id": "extraction",
@@ -76,7 +76,7 @@
   ],
   "measured_s": 0.041,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.33
  },
  {
   "beat_id": "investigator",
@@ -110,7 +110,7 @@
   ],
   "measured_s": 17.317,
   "measured_is_operator_latency": false,
-  "film_s": 3.5
+  "film_s": 7.15
  },
  {
   "beat_id": "verifier",
@@ -133,7 +133,7 @@
   ],
   "measured_s": 7.407,
   "measured_is_operator_latency": false,
-  "film_s": 3.5
+  "film_s": 7.15
  },
  {
   "beat_id": "reconciliation",
@@ -149,7 +149,7 @@
   ],
   "measured_s": 0.018,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 2.43
  },
  {
   "beat_id": "disposition",
@@ -166,7 +166,7 @@
   ],
   "measured_s": 0.179,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 2.43
  },
  {
   "beat_id": "mutation",
@@ -183,7 +183,7 @@
   ],
   "measured_s": 0.076,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.21
  },
  {
   "beat_id": "disposition",
@@ -199,7 +199,7 @@
   ],
   "measured_s": 0.047,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 2.43
  },
  {
   "beat_id": "mutation",
@@ -216,7 +216,7 @@
   ],
   "measured_s": 0.06,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.21
  },
  {
   "beat_id": "consequence",
@@ -235,7 +235,7 @@
   ],
   "measured_s": 0.114,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 3.03
  },
  {
   "beat_id": "disposition",
@@ -251,7 +251,7 @@
   ],
   "measured_s": 0.024,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 2.43
  },
  {
   "beat_id": "mutation",
@@ -268,7 +268,7 @@
   ],
   "measured_s": 0.058,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.21
  },
  {
   "beat_id": "consequence",
@@ -284,7 +284,7 @@
   ],
   "measured_s": 0.019,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 3.03
  },
  {
   "beat_id": "terminal",
@@ -298,6 +298,6 @@
   "event_types": [],
   "measured_s": 0.019,
   "measured_is_operator_latency": false,
-  "film_s": 2.5
+  "film_s": 5.53
  }
 ]

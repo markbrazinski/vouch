@@ -59,6 +59,50 @@ COMPRESS = 0.35
 #: the floor that keeps it legible as thinking.
 AGENT_CEILING_S = 3.5
 
+#: Total seconds each lot must occupy on screen, set by the edit.
+#:
+#: LOT-1003 and LOT-1004 pause indefinitely for the operator, so their target
+#: is the SHOT length minus a nominal 3s press: 49 -> 46 and 23 -> 20. Hold the
+#: button longer on a take and that take runs longer; nothing here can fix
+#: that, and it should not try.
+FILM_TARGET_S: dict[str, float] = {
+    "LOT-1001": 52.0,
+    "LOT-1002": 48.0,
+    "LOT-1003": 46.0,
+    "LOT-1004": 20.0,
+    "LOT-1005": 7.0,
+}
+
+#: How eagerly each beat absorbs the slack between raw pacing and the target.
+#:
+#: Every target is LONGER than both the raw pacing and the real machine time,
+#: so this distributes added time rather than removing it. Weighting matters
+#: more than the totals: spreading it evenly would hold `mutation` — a version
+#: bump — as long as an agent reasoning, which inverts what the viewer is meant
+#: to be looking at.
+#:
+#: Agents and the terminal frame take the most because they carry the content;
+#: mechanical steps take the least because watching them longer reveals nothing.
+STRETCH_WEIGHT: dict[str, float] = {
+    "investigator": 3.0,
+    "verifier": 3.0,
+    "terminal": 2.5,
+    "consequence": 2.0,
+    "reconciliation": 1.5,
+    "disposition": 1.5,
+    "security": 1.2,
+    "binding": 1.2,
+    "evidence_received": 1.0,
+    "run_2_start": 1.0,
+    "extraction": 0.6,
+    "mutation": 0.5,
+    "startup": 0.4,
+}
+
+#: Beats whose length is the OPERATOR's, not the edit's. Excluded from
+#: fitting: stretching a beat that waits for a button press is meaningless.
+OPERATOR_BEATS = {"human_gate", "human_authority"}
+
 
 def parse(at: str) -> datetime:
     return datetime.fromisoformat(at)
@@ -146,12 +190,60 @@ def film_time(beat: dict, hold: float, lot: str) -> float:
     return round(max(scaled, FLOOR_S), 2)
 
 
+def fit_to_target(beats: list[dict], target: float) -> list[dict]:
+    """Stretch the auto-playing beats so the run occupies exactly `target`.
+
+    Time is added in proportion to STRETCH_WEIGHT, so the beats a viewer is
+    actually reading grow and the mechanical ones stay brisk. An operator beat
+    is left alone — its length belongs to the person pressing the button, and it
+    is excluded from the arithmetic on a gated lot rather than being padded.
+
+    Returns the beats with `film_s` replaced. Never shortens below the existing
+    value: every target here is longer than the raw pacing, and a target that
+    was not would need a different rule than "spread the slack".
+    """
+    auto = [b for b in beats if b["beat_id"] not in OPERATOR_BEATS]
+    # A gate that WAITS contributes nothing to the automated length: the clock
+    # is stopped until the button is pressed, and the 3s already subtracted from
+    # the shot length is what covers it. Counting its placeholder hold as well
+    # would charge the press twice. A gate nobody answers (LOT-1005's security
+    # halt) still plays on a timer, so it still counts.
+    fixed = sum(
+        b["film_s"]
+        for b in beats
+        if b["beat_id"] in OPERATOR_BEATS and not b.get("interaction_required")
+    )
+    current = sum(b["film_s"] for b in auto)
+    slack = target - fixed - current
+
+    if slack <= 0:
+        # Nothing to distribute. Left unchanged rather than compressed, so a
+        # shorter target shows up as an overrun in the report instead of
+        # silently squeezing beats below their readable floor.
+        return beats
+
+    weights = [STRETCH_WEIGHT.get(b["beat_id"], 1.0) for b in auto]
+    total_weight = sum(weights) or 1.0
+    for beat, weight in zip(auto, weights):
+        beat["film_s"] = round(beat["film_s"] + slack * (weight / total_weight), 2)
+
+    # Absorb rounding drift into the terminal frame, which is the one beat whose
+    # exact length is a matter of taste rather than legibility.
+    drift = target - sum(b["film_s"] for b in beats)
+    terminal = next((b for b in reversed(beats) if b["beat_id"] == "terminal"), None)
+    if terminal is not None:
+        terminal["film_s"] = round(max(terminal["film_s"] + drift, FLOOR_S), 2)
+    return beats
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--hold", type=float, default=1.5,
                     help="seconds to hold a human decision or a terminal frame")
     ap.add_argument("--write", action="store_true",
                     help="write timings back into each beats.json")
+    ap.add_argument("--raw", action="store_true",
+                    help="show the unfitted pacing, ignoring FILM_TARGET_S")
     args = ap.parse_args()
 
     lots = sorted(p.name for p in GOLDEN.iterdir() if p.is_dir())
@@ -161,6 +253,9 @@ def main() -> int:
         beats = measure(lot)
         for beat in beats:
             beat["film_s"] = film_time(beat, args.hold, lot)
+        target = FILM_TARGET_S.get(lot)
+        if target and not args.raw:
+            beats = fit_to_target(beats, target)
 
         # Machine time excludes operator latency: it is not something the
         # factory did.

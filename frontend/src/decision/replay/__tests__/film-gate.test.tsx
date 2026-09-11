@@ -40,10 +40,22 @@ const wait = (ms: number) =>
  * sleep pins today's numbers as if they were the contract; what these tests
  * actually assert is that the gate arrives and waits.
  */
+const playUntilText = async (
+  container: HTMLElement,
+  pattern: RegExp,
+  budgetMs = 40000,
+): Promise<boolean> => {
+  for (let waited = 0; waited < budgetMs; waited += 250) {
+    if (pattern.test(container.textContent ?? '')) return true;
+    await wait(250);
+  }
+  return false;
+};
+
 const playUntil = async (
   container: HTMLElement,
   pattern: RegExp,
-  budgetMs = 20000,
+  budgetMs = 40000,
 ): Promise<HTMLButtonElement | undefined> => {
   for (let waited = 0; waited < budgetMs; waited += 250) {
     const found = Array.from(container.querySelectorAll('button')).find((b) =>
@@ -91,7 +103,7 @@ describe('the run parks on the question and the button resumes it', () => {
     await act(async () => {
       establish!.click();
     });
-    await wait(16000);
+    expect(await playUntilText(container, /RELEASE/), 'run 2 must reach RELEASE').toBe(true);
 
     const text = container.textContent ?? '';
     expect(text).toMatch(/RELEASE/);
@@ -121,12 +133,12 @@ describe('the run parks on the question and the button resumes it', () => {
     await act(async () => {
       confirm!.click();
     });
-    await wait(14000);
+    expect(await playUntilText(container, /RELEASE/), 'run 2 must reach RELEASE').toBe(true);
 
     const text = container.textContent ?? '';
     expect(text).toMatch(/RELEASE/);
     expect(text).toMatch(/identity confirmation/i);
-  }, 120000);
+  }, 180000);
 });
 
 /**
@@ -143,7 +155,7 @@ describe('an agent reaches for its tools one at a time', () => {
     await wait(200);
 
     const counts: number[] = [];
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 55; i += 1) {
       await wait(400);
       counts.push(result.current.events.length);
     }
@@ -155,14 +167,14 @@ describe('an agent reaches for its tools one at a time', () => {
 
     // And it must actually progress, not stall.
     expect(counts[counts.length - 1]).toBeGreaterThan(counts[0]);
-  }, 60000);
+  }, 120000);
 
   it('shows a tool call before its result, never the pair together', async () => {
     const { result } = renderHook(() => useGoldenReplay('LOT-1001'));
     await wait(200);
 
     let sawPendingCall = false;
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 70; i += 1) {
       await wait(300);
       const events = result.current.events;
       const last = events[events.length - 1];
@@ -171,7 +183,7 @@ describe('an agent reaches for its tools one at a time', () => {
       if (last?.event === 'TOOL_CALLED') sawPendingCall = true;
     }
     expect(sawPendingCall, 'a tool call must be visible while still pending').toBe(true);
-  }, 60000);
+  }, 120000);
 
   /**
    * The display may never go backwards.
@@ -183,12 +195,12 @@ describe('an agent reaches for its tools one at a time', () => {
   it.each(['LOT-1001', 'LOT-1002'])('%s never un-reveals an event', async (lot) => {
     const { result } = renderHook(() => useGoldenReplay(lot));
     let previous = 0;
-    for (let i = 0; i < 55; i += 1) {
+    for (let i = 0; i < 165; i += 1) {
       await wait(350);
       const n = result.current.events.length;
       expect(n, `${lot} went backwards: ${previous} -> ${n}`).toBeGreaterThanOrEqual(previous);
       previous = n;
     }
     expect(result.current.finished).toBe(true);
-  }, 120000);
+  }, 180000);
 });

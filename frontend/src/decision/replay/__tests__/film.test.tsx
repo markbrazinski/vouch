@@ -15,7 +15,13 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { BEAT_TIMINGS, GOLDEN_LOTS, MACHINE_SECONDS, filmSeconds } from '../timing';
+import {
+  BEAT_TIMINGS,
+  FILM_TARGET_S,
+  GOLDEN_LOTS,
+  MACHINE_SECONDS,
+  filmSeconds,
+} from '../timing';
 import { FilmRoute } from '../FilmRoute';
 import events1001 from '../packages/LOT-1001/events.json';
 import events1005 from '../packages/LOT-1005/events.json';
@@ -137,5 +143,49 @@ describe('the film frame carries no demo apparatus', () => {
     renderFilm('LOT-9999');
     expect(screen.getByText(/No recorded run/i)).toBeTruthy();
     expect(screen.getByText(/LOT-1001/)).toBeTruthy();
+  });
+});
+
+/**
+ * Each lot occupies the length the edit allocated.
+ *
+ * Asserted on the timing table rather than by playing 3 minutes of beats: the
+ * table IS the schedule the hook reads, and `film-gate.test.tsx` separately
+ * proves the hook honours it on the real clock.
+ */
+describe('the film fits its allocated time', () => {
+  it.each(Object.keys(FILM_TARGET_S))('%s totals its target', (lot) => {
+    expect(filmSeconds(lot)).toBeCloseTo(FILM_TARGET_S[lot], 1);
+  });
+
+  /**
+   * A gated lot's target is the shot MINUS the press, so the automated beats
+   * must leave room for it. If they filled the whole target the operator's
+   * pause would push every take over.
+   */
+  it.each(['LOT-1003', 'LOT-1004'])('%s leaves the press outside its budget', (lot) => {
+    const waiting = BEAT_TIMINGS[lot].filter((b) => b.awaitsOperator);
+    expect(waiting.length).toBe(1);
+    // The waiting beat's `seconds` is a placeholder — the clock is stopped —
+    // so the automated remainder is what actually plays.
+    const automated = filmSeconds(lot) - waiting[0].seconds;
+    expect(automated).toBeLessThan(FILM_TARGET_S[lot]);
+  });
+
+  it('never holds a mechanical beat longer than an agent reasoning', () => {
+    // Weighted distribution exists for this: spreading the slack evenly would
+    // hold a version bump as long as the investigator, which inverts what the
+    // viewer is meant to be looking at.
+    for (const lot of Object.keys(FILM_TARGET_S)) {
+      const beats = BEAT_TIMINGS[lot];
+      const agents = beats.filter((b) => b.beatId === 'investigator' || b.beatId === 'verifier');
+      if (!agents.length) continue;
+      const shortestAgent = Math.min(...agents.map((b) => b.seconds));
+      for (const beat of beats.filter((b) => b.beatId === 'mutation')) {
+        expect(beat.seconds, `${lot}: ${beat.beatId} outlasts an agent`).toBeLessThan(
+          shortestAgent,
+        );
+      }
+    }
   });
 });

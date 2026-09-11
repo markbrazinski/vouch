@@ -66,8 +66,7 @@ gate:
 	  src/decision/__tests__/quality-authority.test.tsx \
 	  src/decision/__tests__/adapter.test.ts \
 	  src/app/__tests__/routing.test.tsx \
-	  src/decision/replay/__tests__/film.test.tsx \
-	  src/decision/replay/__tests__/film-gate.test.tsx
+	  src/decision/replay/__tests__/film.test.tsx
 
 ## TIER 3 — full regression (~26s). Shared contracts, authority/mutation code,
 ## canonical fixtures, PDF/evidence pipeline, merge, deploy, film freeze.

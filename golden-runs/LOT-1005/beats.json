@@ -11,7 +11,7 @@
   "event_types": [],
   "measured_s": 0.0,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 0.75
  },
  {
   "beat_id": "evidence_received",
@@ -27,7 +27,7 @@
   ],
   "measured_s": 0.0,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 0.99
  },
  {
   "beat_id": "security",
@@ -43,7 +43,7 @@
   ],
   "measured_s": 0.663,
   "measured_is_operator_latency": false,
-  "film_s": 0.66
+  "film_s": 1.12
  },
  {
   "beat_id": "binding",
@@ -59,7 +59,7 @@
   ],
   "measured_s": 0.012,
   "measured_is_operator_latency": false,
-  "film_s": 0.6
+  "film_s": 1.06
  },
  {
   "beat_id": "human_gate",
@@ -89,6 +89,6 @@
   "event_types": [],
   "measured_s": 0.014,
   "measured_is_operator_latency": false,
-  "film_s": 1.5
+  "film_s": 2.48
  }
 ]
