@@ -100,11 +100,11 @@ C-417 open — so C-418 moves `14:00 → 08:00` and the line keeps running.
 
 ## Run locally
 
-There is no public deployment. The AgentCore Runtime is real and served every
-recorded run in this repository, but it is reached by SigV4-signed
-`InvokeAgentRuntime`, not by a browser, and the operator console authenticates
-against Cognito. What follows is what you can actually run, and every command
-below was executed to write this section.
+There is no *unauthenticated* public deployment. The judge build is hosted on
+CloudFront behind Cognito sign-in, and its live decisions invoke the AgentCore
+Runtime through SigV4-signed requests — the browser never holds an AWS
+credential. The offline paths below need no AWS account, credentials, or network
+access. Every command here was executed to write this section.
 
 ### Prerequisites
 
@@ -188,7 +188,7 @@ So the three modes, kept distinct:
 |---|---|---|
 | Offline tests | none | In-memory adapters and deterministic test doubles, proving product behavior |
 | Demo Mode | none | Archived real runs, replayed |
-| Live | Nova Pro, AgentCore, DynamoDB, S3, Guardrails | The deployed runtime, deciding for the first time |
+| Live | Nova Pro, AgentCore, DynamoDB, S3, Guardrails | The deployed runtime, deciding for the first time. This is what the hosted judge build runs, behind Cognito sign-in |
 
 ### Frontend suite
 
