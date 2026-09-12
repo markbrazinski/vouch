@@ -385,10 +385,19 @@ continues the same DecisionRecord rather than starting a new case.
 
 ## Scope
 
-All manufacturing data is synthetic. Suppliers, specifications, lots, production
-orders and certificates are fictional, generated for this demonstration. Vouch
-is a prototype: it makes no regulatory determination and grants no real release
-authority.
+What Vouch covers, and what it deliberately does not:
+
+- **Not connected to a live ERP or MES.** The material master, production plan
+  and inventory are Vouch's own authoritative state, seeded from a fixture
+  corpus rather than synchronised from a plant system.
+- **A canonical corpus, not a plant catalog.** Five lots, two materials and a
+  handful of production orders — sized so one disposition visibly moves the
+  board, not to model a full site.
+- **All manufacturing data is synthetic.** Suppliers, specifications, lots,
+  production orders and certificates are fictional, generated for this
+  demonstration. No real company is represented.
+- **A prototype, not a qualified quality system.** Vouch makes no regulatory
+  determination and grants no real release authority.
 
 ## Contributing
 
