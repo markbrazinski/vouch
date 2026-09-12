@@ -111,9 +111,10 @@ below was executed to write this section.
 - **Python 3.12** — `pyproject.toml` declares `>=3.10`; 3.12.12 is what the
   suite is verified on.
 - **Node 20+** for the frontend suite. Verified on Node 25.2.1, npm 11.6.2.
-- **No AWS account, credential, or network access is needed for anything in
-  this section.** The decision core runs against in-memory stores and scripted
-  reasoners. Credentials are required only for *Running against real AWS* below.
+- **No AWS account, credentials, or network access are required for the offline
+  paths below.** They use in-memory adapters and deterministic local test
+  doubles. The live AWS path uses Nova Pro, AgentCore Runtime, DynamoDB, S3 and
+  Bedrock Guardrails, and is the only path that decides anything new.
 
 ### Install
 
@@ -156,6 +157,38 @@ QUARANTINE C
 
 The certificate said `CONFORMS`. Vouch says `QUARANTINE`, and names revision `C`
 as the basis on which it says it.
+
+### See the product — Demo Mode
+
+The operator console, running the five archived decisions, with no AWS account
+and no backend:
+
+```bash
+cd frontend && npm install && npm run dev
+# then open http://localhost:5173/?demo=1
+```
+
+Every event, disposition, human decision, mutation and consequence Demo Mode
+shows was produced by the deployed AgentCore Runtime against real Nova Pro
+reasoners and the real stores, and is replayed from `golden-runs/` through the
+same projection and the same workspace the live path renders. The only thing
+Demo Mode decides is *when* each already-real event becomes visible.
+
+It is entered **only on purpose** — the console badges it, and nothing falls
+back to it. A live call that fails reports that failure rather than quietly
+serving a recording, because telling an operator the plant answered when it did
+not is the one thing this product must never do. The judge build opts out at
+compile time (`VITE_ENABLE_DEMO_MODE=false`), and
+`judge-build-excludes-demo.test.ts` runs that build and proves no demo code
+survives it.
+
+So the three modes, kept distinct:
+
+| Mode | AWS | What decides |
+|---|---|---|
+| Offline tests | none | In-memory adapters and deterministic test doubles, proving product behavior |
+| Demo Mode | none | Archived real runs, replayed |
+| Live | Nova Pro, AgentCore, DynamoDB, S3, Guardrails | The deployed runtime, deciding for the first time |
 
 ### Frontend suite
 
@@ -240,8 +273,7 @@ DynamoDB and S3, or in memory for the offline path.
   five captured runs.
 - **Amazon DynamoDB** — the authoritative corpus, DecisionRecords, event
   streams, and the conditional writes that make capability consumption atomic.
-- **Amazon S3** — evidence originals, versioned and hash-bound. Versioned, *not*
-  WORM — see Honest boundaries.
+- **Amazon S3** — evidence originals, versioned and hash-bound.
 - **React 19 + Vite 7 + React Router 7** — the operator console. Holds no AWS
   SDK and no token; it talks only to same-origin `/api`.
 - **AWS Lambda + API Gateway** (`bff/handler.py`) — transport and authorization
@@ -261,18 +293,13 @@ not fixtures: `LOT-1002` alone carries 48 raw lifecycle events.
 |---|---|---|
 | `LOT-1001` | Agents agree, deterministic checks pass | `RELEASE` |
 | `LOT-1002` | Certificate cites superseded revision B; revision C governs and fails at 462 < 480 MPa | `QUARANTINE` → C-417 `AT_RISK → BLOCKED`, C-418 resequenced `14:00 → 08:00` |
-| `LOT-1003` | Two honest readings by different methods disagree — 178 cP by the named method, 312 cP by a genuinely equivalent one | `MATERIAL_DISAGREEMENT` → human establishes controlling evidence → run 2 `RELEASE` |
-| `LOT-1004` | Certificate names batch `WP-26-0317-B` and no lot, so it cannot be attributed | identity gate → human confirms binding → run 2 `RELEASE` |
+| `LOT-1003` | Two honest readings by different methods disagree — 178 cP by the named method, 312 cP by a genuinely equivalent one | `MATERIAL_DISAGREEMENT` → Quality Management establishes controlling evidence → run 2 `RELEASE` |
+| `LOT-1004` | Certificate names batch `WP-26-0317-B` and no lot, so identity is unresolved and the agents never start | Quality Management confirms the batch-to-lot binding → run 2 `RELEASE` |
 | `LOT-1005` | Prompt injection inside an authentic-looking certificate | `SECURITY_QUARANTINE` — 4 events, zero claims, agents never invoked |
 
-`LOT-1003` is worth reading closely. An earlier version of that fixture had both
-viscosity readings passing, which made the human's answer ceremonial — a quality
-decision that cannot change the outcome is not a decision. It was rebuilt so the
-two readings point genuinely opposite ways.
-
 [`golden-runs/README.md`](golden-runs/README.md) documents each package's
-contents, how to read one, what the integrity test guards, and what these
-recordings do **not** prove. The five source certificates are catalogued in
+capture provenance and contents, how to read one, and the integrity checks that
+guard them. The five source certificates are catalogued in
 [`demo/evidence/MANIFEST.md`](demo/evidence/MANIFEST.md), and
 [`fixtures/README.md`](fixtures/README.md) explains the corpus arithmetic and
 the extraction-boundary documents.
@@ -308,10 +335,10 @@ provenance without reading the code that produced it:
 
 | Doc | Covers |
 |---|---|
-| [`golden-runs/README.md`](golden-runs/README.md) | The five captured runs: package contents, integrity guarantees, and limits |
+| [`golden-runs/README.md`](golden-runs/README.md) | The five captured runs: capture provenance, package contents, and integrity checks |
 | [`demo/evidence/MANIFEST.md`](demo/evidence/MANIFEST.md) | The five supplier PDFs, per-document, and the brief freezing their content |
 | [`fixtures/README.md`](fixtures/README.md) | Corpus arithmetic, certificate bodies, the Textract seam |
-| [`iam/README.md`](iam/README.md) | The `CAP#` deny boundary these policies express, and whether they are attached |
+| [`iam/README.md`](iam/README.md) | Policy documents for the `CAP#` authority boundary |
 
 ## Verification
 
@@ -379,9 +406,16 @@ are what carry it — supplier text never occupies an instruction position, the
 model that touches raw bytes has no authority, and authority is sourced only
 from internal objects.
 
-Where the two agents materially disagree, the run escalates to a human instead
-of mutating. `LOT-1003` and `LOT-1004` are that path, and the human's answer
-continues the same DecisionRecord rather than starting a new case.
+Where the two agents materially disagree, Vouch stops before deterministic
+evaluation and asks Quality Management to establish the missing authority.
+`LOT-1003` demonstrates that path: both agents run, reconciliation finds the
+disagreement, Quality Management establishes which evidence controls, and the
+same DecisionRecord resumes to converge.
+
+`LOT-1004` stops even earlier. The document parses, but the supplier's batch is
+not authoritatively linked to an internal plant lot, so evidence identity is
+unresolved and **the agents never receive it**. Quality Management confirms the
+batch-to-lot binding first; only then does the normal decision path run.
 
 ## Scope
 

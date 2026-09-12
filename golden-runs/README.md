@@ -35,10 +35,17 @@ All five were captured on **2026-09-10** against AgentCore Runtime
 decision agents are never invoked.** Guardrails halts the document at the
 evidence boundary, so there is nothing for a model to be persuaded by.
 
-`LOT-1003` and `LOT-1004` are two-run decisions. The same `DecisionRecord`
-continues across the human's answer — `run_count` reaches 2 and the event
-sequence extends rather than restarting — which is what makes the human's
-contribution auditable rather than a separate case.
+`LOT-1003` and `LOT-1004` are two-run decisions, and they stop at different
+points. `LOT-1003` runs both agents and reaches reconciliation before the
+disagreement surfaces (`QUALITY_QUESTION_RAISED` at event 28, after
+`RECONCILIATION_COMPLETED`). `LOT-1004` stops at event 5, before
+`INVESTIGATOR_STARTED`: evidence identity is unresolved, so the agents never
+receive it until Quality Management confirms the batch-to-lot binding.
+
+Either way the same `DecisionRecord` continues across the human's answer —
+`run_count` reaches 2 and the event sequence extends rather than restarting —
+which is what makes the human's contribution auditable rather than a separate
+case.
 
 ---
 
