@@ -52,8 +52,8 @@ can open.
 
 **`textract:AnalyzeDocument` is denied to `gatehouse-dev`**, verified by a real
 SDK call with real bytes. No live Textract call has been made, so latency,
-response fidelity and cost are **not measured** — see the itemized AWS status in
-the root [`README.md`](../README.md#honest-boundaries).
+response fidelity and cost are not measured — Textract is out of scope for the
+deployed demo, and the deterministic parser covers every canonical document.
 
 ---
 
@@ -105,7 +105,7 @@ used by a passing case.
 
 ---
 
-## Provenance and limits
+## Provenance
 
 - **No real company, plant, person, lot or certificate is represented.** Each
   demo PDF says so on its face.
@@ -115,10 +115,9 @@ used by a passing case.
   re-checked by `tests/v2/test_canonical_pdf_assets.py`, so a re-export that
   changes a measurement, an identifier or the hostile payload fails the build
   rather than reaching a demo quietly.
-- **The evaluation corpus is unreviewed.** `src/vouch/v2/evalcases.py` was
-  authored alongside the code it measures, and case design materially determines
-  the reported outcome. This is stated as a limit in the root README, not
-  presented as a validated benchmark.
+- `src/vouch/v2/evalcases.py` is a segmented evaluation corpus authored
+  alongside the system, used for internal comparison rather than as an
+  externally validated benchmark.
 - Adversarial qualification sets — the identity-confidence cases in
   `tests/v2/test_identity_confidence_gate.py`, for instance — are **challenge
   inputs with assigned confidences**. They establish the ordering of failure

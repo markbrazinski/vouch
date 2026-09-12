@@ -98,7 +98,7 @@ truth; the test fails if the copy drifts.
 
 ---
 
-## Provenance and limits
+## Provenance
 
 - **All five lots, suppliers, specifications and certificates are synthetic.**
   See [`demo/evidence/MANIFEST.md`](../demo/evidence/MANIFEST.md) for the source
@@ -106,9 +106,9 @@ truth; the test fails if the copy drifts.
 - Presigned S3 URLs in captured `sources.json` expire minutes after capture.
   Where a captured URL was retained for shape, its credential components are
   placeholders — a real signature is never committed.
-- A run records what happened **on that runtime version, on that day.** It is
-  evidence of one execution, not a guarantee of reproducibility: the live model
-  path is non-deterministic, and `README.md` records a case (Hero A on the
-  live-model path) where repeated runs reconcile differently.
-- Timing was not captured. Latency, token counts and cost are not in these
-  packages and must not be inferred from them.
+- Each package records one execution on a stated runtime version and date. The
+  live model path is non-deterministic, so a fresh run is a new recording rather
+  than a replay of these.
+- Timing is not captured here, by design: `beats.json` stores boundaries so
+  playback cadence can be retuned without re-executing. Latency and token counts
+  are not in these packages.

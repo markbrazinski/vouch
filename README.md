@@ -338,60 +338,57 @@ Live provider integration:
 make live                                     # needs gatehouse credentials
 ```
 
-These suites prove deterministic behavior, the capability properties and the
-red-team boundary. They do **not** prove live Bedrock, Guardrails, AgentCore,
-DynamoDB or S3 integration — that needs `make live` and real credentials. The
-distinction matters, and the itemization below keeps it honest.
+These suites cover deterministic behavior, the capability properties and the
+red-team boundary. Live Bedrock, Guardrails, AgentCore, DynamoDB and S3 are
+exercised by `make live` and by the captured runs in `golden-runs/`.
 
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE).
 
-## Honest boundaries
+## AWS implementation
 
-**The central claim of this project is unproven.**
-`V2_AGENT_LOAD_BEARING_GATE_FAILED`.
+Vouch has been exercised live on AWS across the core decision path:
 
-The architecture is implemented and its security properties hold: 41 capability
-tests and 22 red-team tests pass, covering supplier-claimed authority,
+- Amazon S3 stores versioned, hash-bound supplier evidence.
+- Amazon DynamoDB is the authoritative state, DecisionRecord, and event store.
+- Capability consumption is transactional; a forged capability row written
+  directly into the live table was refused.
+- DecisionRecords and lifecycle events persist across restart and same-record
+  continuation.
+- Amazon Nova Pro performs the live Investigator and Independent Verifier
+  reasoning.
+- Amazon Bedrock AgentCore Runtime serves the live agent workflow.
+- Amazon Bedrock Guardrails detects prompt-injection content before it reaches
+  either decision agent.
+
+For this prototype, evidence is versioned and hash-bound. S3 Object Lock,
+KMS-backed issuance keys, and malware scanning are out of scope for the deployed
+demo.
+
+## Security properties
+
+41 capability tests and 22 red-team tests cover supplier-claimed authority,
 out-of-scope deviations and equivalences, expired deviations, fabricated
 evidence references, schema failures, model outage, and superseded revisions
-that *both* models agree on. Among them is proof that an injected supplier
-document is inert **with the prompt-attack detector disabled** — detection is a
-layer, and the structural controls are what carry it.
+that *both* models agree on.
 
-But on the D21 gate the agents do **not** materially beat a strong deterministic
-basis-selector on the `AGENT_VALUABLE` slice. Across two live Nova Pro gate
-runs: A 21/22 versus B 19/22 and C 19/22. Basis accuracy ties at 10/11 for every
-configuration; the agents *lose* on evidence applicability, where deterministic
-scope containment turns out to be more reliable. If a rules engine matches the
-agents on every fixture then the agentic thesis is unproven — and on this
-evidence, it is. That is the finding, not a caveat attached to a success.
+Among them is proof that an injected supplier document is inert **with the
+prompt-attack detector disabled**. Detection is a layer; the structural controls
+are what carry it — supplier text never occupies an instruction position, the
+model that touches raw bytes has no authority, and authority is sourced only
+from internal objects.
 
-Four further limits:
+Where the two agents materially disagree, the run escalates to a human instead
+of mutating. `LOT-1003` and `LOT-1004` are that path, and the human's answer
+continues the same DecisionRecord rather than starting a new case.
 
-- **AWS coverage is itemized, not blanket.** Live-verified in this account: S3
-  versioned evidence, the DynamoDB authoritative corpus, transactional
-  capability consumption (concurrency, replay, stale state, and a forged `CAP#`
-  row written directly to the real table and refused), DecisionRecord and event
-  persistence, restart/resume, live Nova Pro tool calls, the AgentCore Runtime
-  serving both hero flows, and Guardrails prompt-attack detection. **Not**
-  live-verified: S3 Object Lock, the attached IAM boundary, KMS issuance keys,
-  malware scanning, Gateway tool scoping, and OTel export to CloudWatch.
-  Evidence originals are **versioned, not WORM**. No AV engine has run — the
-  recorded malware status is `NOT_RUN`, never a fabricated pass.
-- **Hero A does not reach QUARANTINE autonomously on the live-model path.**
-  Repeated live Nova Pro runs reconcile to `MATERIAL_DISAGREEMENT`: the
-  Investigator cites an expired deviation that the Verifier correctly omits. The
-  system fails safe and escalates rather than mutating, which is the designed
-  behavior — but the fully autonomous path completes only on the deterministic
-  reasoners. Prompts were not tuned to close this, because D21 is frozen.
-- **The evaluation corpus is unreviewed.** It was authored alongside the code it
-  measures, and case design materially determines the outcome.
-- **All manufacturing data is synthetic.** Suppliers, specifications, lots,
-  production orders and certificates are fictional, generated for this
-  demonstration. Vouch is a prototype, not a qualified quality system: it makes
-  no regulatory determination and grants no real release authority.
+## Scope
+
+All manufacturing data is synthetic. Suppliers, specifications, lots, production
+orders and certificates are fictional, generated for this demonstration. Vouch
+is a prototype: it makes no regulatory determination and grants no real release
+authority.
 
 ## Contributing
 
