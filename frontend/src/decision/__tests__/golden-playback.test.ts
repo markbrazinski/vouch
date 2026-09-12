@@ -24,7 +24,16 @@ import { normalizeEvent } from '../useDecisionRun';
 import type { EvaluateDTO, LifecycleEventDTO } from '../dto';
 
 const GOLDEN = join(__dirname, '..', '..', '..', '..', 'golden-runs');
-const LOTS = existsSync(GOLDEN) ? readdirSync(GOLDEN).sort() : [];
+
+// One run per DIRECTORY. Files sitting beside the packages — `README.md`
+// documenting the captures — are not runs, and parametrizing over them fails
+// every assertion on a path that was never a package.
+const LOTS = existsSync(GOLDEN)
+  ? readdirSync(GOLDEN, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+  : [];
 
 const read = (lot: string, name: string) =>
   JSON.parse(readFileSync(join(GOLDEN, lot, name), 'utf8'));

@@ -1222,7 +1222,7 @@
    "claim_count": 1,
    "excluded_from_decision_use": false,
    "prompt_attack_detected": false,
-   "view_ref": "https://gatehouse-dev-evidence-000000000000-us-east-1.s3.amazonaws.com/evidence/LOT-1003/ART-527f6b5f4e9a?versionId=JD53aPzTFdVps7nSneqWy_VY0xlZGEZq&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260908%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260908T164459Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Security-Token=EXAMPLESESSIONTOKEN&X-Amz-Signature=EXAMPLESIGNATURE"
+   "view_ref": "https://gatehouse-dev-evidence-000000000000-us-east-1.s3.amazonaws.com/evidence/LOT-1003/ART-527f6b5f4e9a?versionId=JD53aPzTFdVps7nSneqWy_VY0xlZGEZq&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260101%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260101T000000Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=EXAMPLESIGNATURE"
   },
   {
    "artifact_id": "ART-8b0313fcb5af",
@@ -1239,7 +1239,7 @@
    "claim_count": 1,
    "excluded_from_decision_use": false,
    "prompt_attack_detected": false,
-   "view_ref": "https://gatehouse-dev-evidence-000000000000-us-east-1.s3.amazonaws.com/evidence/LOT-1003/ART-8b0313fcb5af?versionId=IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260908%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260908T164459Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Security-Token=EXAMPLESESSIONTOKEN&X-Amz-Signature=EXAMPLESIGNATURE"
+   "view_ref": "https://gatehouse-dev-evidence-000000000000-us-east-1.s3.amazonaws.com/evidence/LOT-1003/ART-8b0313fcb5af?versionId=IGMBqyH03f5BG4GKiaeMNa_BlZsVCAwu&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAEXAMPLE%2F20260101%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260101T000000Z&X-Amz-Expires=300&X-Amz-SignedHeaders=host&X-Amz-Signature=EXAMPLESIGNATURE"
   }
  ],
  "events": [

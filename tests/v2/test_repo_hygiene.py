@@ -75,3 +75,38 @@ def test_hero_acceptance_composes_the_runtime_arn() -> None:
     assert "runtime_arn()" in source, "the ARN is no longer composed at call time"
     assert "VOUCH_RUNTIME_ARN" in source, "no override for a different deployment"
     assert not ACCOUNT_ID.search(source), "an account id came back"
+
+
+#: Real AWS credential material. The account-id regex above cannot see these:
+#: an STS session token is base64, so a real account id inside one is invisible
+#: to a `\d{12}` scan. That is exactly how a live presigned S3 URL — captured
+#: verbatim into a frontend test fixture — carried this account's id into
+#: tracked source and past the check above.
+CREDENTIAL_PATTERNS = (
+    # Real access-key ids. AKIAEXAMPLE / ASIAEXAMPLE-style placeholders are
+    # shorter than the 16-char real form and so do not match.
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    # A signed URL is only dangerous when it carries a real session token.
+    re.compile(r"X-Amz-Security-Token=[A-Za-z0-9%+/=]{40,}"),
+)
+
+
+def test_no_real_aws_credentials_in_tracked_files() -> None:
+    offenders: list[str] = []
+    for path in _tracked_text_files():
+        try:
+            body = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, FileNotFoundError):
+            continue
+        for line_no, line in enumerate(body.splitlines(), 1):
+            for pattern in CREDENTIAL_PATTERNS:
+                if pattern.search(line):
+                    offenders.append(f"{path.relative_to(ROOT)}:{line_no}")
+                    break
+
+    assert not offenders, (
+        "real AWS credential material is tracked. A captured presigned URL is "
+        "the usual cause: scrub the query string down to placeholders, keeping "
+        "only the host/key/versionId shape the fixture needs:\n  "
+        + "\n  ".join(offenders)
+    )

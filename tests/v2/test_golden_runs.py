@@ -30,7 +30,10 @@ EXPECTED: dict[str, dict] = {
     "LOT-1005": {"outcome": "SECURITY_QUARANTINE", "human": False, "mutation": ""},
 }
 
-PACKAGES = sorted(p.name for p in GOLDEN.iterdir()) if GOLDEN.is_dir() else []
+#: One package per directory. Files sitting alongside them — `README.md`
+#: documenting the captures — are not runs and must not be parametrized as if
+#: they were.
+PACKAGES = sorted(p.name for p in GOLDEN.iterdir() if p.is_dir()) if GOLDEN.is_dir() else []
 
 pytestmark = pytest.mark.skipif(not PACKAGES, reason="no golden runs captured")
 
