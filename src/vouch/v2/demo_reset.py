@@ -108,4 +108,82 @@ def reset_lot(corpus: Any, lot_id: str) -> dict:
     }
 
 
-__all__ = ["RESETTABLE", "NotResettable", "reset_lot"]
+
+#: The lots the judge demo is made of, in the order Incoming lists them.
+#:
+#: Named explicitly so the reset RESULT can be checked against the scenarios the
+#: demo actually claims, rather than against whatever the fixture happens to
+#: contain. A fixture that grew a sixth lot would otherwise silently widen what
+#: "the canonical demo" means.
+CANONICAL_LOTS: tuple[str, ...] = (
+    "LOT-1001", "LOT-1002", "LOT-1003", "LOT-1004", "LOT-1005",
+)
+
+#: The production orders whose readiness tells the Today story.
+CANONICAL_ORDERS: tuple[str, ...] = ("C-417", "C-418", "C-419")
+
+
+def reset_demo(corpus: Any) -> dict:
+    """Restore the WHOLE canonical demo to its opening state.
+
+    This is `reset_lot`'s sibling, not its generalisation. `reset_lot` rolls
+    back one scenario so a take can be re-filmed without disturbing the others;
+    this rolls back every scenario, which is what a judge needs between passes.
+
+    It takes NO arguments beyond the corpus. That is the security property: the
+    only thing a caller can ask for is "the canonical demo, as seeded", so
+    reaching this action can never become a way to write a chosen value into
+    authoritative state. Compare `reset_lot`, which needs a whitelist precisely
+    because it does accept a name.
+
+    The mechanism is `DynamoCorpus.seed(build_corpus())` — the same call
+    `scripts/seed_demo_corpus.py` has always made, and the same one the film
+    reset path relies on. Nothing new decides anything here:
+
+      * **History-preserving.** DecisionRecords are neither read nor written.
+        A reset restores OPERATING STATE — what is true of the plant now — and
+        says nothing about what Vouch decided before. Records keeps every prior
+        judge run as truthful history, which is the whole point of a ledger a
+        demo cannot launder.
+
+      * **Version-advancing.** `seed` advances each row's `state_version` past
+        whatever the table holds rather than rewinding it to 1, so every
+        capability issued before the reset is stale and refuses. Rewinding
+        would re-validate them.
+
+    Returns the restored state rather than a bare acknowledgement, so a caller
+    can show what is now true instead of asserting success blindly.
+    """
+    written = corpus.seed(build_corpus())
+
+    lots = {
+        lot_id: getattr(corpus.get("lot", lot_id), "status", "")
+        for lot_id in CANONICAL_LOTS
+    }
+    # Readiness is DERIVED from live inventory, never stored, so it is computed
+    # here the same way Today computes it. Reporting the stored `status` field
+    # instead would let this claim a readiness the product does not show.
+    from .consequences import compute_readiness
+
+    orders = {}
+    for order_id in CANONICAL_ORDERS:
+        if corpus.get("production_order", order_id) is None:  # pragma: no cover
+            continue
+        orders[order_id] = compute_readiness(corpus, order_id).readiness.value
+
+    return {
+        "scope": "CANONICAL_DEMO",
+        "rows_restored": written,
+        "lots": lots,
+        "readiness": orders,
+    }
+
+
+__all__ = [
+    "CANONICAL_LOTS",
+    "CANONICAL_ORDERS",
+    "RESETTABLE",
+    "NotResettable",
+    "reset_demo",
+    "reset_lot",
+]

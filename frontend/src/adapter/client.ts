@@ -286,3 +286,56 @@ export const newDecisionRecordId = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return `DR-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
 };
+
+/**
+ * Sign a judge in.
+ *
+ * The credential is POSTed once and never stored anywhere in the browser: the
+ * BFF checks it against Cognito server-side and replies with an HttpOnly
+ * session cookie. Nothing here holds a token, so there is nothing for script to
+ * read and nothing to put in a URL. `credentials: 'same-origin'` is the default
+ * for a same-origin request and stated only to make the intent explicit.
+ *
+ * Returns whether the credential was accepted, never WHY it was refused — the
+ * backend deliberately gives one answer for an unknown user and a wrong
+ * password, and repeating a distinction it declined to make would undo that.
+ */
+export async function login(username: string, password: string): Promise<boolean> {
+  const response = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  return response.ok;
+}
+
+/** End the session. The cookie is cleared by the server, not by script. */
+export async function logout(): Promise<void> {
+  await fetch(`${BASE}/auth/logout`, { method: 'POST', credentials: 'same-origin' });
+}
+
+/** Whether this browser currently holds a valid judge session. */
+export async function session(): Promise<{ authenticated: boolean; username: string }> {
+  try {
+    const body = await request<VouchEnvelope>('/auth/session');
+    return {
+      authenticated: Boolean(body.authenticated),
+      username: typeof body.username === 'string' ? body.username : '',
+    };
+  } catch {
+    // Unreachable backend is not "signed in". Failing closed here means a
+    // network blip shows the sign-in screen rather than an empty product.
+    return { authenticated: false, username: '' };
+  }
+}
+
+/**
+ * Restore the canonical demo to its opening state.
+ *
+ * Deliberately takes NO arguments. The server action accepts none either, so
+ * this cannot become a way to reset a chosen lot or write a chosen value — the
+ * only thing it can ask for is the seeded demo. Operating state is restored;
+ * DecisionRecords are not touched, so Records keeps every prior run.
+ */
+export const resetDemo = () => request('/reset-demo', { method: 'POST' });

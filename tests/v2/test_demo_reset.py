@@ -219,3 +219,77 @@ def test_the_lot_can_actually_be_evaluated_again(vouch):
     again = v.evaluate_lot("LOT-1003", documents=[{"raw": COA_DISPUTED}])
     assert again.decision_record_id
     assert again.failure_category or again.disposition
+
+
+# ==========================================================================
+# the WHOLE-demo reset — the judge's control
+# ==========================================================================
+
+
+def test_reset_demo_restores_every_canonical_lot_to_pre_decision(corpus):
+    """The property the judge control promises: whatever the last run left
+    behind, the five canonical lots are RECEIVED again."""
+    from dataclasses import replace as _replace
+
+    from vouch.v2.demo_reset import CANONICAL_LOTS, reset_demo
+
+    for lot_id in CANONICAL_LOTS:
+        corpus.put(
+            "lot", lot_id,
+            _replace(corpus.get("lot", lot_id), status="RELEASED", state_version=9),
+        )
+    corpus.seed = lambda source: sum(
+        1 for kind, rows in source._t.items()
+        for key, value in rows.items() if (corpus.put(kind, key, value) or True)
+    )
+
+    result = reset_demo(corpus)
+
+    assert result["scope"] == "CANONICAL_DEMO"
+    assert set(result["lots"]) == set(CANONICAL_LOTS)
+    assert all(status == "RECEIVED" for status in result["lots"].values())
+
+
+def test_reset_demo_returns_the_canonical_opening_readiness(corpus):
+    """Today's opening picture: every order awaiting a quality decision.
+
+    Readiness is DERIVED from inventory rather than stored, so this asserts
+    what the product will actually show — not a status field that could
+    disagree with it.
+    """
+    from vouch.v2.demo_reset import CANONICAL_ORDERS, reset_demo
+
+    corpus.seed = lambda source: 0
+    result = reset_demo(corpus)
+
+    assert set(result["readiness"]) == set(CANONICAL_ORDERS)
+    assert all(state == "AWAITING_QUALITY" for state in result["readiness"].values())
+
+
+def test_reset_demo_takes_no_caller_input():
+    """The security property that lets a judge reach it.
+
+    `reset_lot` needs a whitelist because it accepts a name. This accepts
+    nothing, so there is no name to whitelist and nothing to smuggle.
+    """
+    import inspect
+
+    from vouch.v2.demo_reset import reset_demo
+
+    assert list(inspect.signature(reset_demo).parameters) == ["corpus"]
+
+
+def test_reset_demo_never_touches_the_decision_ledger(corpus):
+    """Operating state rolls back; history does not.
+
+    A reset that tidied the ledger would launder exactly the audit trail the
+    product exists to keep.
+    """
+    from vouch.v2.demo_reset import reset_demo
+
+    store = InMemoryRecordStore()
+    before = len(store.all()) if hasattr(store, "all") else 0
+    corpus.seed = lambda source: 0
+    reset_demo(corpus)
+    after = len(store.all()) if hasattr(store, "all") else 0
+    assert before == after

@@ -1088,6 +1088,36 @@ def invoke(payload: dict, context=None) -> dict:
                 "selected": selected.as_dict() if selected else None,
             }
 
+        if action == "reset_demo":
+            # The canonical demo reset, and the ONLY corpus-restoring action
+            # this runtime exposes.
+            #
+            # It takes no parameters. That is the security property, not an
+            # omission: the single thing a caller can ask for is "the canonical
+            # demo, as seeded", so reaching this action cannot become a way to
+            # write a chosen value into authoritative state. `demo_reset`
+            # itself holds the semantics — this layer adds no authority of its
+            # own and decides nothing.
+            #
+            # It restores OPERATING STATE only. DecisionRecords are neither
+            # read nor written, so a judge's previous runs stay in Records as
+            # truthful history. A reset that tidied the ledger would be
+            # laundering the audit trail it exists to keep.
+            from vouch.v2.demo_reset import reset_demo
+
+            result = reset_demo(_CORPUS)
+            # The corpus caches partitions it has read. The seed just wrote
+            # through it, but a later invocation on a warm container must not
+            # answer from anything this one left behind.
+            if hasattr(_CORPUS, "refresh"):
+                _CORPUS.refresh()
+            return {
+                "ok": True,
+                "action": action,
+                "backend": _BACKEND.as_dict(),
+                **result,
+            }
+
         if action == "ledger":
             return {
                 "ok": True,

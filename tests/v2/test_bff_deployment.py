@@ -91,14 +91,21 @@ def test_the_handler_holds_no_domain_logic() -> None:
         assert forbidden not in source, f"business logic in the BFF: {forbidden!r}"
 
 
-def test_the_allowlist_is_exactly_the_eight_browser_actions() -> None:
-    """No generic passthrough: the runtime's action surface is not the boundary."""
+def test_the_allowlist_is_exactly_the_browser_actions() -> None:
+    """No generic passthrough: the runtime's action surface is not the boundary.
+
+    Nine actions, not eight: `reset_demo` is the canonical demo reset the judge
+    deployment exposes. It belongs on a browser-facing list because a judge
+    invokes it from the product, and it is safe to expose because it accepts NO
+    caller input — see `test_judge_deployment.py`.
+    """
     sys.path.insert(0, str(ROOT / "bff"))
     import handler  # noqa: PLC0415
 
     assert handler.ALLOWED_ACTIONS == {
         "evaluate_lot", "supply_evidence", "submit_quality_authority",
         "list_decisions", "get_decision", "get_events", "get_source", "get_today",
+        "reset_demo",
     }
     # Actions the runtime supports but a browser must never reach.
     for internal in ("readiness", "recovery", "ledger"):

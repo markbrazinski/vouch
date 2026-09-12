@@ -29,9 +29,23 @@ sys.path.insert(0, str(ROOT / "bff"))
 import handler as bff  # noqa: E402
 
 
+#: A signing secret these tests can mint a session with.
+#:
+#: Every case in this file is about what an AUTHENTICATED caller may reach —
+#: the allowlist, identifier validation, and the absence of a generic
+#: passthrough. Those checks sit BEHIND authentication, so reaching them at all
+#: requires a session; without one the handler correctly answers 401 and none
+#: of the behaviour below would be exercised.
+#:
+#: That anonymous callers are refused is asserted in `test_judge_deployment.py`,
+#: which is where that boundary belongs.
+TEST_SECRET = "test-bff-session-secret"
+
+
 @pytest.fixture(autouse=True)
 def runtime_arn(monkeypatch):
     monkeypatch.setattr(bff, "RUNTIME_ARN", "arn:aws:bedrock-agentcore:us-east-1:1:runtime/T")
+    monkeypatch.setattr(bff, "SESSION_SECRET", TEST_SECRET)
 
 
 @pytest.fixture
@@ -62,6 +76,10 @@ def _event(method, path, body=None, query=None):
         "rawPath": path,
         "queryStringParameters": query or {},
         "body": json.dumps(body) if body is not None else None,
+        # A signed judge session. See TEST_SECRET: these cases test what an
+        # authenticated caller may reach, which is a different question from
+        # whether an anonymous one is refused.
+        "cookies": [f"{bff.SESSION_COOKIE}={bff.issue_session('judge')}"],
     }
 
 
@@ -119,9 +137,17 @@ def test_every_authorized_action_reaches_the_runtime(method, path, body, action,
 
 
 def test_the_allowlist_covers_exactly_the_browser_facing_actions():
+    """The exact set, so widening it is a deliberate edit rather than a drift.
+
+    `reset_demo` is the canonical demo reset the judge deployment exposes. It
+    is on the list but is neither a read nor a write: it proposes nothing and
+    accepts NO caller input, which is what makes exposing it safe. See
+    `test_judge_deployment.py` for the tests that pin those two properties.
+    """
     assert bff.ALLOWED_ACTIONS == {
         "list_decisions", "get_decision", "get_events", "get_source", "get_today",
         "evaluate_lot", "supply_evidence", "submit_quality_authority",
+        "reset_demo",
     }
 
 
@@ -137,7 +163,13 @@ def test_the_dev_reset_route_does_not_exist_in_the_deployed_bff(invoked):
         status, _ = _call(method, "/api/dev/reset-lot", body)
         assert status == 400, method
     assert invoked == [], "a reset request reached the runtime"
-    assert not any("reset" in action for action in bff.ALLOWED_ACTIONS)
+
+    # The deployed handler exposes exactly one reset, and it is the canonical
+    # whole-demo one. A PER-LOT reset must never appear here: `reset_lot`
+    # accepts a lot name, and an action that takes a caller-supplied
+    # identifier is the thing this boundary exists to keep out.
+    assert {a for a in bff.ALLOWED_ACTIONS if "reset" in a} == {"reset_demo"}
+    assert "reset_lot" not in bff.ALLOWED_ACTIONS
 
 
 @pytest.mark.parametrize(

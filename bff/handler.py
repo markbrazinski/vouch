@@ -43,10 +43,14 @@ statement — `lambda:InvokeFunction` on this function alone.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import time
 import uuid
 
 import boto3
@@ -57,6 +61,19 @@ log.setLevel(logging.INFO)
 RUNTIME_ARN = os.environ.get("VOUCH_RUNTIME_ARN", "")
 ALLOWED_ORIGIN = os.environ.get("VOUCH_ALLOWED_ORIGIN", "")
 
+#: Judge authentication. All four come from Lambda environment variables set by
+#: the admin provisioning step; none of them is in git, in the frontend bundle,
+#: or in any log line this file writes.
+JUDGE_POOL_ID = os.environ.get("VOUCH_JUDGE_POOL_ID", "")
+JUDGE_CLIENT_ID = os.environ.get("VOUCH_JUDGE_CLIENT_ID", "")
+JUDGE_CLIENT_SECRET = os.environ.get("VOUCH_JUDGE_CLIENT_SECRET", "")
+SESSION_SECRET = os.environ.get("VOUCH_SESSION_SECRET", "")
+
+#: How long one sign-in lasts. Long enough that a judge is never interrupted
+#: mid-evaluation, short enough that a leaked cookie is not indefinite.
+SESSION_TTL_SECONDS = 12 * 60 * 60
+SESSION_COOKIE = "vouch_session"
+
 #: Exactly the browser-facing actions. Anything else is refused here, before an
 #: AWS call is made. A generic passthrough would make the runtime's own action
 #: surface the security boundary, which is not what it was designed to be.
@@ -66,7 +83,13 @@ READ_ACTIONS = frozenset(
 WRITE_ACTIONS = frozenset(
     {"evaluate_lot", "supply_evidence", "submit_quality_authority"}
 )
-ALLOWED_ACTIONS = READ_ACTIONS | WRITE_ACTIONS
+
+#: The canonical demo reset. Separated from WRITE_ACTIONS because it is not a
+#: decision: it restores seeded operating state and proposes nothing. It carries
+#: NO parameters — see `_validated` — so this is not an arbitrary mutation
+#: endpoint, and the runtime rejects any field a caller tries to add.
+RESET_ACTIONS = frozenset({"reset_demo"})
+ALLOWED_ACTIONS = READ_ACTIONS | WRITE_ACTIONS | RESET_ACTIONS
 
 #: Identifier shapes. Ids are generated as `DR-<12 hex>` / `ART-<12 hex>`, and
 #: anything else is refused rather than forwarded — a payload field is a poor
@@ -141,7 +164,12 @@ def _validated(action: str, body: dict) -> dict:
             raise BadRequest(f"{field} is too long")
         payload[field] = value
 
-    if action == "list_decisions":
+    if action == "reset_demo":
+        # Deliberately empty. `reset_demo` accepts NO caller input, so there is
+        # nothing to validate and nothing a caller can smuggle through: the
+        # payload forwarded is `{"action": "reset_demo"}` and never more.
+        pass
+    elif action == "list_decisions":
         positive_int("limit")
     elif action == "get_decision":
         record_id()
@@ -216,6 +244,129 @@ def _validated(action: str, body: dict) -> dict:
     return payload
 
 
+
+# ===========================================================================
+# Judge authentication.
+#
+# The BFF authenticates SERVER-SIDE against Cognito with a confidential client
+# and hands the browser an HttpOnly session cookie. That shape is chosen over
+# the hosted UI deliberately:
+#
+#   * no token ever reaches JavaScript, so an XSS cannot read one;
+#   * no token ever appears in a URL, so none is written to browser history,
+#     a referrer header or a CloudFront access log;
+#   * there is no OAuth callback, no redirect allowlist and no hosted-UI
+#     domain to misconfigure — the judge sees a username and a password.
+#
+# The cookie is a signed assertion, not a bearer token for anything else: it
+# names the judge and an expiry, and it is signed with a secret that exists
+# only in this function's environment. It grants exactly what §5 allows, which
+# is the right to reach the allowlisted actions above — and nothing in AWS.
+# ===========================================================================
+
+
+def _sign(message: bytes) -> str:
+    return base64.urlsafe_b64encode(
+        hmac.new(SESSION_SECRET.encode(), message, hashlib.sha256).digest()
+    ).decode().rstrip("=")
+
+
+def issue_session(username: str) -> str:
+    """A signed `<payload>.<signature>` cookie value."""
+    body = json.dumps(
+        {"u": username, "exp": int(time.time()) + SESSION_TTL_SECONDS},
+        separators=(",", ":"),
+    ).encode()
+    payload = base64.urlsafe_b64encode(body).decode().rstrip("=")
+    return f"{payload}.{_sign(payload.encode())}"
+
+
+def session_user(cookie_value: str) -> str:
+    """The judge this cookie names, or "" if it does not authenticate one.
+
+    Every failure returns "" rather than raising: a malformed cookie and a
+    forged one are the same answer to the only question being asked, and a
+    caller that must distinguish them would be tempted to report which.
+    """
+    if not SESSION_SECRET or not cookie_value or cookie_value.count(".") != 1:
+        return ""
+    payload, signature = cookie_value.split(".")
+    # Constant time: a timing-variable comparison here would leak the signature
+    # a byte at a time.
+    if not hmac.compare_digest(signature, _sign(payload.encode())):
+        return ""
+    try:
+        body = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    except Exception:  # noqa: BLE001
+        return ""
+    if not isinstance(body, dict) or body.get("exp", 0) < time.time():
+        return ""
+    user = body.get("u")
+    return user if isinstance(user, str) else ""
+
+
+def _cookies(event: dict) -> dict:
+    """Cookies from either API Gateway payload shape."""
+    jar: dict[str, str] = {}
+    raw = event.get("cookies")
+    if isinstance(raw, list):
+        pairs = raw
+    else:
+        header = (event.get("headers") or {})
+        header = {k.lower(): v for k, v in header.items()}
+        pairs = (header.get("cookie") or "").split(";")
+    for pair in pairs:
+        name, _, value = pair.strip().partition("=")
+        if name:
+            jar[name] = value
+    return jar
+
+
+_idp_client = None
+
+
+def idp_client():
+    global _idp_client
+    if _idp_client is None:
+        _idp_client = boto3.client("cognito-idp")
+    return _idp_client
+
+
+def authenticate(username: str, password: str) -> bool:
+    """Check one username/password against the judge user pool.
+
+    Returns a bool, never the Cognito tokens. Those authenticate to AWS, and
+    nothing outside this function has any business holding one — the browser
+    gets a session cookie scoped to this application instead.
+    """
+    if not (JUDGE_POOL_ID and JUDGE_CLIENT_ID and JUDGE_CLIENT_SECRET):
+        return False
+    secret_hash = base64.b64encode(
+        hmac.new(
+            JUDGE_CLIENT_SECRET.encode(),
+            (username + JUDGE_CLIENT_ID).encode(),
+            hashlib.sha256,
+        ).digest()
+    ).decode()
+    try:
+        idp_client().admin_initiate_auth(
+            UserPoolId=JUDGE_POOL_ID,
+            ClientId=JUDGE_CLIENT_ID,
+            AuthFlow="ADMIN_USER_PASSWORD_AUTH",
+            AuthParameters={
+                "USERNAME": username,
+                "PASSWORD": password,
+                "SECRET_HASH": secret_hash,
+            },
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        # The TYPE only. A Cognito error message can echo the username back,
+        # and a log is the wrong place for a failed credential attempt.
+        log.info("judge authentication refused: %s", type(exc).__name__)
+        return False
+
+
 #: Actions whose runtime work outlives an API Gateway request. Started in the
 #: background; the browser polls the decision record it named.
 # `submit_quality_authority` belongs here for the same reason `supply_evidence`
@@ -276,6 +427,8 @@ def _route(method: str, path: str, query: dict) -> tuple[str, dict]:
         parts = parts[1:]
 
     if method == "POST":
+        if parts == ["reset-demo"]:
+            return "reset_demo", {}
         if parts == ["evaluate"]:
             return "evaluate_lot", {}
         if parts == ["evidence"]:
@@ -319,12 +472,29 @@ def _cors() -> dict:
     }
 
 
-def _respond(status: int, body: dict) -> dict:
-    return {
+def _respond(status: int, body: dict, cookies: list[str] | None = None) -> dict:
+    response = {
         "statusCode": status,
         "headers": {"content-type": "application/json", **_cors()},
         "body": json.dumps(body),
     }
+    if cookies:
+        response["cookies"] = cookies
+    return response
+
+
+def _session_cookie(value: str, max_age: int) -> str:
+    """The session cookie, with every flag that keeps it out of reach.
+
+    HttpOnly so script cannot read it, Secure so it never crosses plain HTTP,
+    SameSite=Strict because the site and the API share one CloudFront origin
+    and no third party has any reason to send it, and Path=/ so one cookie
+    covers the app and its API alike.
+    """
+    return (
+        f"{SESSION_COOKIE}={value}; HttpOnly; Secure; SameSite=Strict; "
+        f"Path=/; Max-Age={max_age}"
+    )
 
 
 def _failure(status: int, reason: str, failure_class: str) -> dict:
@@ -412,6 +582,54 @@ def handler(event, context=None):  # noqa: ARG001
 
     if method == "OPTIONS":
         return _respond(200, {"ok": True})
+
+    # ----------------------------------------------------------------------
+    # Authentication, BEFORE routing.
+    #
+    # Placed here rather than beside each action so there is one gate, not one
+    # per route: a new route cannot be added without passing it. The only
+    # paths reachable unauthenticated are the three below, and none of them
+    # touches the runtime.
+    # ----------------------------------------------------------------------
+    parts = [p for p in path.strip("/").split("/") if p]
+    if parts and parts[0] == "api":
+        parts = parts[1:]
+
+    if parts == ["auth", "login"] and method == "POST":
+        try:
+            credentials = json.loads(event.get("body") or "{}")
+        except json.JSONDecodeError:
+            return _failure(400, "request body is not valid JSON", "TECHNICAL_FAILURE")
+        username = credentials.get("username")
+        password = credentials.get("password")
+        if not isinstance(username, str) or not isinstance(password, str):
+            return _failure(400, "username and password are required", "TECHNICAL_FAILURE")
+        # Bounded before they reach Cognito: an unbounded credential is a free
+        # request to somebody else's service.
+        if not authenticate(username[:128], password[:256]):
+            # One message for every failure mode. "No such user" and "wrong
+            # password" are different facts and telling them apart is an
+            # account-enumeration oracle.
+            return _failure(401, "sign-in failed", "TECHNICAL_FAILURE")
+        return _respond(
+            200,
+            {"ok": True, "username": username[:128]},
+            cookies=[_session_cookie(issue_session(username[:128]), SESSION_TTL_SECONDS)],
+        )
+
+    if parts == ["auth", "logout"] and method == "POST":
+        return _respond(200, {"ok": True}, cookies=[_session_cookie("", 0)])
+
+    if parts == ["auth", "session"] and method == "GET":
+        user = session_user(_cookies(event).get(SESSION_COOKIE, ""))
+        return _respond(200, {"ok": True, "authenticated": bool(user), "username": user})
+
+    # Everything else requires a judge. An unauthenticated caller reaching an
+    # API route is refused HERE — before the allowlist, before validation and
+    # before any AWS call — so no unauthenticated request can spend model
+    # budget or read plant state.
+    if not session_user(_cookies(event).get(SESSION_COOKIE, "")):
+        return _failure(401, "authentication required", "TECHNICAL_FAILURE")
 
     try:
         action, from_route = _route(method, path, query)
