@@ -222,7 +222,7 @@ describe('the two resets cannot reach each other', () => {
    * report success.
    */
   it('the control reads "Reset live demo" and calls the server when demo mode is off', async () => {
-    const spy = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
+    const spy = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ok: true })));
     window.fetch = spy as unknown as typeof fetch;
 
     render(
